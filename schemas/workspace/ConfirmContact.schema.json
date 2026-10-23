@@ -1,0 +1,42 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "revision": {
+      "minimum": 0,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "contact": {
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Contact",
+      "type": "string"
+    },
+    "role": {
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Role",
+      "type": "string"
+    },
+    "source_rationale": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Source Rationale",
+      "type": "string"
+    }
+  },
+  "required": [
+    "revision",
+    "contact",
+    "role",
+    "source_rationale"
+  ],
+  "title": "ConfirmContact",
+  "type": "object"
+}

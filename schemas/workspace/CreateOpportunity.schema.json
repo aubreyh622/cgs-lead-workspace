@@ -1,0 +1,90 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Request Id",
+      "type": "string"
+    },
+    "run_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "lead_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Lead Id",
+      "type": "string"
+    },
+    "title": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "team": {
+      "anyOf": [
+        {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Team"
+    },
+    "problem_hypothesis": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Problem Hypothesis",
+      "type": "string"
+    },
+    "cgs_relevance_hypothesis": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Cgs Relevance Hypothesis",
+      "type": "string"
+    },
+    "alternative_explanation": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Alternative Explanation",
+      "type": "string"
+    },
+    "evidence_ids": {
+      "items": {
+        "maxLength": 160,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 30,
+      "minItems": 1,
+      "title": "Evidence Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "request_id",
+    "run_id",
+    "lead_id",
+    "title",
+    "problem_hypothesis",
+    "cgs_relevance_hypothesis",
+    "alternative_explanation",
+    "evidence_ids"
+  ],
+  "title": "CreateOpportunity",
+  "type": "object"
+}

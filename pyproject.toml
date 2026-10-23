@@ -1,0 +1,17 @@
+[project]
+name = "cgs-lead-workspace"
+version = "0.0.1"
+description = "Local integration of CGS research and qualification; P5 functional rehearsal and handover"
+requires-python = ">=3.12"
+dependencies = [
+  "httpx==0.28.1",
+  "pydantic==2.14.1",
+  "python-dotenv==1.2.4",
+  "tldextract==5.4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/p0", "tests/p1", "tests/p2", "tests/p3", "tests/p4", "tests/p5"]
+pythonpath = ["."]
+addopts = "-p no:cacheprovider"
+markers = ["loopback: real localhost HTTP socket checks; requires loopback permission"]

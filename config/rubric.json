@@ -1,0 +1,42 @@
+{
+  "version": "0.2-signal-provisional",
+  "dimensions": {
+    "problem": {
+      "weight": 0.4,
+      "anchors": {
+        "low": "Evidence establishes only generic technology activity without a specific adoption problem.",
+        "medium": "A verified merger, product expansion, leadership change or named challenge creates a plausible planning need; the unmet problem remains a hypothesis.",
+        "high": "Direct evidence describes a specific current business challenge and consequence closely connected to the selected capability; corroborate material claims where useful."
+      }
+    },
+    "capability_fit": {
+      "weight": 0.3,
+      "anchors": {
+        "low": "The observed need mainly concerns execution services outside the selected capability.",
+        "medium": "The evidenced event or challenge plausibly creates strategy, capability assessment or first-mile planning work; external advisory demand is unknown.",
+        "high": "Explicit planning or organizational capability gaps closely match the selected capability."
+      }
+    },
+    "timing": {
+      "weight": 0.2,
+      "anchors": {
+        "low": "A dated relevant signal exists but shows no current decision or active initiative.",
+        "medium": "A relevant initiative or leadership change is underway within the brief time window.",
+        "high": "A dated near-term decision, deadline or active strategic review creates a reason to investigate now."
+      }
+    },
+    "buyer_access": {
+      "weight": 0.1,
+      "anchors": {
+        "low": "A verified role has limited ownership of the observed problem.",
+        "medium": "A current named person owns a relevant function; relationship access is unknown.",
+        "high": "A verified problem owner and an evidenced public route or relationship support access."
+      }
+    }
+  },
+  "high_threshold": 75,
+  "medium_threshold": 45,
+  "approved_by": "Mock prototype decision authorized by user; not CGS calibration",
+  "approved_at": "2026-10-20T20:00:00-04:00",
+  "approval_basis": "mock"
+}

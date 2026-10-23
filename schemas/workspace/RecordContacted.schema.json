@@ -1,0 +1,34 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "revision": {
+      "minimum": 0,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "contacted_on": {
+      "format": "date",
+      "title": "Contacted On",
+      "type": "string"
+    },
+    "note": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Note",
+      "type": "string"
+    }
+  },
+  "required": [
+    "revision",
+    "contacted_on",
+    "note"
+  ],
+  "title": "RecordContacted",
+  "type": "object"
+}

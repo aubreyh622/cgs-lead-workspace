@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "seeded_tasks": 4,
+  "interactive_tasks": 2,
+  "synthetic": true,
+  "external_browser_requests_allowed": false,
+  "verified": [
+    "offline banner",
+    "source provenance",
+    "unknown-contact receiving case",
+    "interactive research and review",
+    "simulated no-change analysis",
+    "pending proposal does not apply",
+    "human direction approval",
+    "next-task version",
+    "390px layout"
+  ],
+  "page_errors": []
+}

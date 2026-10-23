@@ -1,0 +1,575 @@
+{
+  "$defs": {
+    "Component": {
+      "additionalProperties": false,
+      "properties": {
+        "assessment": {
+          "anyOf": [
+            {
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Assessment"
+        },
+        "reason": {
+          "maxLength": 2000,
+          "minLength": 10,
+          "title": "Reason",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "assessment",
+        "reason",
+        "evidence_ids"
+      ],
+      "title": "Component",
+      "type": "object"
+    },
+    "Observation": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_id": {
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "category": {
+          "enum": [
+            "identity",
+            "problem",
+            "signal",
+            "industry",
+            "geography",
+            "timing",
+            "person",
+            "account",
+            "other"
+          ],
+          "title": "Category",
+          "type": "string"
+        },
+        "observed_fact": {
+          "maxLength": 2000,
+          "minLength": 10,
+          "title": "Observed Fact",
+          "type": "string"
+        },
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "excerpt": {
+          "maxLength": 2000,
+          "minLength": 15,
+          "title": "Excerpt",
+          "type": "string"
+        },
+        "publication_date": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Publication Date"
+        },
+        "date_excerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date Excerpt"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "category",
+        "observed_fact",
+        "source_id",
+        "excerpt"
+      ],
+      "title": "Observation",
+      "type": "object"
+    },
+    "Person": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "company": {
+          "title": "Company",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "role_as_of": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role As Of"
+        },
+        "role_date_excerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role Date Excerpt"
+        },
+        "verified_at": {
+          "format": "date",
+          "title": "Verified At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "role",
+        "company",
+        "evidence_ids",
+        "verified_at"
+      ],
+      "title": "Person",
+      "type": "object"
+    },
+    "Priority": {
+      "additionalProperties": false,
+      "properties": {
+        "rubric_version": {
+          "title": "Rubric Version",
+          "type": "string"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Score"
+        },
+        "coverage": {
+          "title": "Coverage",
+          "type": "number"
+        },
+        "possible_range": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Possible Range",
+          "type": "array"
+        },
+        "band": {
+          "enum": [
+            "high",
+            "medium",
+            "low",
+            "Needs research"
+          ],
+          "title": "Band",
+          "type": "string"
+        },
+        "provisional": {
+          "title": "Provisional",
+          "type": "boolean"
+        },
+        "components": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Component"
+          },
+          "title": "Components",
+          "type": "object"
+        }
+      },
+      "required": [
+        "rubric_version",
+        "score",
+        "coverage",
+        "possible_range",
+        "band",
+        "provisional",
+        "components"
+      ],
+      "title": "Priority",
+      "type": "object"
+    },
+    "Research": {
+      "additionalProperties": false,
+      "properties": {
+        "company": {
+          "title": "Company",
+          "type": "string"
+        },
+        "domain": {
+          "title": "Domain",
+          "type": "string"
+        },
+        "identity": {
+          "enum": [
+            "confirmed",
+            "ambiguous",
+            "unconfirmed"
+          ],
+          "title": "Identity",
+          "type": "string"
+        },
+        "eligibility": {
+          "enum": [
+            "eligible",
+            "ineligible",
+            "unknown"
+          ],
+          "title": "Eligibility",
+          "type": "string"
+        },
+        "eligibility_reason": {
+          "title": "Eligibility Reason",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Observation"
+          },
+          "maxItems": 30,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "people": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Person"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "People"
+        },
+        "problem_hypothesis": {
+          "minLength": 20,
+          "title": "Problem Hypothesis",
+          "type": "string"
+        },
+        "cgs_relevance": {
+          "minLength": 20,
+          "title": "Cgs Relevance",
+          "type": "string"
+        },
+        "alternative_explanation": {
+          "minLength": 20,
+          "title": "Alternative Explanation",
+          "type": "string"
+        },
+        "confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Confidence",
+          "type": "string"
+        },
+        "unanswered_questions": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Unanswered Questions",
+          "type": "array"
+        },
+        "conflicts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Conflicts",
+          "type": "array"
+        },
+        "components": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Component"
+          },
+          "title": "Components",
+          "type": "object"
+        },
+        "suggested_next_investigation": {
+          "minLength": 10,
+          "title": "Suggested Next Investigation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "company",
+        "domain",
+        "identity",
+        "eligibility",
+        "eligibility_reason",
+        "evidence",
+        "problem_hypothesis",
+        "cgs_relevance",
+        "alternative_explanation",
+        "confidence",
+        "unanswered_questions",
+        "conflicts",
+        "components",
+        "suggested_next_investigation"
+      ],
+      "title": "Research",
+      "type": "object"
+    },
+    "Review": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "enum": [
+            "Needs research",
+            "Ready for review",
+            "Approved for handoff",
+            "Deferred",
+            "Rejected"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "reviewer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reviewer"
+        },
+        "reviewed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reviewed At"
+        },
+        "notes": {
+          "default": "",
+          "title": "Notes",
+          "type": "string"
+        },
+        "minutes": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Minutes",
+          "type": "number"
+        },
+        "source_support_checked": {
+          "default": false,
+          "title": "Source Support Checked",
+          "type": "boolean"
+        },
+        "role_accuracy_checked": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role Accuracy Checked"
+        }
+      },
+      "required": [
+        "decision"
+      ],
+      "title": "Review",
+      "type": "object"
+    },
+    "Source": {
+      "additionalProperties": false,
+      "properties": {
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "url": {
+          "title": "Url",
+          "type": "string"
+        },
+        "retrieved_at": {
+          "format": "date-time",
+          "title": "Retrieved At",
+          "type": "string"
+        },
+        "content": {
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "url",
+        "retrieved_at",
+        "content"
+      ],
+      "title": "Source",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "lead_id": {
+      "title": "Lead Id",
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "live",
+        "synthetic"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "approval_basis": {
+      "default": "pending",
+      "enum": [
+        "pending",
+        "mock",
+        "cgs"
+      ],
+      "title": "Approval Basis",
+      "type": "string"
+    },
+    "research_method": {
+      "default": "agent",
+      "enum": [
+        "agent",
+        "manual_public_web",
+        "synthetic_fixture"
+      ],
+      "title": "Research Method",
+      "type": "string"
+    },
+    "problem_brief_id": {
+      "title": "Problem Brief Id",
+      "type": "string"
+    },
+    "problem_brief_version": {
+      "title": "Problem Brief Version",
+      "type": "string"
+    },
+    "research": {
+      "$ref": "#/$defs/Research"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/Source"
+      },
+      "title": "Sources",
+      "type": "array"
+    },
+    "priority": {
+      "$ref": "#/$defs/Priority"
+    },
+    "validation_issues": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Validation Issues",
+      "type": "array"
+    },
+    "research_gaps": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Research Gaps",
+      "type": "array"
+    },
+    "review": {
+      "$ref": "#/$defs/Review"
+    }
+  },
+  "required": [
+    "run_id",
+    "lead_id",
+    "mode",
+    "problem_brief_id",
+    "problem_brief_version",
+    "research",
+    "sources",
+    "priority",
+    "validation_issues",
+    "review"
+  ],
+  "title": "Lead",
+  "type": "object"
+}

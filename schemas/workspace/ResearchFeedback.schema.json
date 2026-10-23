@@ -1,0 +1,110 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "feedback_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Feedback Id",
+      "type": "string"
+    },
+    "opportunity_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Opportunity Id",
+      "type": "string"
+    },
+    "consultant_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Consultant Id",
+      "type": "string"
+    },
+    "theme_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Theme Id",
+      "type": "string"
+    },
+    "theme_version": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Theme Version",
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "worth_exploring",
+        "research_further",
+        "defer"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "reason_code": {
+      "enum": [
+        "relevant_signal",
+        "evidence_gap",
+        "service_mismatch",
+        "already_owned",
+        "timing",
+        "duplicate",
+        "other"
+      ],
+      "title": "Reason Code",
+      "type": "string"
+    },
+    "scope": {
+      "enum": [
+        "opportunity",
+        "theme",
+        "consultant",
+        "cgs"
+      ],
+      "title": "Scope",
+      "type": "string"
+    },
+    "comment": {
+      "default": "",
+      "maxLength": 4000,
+      "title": "Comment",
+      "type": "string"
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+    },
+    "review_minutes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Review Minutes"
+    }
+  },
+  "required": [
+    "feedback_id",
+    "opportunity_id",
+    "consultant_id",
+    "theme_id",
+    "theme_version",
+    "outcome",
+    "reason_code",
+    "scope",
+    "recorded_at"
+  ],
+  "title": "ResearchFeedback",
+  "type": "object"
+}

@@ -1,0 +1,405 @@
+{
+  "$defs": {
+    "Brief": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "brief_id": {
+          "title": "Brief Id",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        },
+        "capability": {
+          "minLength": 10,
+          "title": "Capability",
+          "type": "string"
+        },
+        "problem": {
+          "minLength": 20,
+          "title": "Problem",
+          "type": "string"
+        },
+        "industry": {
+          "title": "Industry",
+          "type": "string"
+        },
+        "geography": {
+          "title": "Geography",
+          "type": "string"
+        },
+        "signals": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Signals",
+          "type": "array"
+        },
+        "exclusions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Exclusions",
+          "type": "array"
+        },
+        "excluded_domains": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Excluded Domains",
+          "type": "array"
+        },
+        "buyer_roles": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Buyer Roles",
+          "type": "array"
+        },
+        "acceptable_sources": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Acceptable Sources",
+          "type": "array"
+        },
+        "signal_max_age_days": {
+          "default": 365,
+          "maximum": 1825,
+          "minimum": 1,
+          "title": "Signal Max Age Days",
+          "type": "integer"
+        },
+        "role_max_age_days": {
+          "default": 180,
+          "maximum": 730,
+          "minimum": 1,
+          "title": "Role Max Age Days",
+          "type": "integer"
+        },
+        "approved_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approved By"
+        },
+        "approved_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approved At"
+        },
+        "approval_basis": {
+          "default": "pending",
+          "enum": [
+            "pending",
+            "mock",
+            "cgs"
+          ],
+          "title": "Approval Basis",
+          "type": "string"
+        },
+        "pipeline_owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pipeline Owner"
+        },
+        "missing_contact_owner": {
+          "default": "unconfirmed",
+          "enum": [
+            "identification",
+            "downstream",
+            "unconfirmed"
+          ],
+          "title": "Missing Contact Owner",
+          "type": "string"
+        }
+      },
+      "required": [
+        "brief_id",
+        "version",
+        "capability",
+        "problem",
+        "industry",
+        "geography",
+        "signals",
+        "exclusions",
+        "buyer_roles",
+        "acceptable_sources"
+      ],
+      "title": "Brief",
+      "type": "object"
+    },
+    "Dimension": {
+      "additionalProperties": false,
+      "properties": {
+        "weight": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Weight",
+          "type": "number"
+        },
+        "anchors": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Anchors",
+          "type": "object"
+        }
+      },
+      "required": [
+        "weight",
+        "anchors"
+      ],
+      "title": "Dimension",
+      "type": "object"
+    },
+    "Limits": {
+      "additionalProperties": false,
+      "properties": {
+        "searches": {
+          "default": 90,
+          "maximum": 150,
+          "minimum": 1,
+          "title": "Searches",
+          "type": "integer"
+        },
+        "extractions": {
+          "default": 150,
+          "maximum": 250,
+          "minimum": 1,
+          "title": "Extractions",
+          "type": "integer"
+        },
+        "model_calls": {
+          "default": 200,
+          "maximum": 300,
+          "minimum": 1,
+          "title": "Model Calls",
+          "type": "integer"
+        },
+        "tavily_credits": {
+          "default": 150,
+          "exclusiveMinimum": 0,
+          "maximum": 500,
+          "title": "Tavily Credits",
+          "type": "number"
+        },
+        "active_seconds": {
+          "default": 3600,
+          "exclusiveMinimum": 0,
+          "maximum": 7200,
+          "title": "Active Seconds",
+          "type": "number"
+        },
+        "model_requests_per_minute": {
+          "anyOf": [
+            {
+              "maximum": 60,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Requests Per Minute"
+        }
+      },
+      "title": "Limits",
+      "type": "object"
+    },
+    "Rubric": {
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "title": "Version",
+          "type": "string"
+        },
+        "dimensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Dimension"
+          },
+          "title": "Dimensions",
+          "type": "object"
+        },
+        "high_threshold": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "High Threshold",
+          "type": "number"
+        },
+        "medium_threshold": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Medium Threshold",
+          "type": "number"
+        },
+        "approved_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approved By"
+        },
+        "approved_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approved At"
+        },
+        "approval_basis": {
+          "default": "pending",
+          "enum": [
+            "pending",
+            "mock",
+            "cgs"
+          ],
+          "title": "Approval Basis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "dimensions",
+        "high_threshold",
+        "medium_threshold"
+      ],
+      "title": "Rubric",
+      "type": "object"
+    },
+    "Seed": {
+      "additionalProperties": false,
+      "properties": {
+        "company": {
+          "maxLength": 200,
+          "minLength": 2,
+          "title": "Company",
+          "type": "string"
+        },
+        "domain": {
+          "title": "Domain",
+          "type": "string"
+        }
+      },
+      "required": [
+        "company",
+        "domain"
+      ],
+      "title": "Seed",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "run_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Request Id",
+      "type": "string"
+    },
+    "consultant_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Consultant Id",
+      "type": "string"
+    },
+    "knowledge_version": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Knowledge Version",
+      "type": "string"
+    },
+    "brief": {
+      "$ref": "#/$defs/Brief"
+    },
+    "rubric": {
+      "$ref": "#/$defs/Rubric"
+    },
+    "companies": {
+      "items": {
+        "$ref": "#/$defs/Seed"
+      },
+      "maxItems": 30,
+      "minItems": 1,
+      "title": "Companies",
+      "type": "array"
+    },
+    "limits": {
+      "$ref": "#/$defs/Limits"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "request_id",
+    "consultant_id",
+    "knowledge_version",
+    "brief",
+    "rubric",
+    "companies",
+    "limits",
+    "created_at"
+  ],
+  "title": "ResearchTask",
+  "type": "object"
+}

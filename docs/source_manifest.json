@@ -1,0 +1,282 @@
+{
+  "qualification_commit": "3a3efbb79796ab87efe626f86c269ddf7006e3e8",
+  "qualification": [
+    {
+      "source": "DEMO_GUIDE_ZH.md",
+      "target": "docs/upstream/qualification/DEMO_GUIDE_ZH.md",
+      "git_blob": "cb8da83012175989a696ff1404a40bac0cff8989",
+      "sha256": "7b1f1c22d1908f5c3877a4734fdf1fb86d768bf3146f9a44487ebcd28cf8441e"
+    },
+    {
+      "source": "README.md",
+      "target": "docs/upstream/qualification/README.md",
+      "git_blob": "9fc41c666cdc6865b63e18409a7b00586e844c26",
+      "sha256": "c0e51b0a7114cae42d68bce48de19c1bda40dce96131d1dd9681ab2b9daf00b0"
+    },
+    {
+      "source": "Start CGS.command",
+      "target": "docs/upstream/qualification/Start CGS.command",
+      "git_blob": "91920993407c15931d9de89565f5bdf0f2eb5e63",
+      "sha256": "55f4bd9417750653f12ebb452d5414bd5c8d55e811d9d77db99254a52a31b5a1"
+    },
+    {
+      "source": "backend/__init__.py",
+      "target": "backend/__init__.py",
+      "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "backend/agents.py",
+      "target": "backend/agents.py",
+      "git_blob": "a507ec78e33a9b845d513e79da1ab6fef0858973",
+      "sha256": "beda1ad56928958259750cf61e766260ccc796d82e29b25b4c5fe91249118640"
+    },
+    {
+      "source": "backend/rules.py",
+      "target": "backend/rules.py",
+      "git_blob": "2f4e11a4ece3e40cdc70125fd1646a1423e84183",
+      "sha256": "71b21ace5b2ffc14959603d4e2a96da4d41d8a8c57860e2199a3fed5649504d6"
+    },
+    {
+      "source": "data/rules.json",
+      "target": "data/rules.json",
+      "git_blob": "d4b661d6cf471368281bf72cef38630b961b6a6b",
+      "sha256": "bdac7fa468daf51dfcc9b636a486b8959475c900420ab25976e7b02cccc6fc19"
+    },
+    {
+      "source": "data/seed.json",
+      "target": "data/seed.json",
+      "git_blob": "92cf4a557de8eacb8e59fda8de9487e7e7a4d7d0",
+      "sha256": "72ec26511bea9d7176af3e9aecacfac1be76a43e0b4976032bdde728a684ae3e"
+    },
+    {
+      "source": "dist/app.js",
+      "target": "dist/app.js",
+      "git_blob": "ae915a774f8724e4bb49970956865c545a1ba622",
+      "sha256": "86286a2162fac437a27d4376c968d8080353e97a266f483d8389d5161a4e7073"
+    },
+    {
+      "source": "dist/engine.js",
+      "target": "dist/engine.js",
+      "git_blob": "1d48c96ba2343294479fa0cd0f3e815d805ec679",
+      "sha256": "30a670d4c47bd559b2c9c5d2cbc6d499749e8d66f074e23ec8fba45c8c85c2bc"
+    },
+    {
+      "source": "dist/index.html",
+      "target": "dist/index.html",
+      "git_blob": "bddc52c84f2ce52e8687971bd20e7fb890feb3bb",
+      "sha256": "df2698446ae665b1ab9c586ef966aa21c772806e79cc6970ac777d7474aebfd9"
+    },
+    {
+      "source": "dist/styles.css",
+      "target": "dist/styles.css",
+      "git_blob": "da08c8408e383c52a4ba15bfcbd6934133727e5f",
+      "sha256": "784bdb8dcc711e635ac213d5d46d828bc0f6708222e32080044e17f2a82ddd2f"
+    },
+    {
+      "source": "docs/API.md",
+      "target": "docs/API.md",
+      "git_blob": "4fe57a5599d1bf522146924ea259a9aa9e0696be",
+      "sha256": "ff473890dd5e6252699e3eee54b4ac61e90c20a8cf1070cc97dc3953d7f7192b"
+    },
+    {
+      "source": "server.py",
+      "target": "server.py",
+      "git_blob": "79c2cd77c7be0bb5f5183259128842f71159b025",
+      "sha256": "98b05ac4f0713cdf9c604ad2535577774376060cf8589fb118f192f3372e31de"
+    },
+    {
+      "source": "test/rules.test.cjs",
+      "target": "test/rules.test.cjs",
+      "git_blob": "fdbeb4e3f0ea12148b79eef6b8100276619dda17",
+      "sha256": "e452334c80c6dfb0f818fb9dccfa63273ac2c63dae659fcb3a005fcf863628ca"
+    },
+    {
+      "source": "tests/test_backend.py",
+      "target": "tests/qualification/test_backend.py",
+      "git_blob": "39fadc7a4a16effe56820d2ac1c3000d34809a60",
+      "sha256": "b9d945579561ccdc7bd7e26a8b4d9d2733b75f4d4fa8677f84a28092be537858"
+    }
+  ],
+  "research": [
+    {
+      "source": "lead_agent/assessment.py",
+      "target": "lead_agent/assessment.py",
+      "sha256": "39cfe6caf1bdfa852c85f58621b013a470aecf6021fb0c26575888d9abfa0b49"
+    },
+    {
+      "source": "lead_agent/consume.py",
+      "target": "lead_agent/consume.py",
+      "sha256": "92416f4d3af20d195e4698f4655a2c43ecd0b11e5174cf789554a5f8f5c93a78"
+    },
+    {
+      "source": "lead_agent/demo.py",
+      "target": "lead_agent/demo.py",
+      "sha256": "45cfc124769c9bffda08db37f3e5ddd1de8dd12099cc3c75aeedc3dedfc8230a"
+    },
+    {
+      "source": "lead_agent/evidence.py",
+      "target": "lead_agent/evidence.py",
+      "sha256": "517ba92c9bf9288672f80f8f3913d2d4f74af4bc508d3f50488dd9bcc61f50f0"
+    },
+    {
+      "source": "lead_agent/exporting.py",
+      "target": "lead_agent/exporting.py",
+      "sha256": "7961451baa8daba59444e22b6dc9a0c04960fb541228cee3708a588d1f6838de"
+    },
+    {
+      "source": "lead_agent/models.py",
+      "target": "lead_agent/models.py",
+      "sha256": "32fcb716d2b68322011e8717b2d9841599a5714a2391f7c901af8610d0145d8e"
+    },
+    {
+      "source": "lead_agent/providers.py",
+      "target": "lead_agent/providers.py",
+      "sha256": "a0528b1951082d0265809360a452316200e0e63febbd7df603b22fb438bda042"
+    },
+    {
+      "source": "lead_agent/public_examples.py",
+      "target": "lead_agent/public_examples.py",
+      "sha256": "ce69a190be80d5ce49d50c79fc37ef1912d358f680ad3f536db27f041c25fb24"
+    },
+    {
+      "source": "lead_agent/storage.py",
+      "target": "lead_agent/storage.py",
+      "sha256": "53bf73483c03040c098fbfedd1400872d00f34959c0f0e0828e2e5d91c4bb904"
+    },
+    {
+      "source": "lead_agent/worker.py",
+      "target": "lead_agent/worker.py",
+      "sha256": "f4ca2d6841bbdb6b5c259c6b80a349a0d96a5d3c2fc422562bc9da22b014c377"
+    },
+    {
+      "source": "lead_agent/__init__.py",
+      "target": "lead_agent/__init__.py",
+      "sha256": "d067abc1a832acdd9bad5762ac89be443e8161ca2d13b4c555006650377169f3"
+    },
+    {
+      "source": "config/problem_brief.json",
+      "target": "config/problem_brief.json",
+      "sha256": "5b0eb709c73c71902800948916b5d9cac6fe1037f4fd9d89856ded7ba898a772"
+    },
+    {
+      "source": "config/rubric.json",
+      "target": "config/rubric.json",
+      "sha256": "e428cc1cbcf2335ede93fcdc21ca020db3ab62f654278abb546995511c67944b"
+    },
+    {
+      "source": "schemas/lead.schema.json",
+      "target": "schemas/lead.schema.json",
+      "sha256": "9a1f0dc315755162e23e13eecacad6631173ab8f1faa35a32877357496c1f385"
+    },
+    {
+      "source": "schemas/problem_brief.schema.json",
+      "target": "schemas/problem_brief.schema.json",
+      "sha256": "c5792c370524a9b40e4ad1200d107fcc91203da7cf1fb88c046f946f518bafa2"
+    },
+    {
+      "source": "schemas/rubric.schema.json",
+      "target": "schemas/rubric.schema.json",
+      "sha256": "9eea49f76f0408be0d11b628e704cfce5317cd966b37e73baa1ec441a714cc44"
+    },
+    {
+      "source": "tests/conftest.py",
+      "target": "tests/research/conftest.py",
+      "sha256": "5205080a3b2826ea801af1a5363c4ec051adca7c64ed2f9867b88c94b9bd695e"
+    },
+    {
+      "source": "tests/test_app_and_contract.py",
+      "target": "tests/research/test_app_and_contract.py",
+      "sha256": "3f002e2475451cbd97105b521e47bc5d36c8f1ecd58225f3faaaa164e80c6220"
+    },
+    {
+      "source": "tests/test_evidence_binding.py",
+      "target": "tests/research/test_evidence_binding.py",
+      "sha256": "1a9eb01bd99fe3273d6abc863e9c7598fff459c42bc6783c7aef9589dd0a631b"
+    },
+    {
+      "source": "tests/test_five_company_workflow.py",
+      "target": "tests/research/test_five_company_workflow.py",
+      "sha256": "3a86b87d2088463382486bb3d9419d1281d8d81c4cbb1cbf2671e4d0d265d86a"
+    },
+    {
+      "source": "tests/test_identification.py",
+      "target": "tests/research/test_identification.py",
+      "sha256": "2eed9b19b16bbedc29f2e1f0df2c6f5410ed56c28483d2200a8045172ac7fc3f"
+    },
+    {
+      "source": "tests/test_roles_and_limits.py",
+      "target": "tests/research/test_roles_and_limits.py",
+      "sha256": "bd4c5637f93dce3f95f8fa6506360c76fb34ba444bd99b156c69b06c40515684"
+    },
+    {
+      "source": "third_party/Fire_Enrich_LICENSE.txt",
+      "target": "third_party/Fire_Enrich_LICENSE.txt",
+      "sha256": "1a6d176793ec65c279c400a32e43e5a878edb610cf03e3ed1d8c42bfbb6acaa6"
+    },
+    {
+      "source": "third_party/LangChain_LICENSE.txt",
+      "target": "third_party/LangChain_LICENSE.txt",
+      "sha256": "3e59c42ab270acb08f4746a2d9025146895d11f38b3ca7ee415a27bcfa05ae40"
+    },
+    {
+      "source": "third_party/Tavily_Company_Researcher_LICENSE.txt",
+      "target": "third_party/Tavily_Company_Researcher_LICENSE.txt",
+      "sha256": "346c1f12b122966620a2a62240a88bf06807e52b269a92a75511caf1eaba91c2"
+    },
+    {
+      "source": "README.md",
+      "target": "docs/upstream/research/README.md",
+      "sha256": "ed3168306f45a29d185ed8f4d3c812e07554b35b699fc75714e1c11329441b6e"
+    },
+    {
+      "source": "VERIFICATION.md",
+      "target": "docs/upstream/research/VERIFICATION.md",
+      "sha256": "87090c335c22c74a36e325eed7cb7b9b8261b4ea7b5128d9b254fbc06c110aba"
+    },
+    {
+      "source": "IMPLEMENTATION_STATUS.md",
+      "target": "docs/upstream/research/IMPLEMENTATION_STATUS.md",
+      "sha256": "c25f34f05f018e7ff5804213229b0b4261019cc983e6d7f463a880966ca7e4aa"
+    },
+    {
+      "source": "requirements.lock",
+      "target": "docs/upstream/research/requirements.lock",
+      "sha256": "465578aefffdf856d59eae98f525194559700942502f65c54be9ad6d48772e78"
+    },
+    {
+      "source": "ATTRIBUTION.md",
+      "target": "ATTRIBUTION.md",
+      "sha256": "dbd4d8921df0773804a9dcdd2590787b37029f88055c27a0f4e2909baab8daaf"
+    },
+    {
+      "source": "examples/seed_companies.csv",
+      "target": "examples/seed_companies.csv",
+      "sha256": "a8dfcc700c7ff8f89fd5adc0ba7a5fc19564e6ce4990cab9119af8af92859304"
+    },
+    {
+      "source": "app.py",
+      "target": "app.py",
+      "sha256": "51a92ef2caa24557c7c3fc570eb1546d1f48c4e608afbcf2e43db22f5db00510"
+    }
+  ],
+  "local_adjustments": [
+    "Research test ROOT changes from parents[1] to parents[2] after moving tests into tests/research.",
+    "app.py is retained only as the historical Streamlit regression entry; the integrated entry point is workspace.py.",
+    "P1: lead_agent/storage.py extracts _create_run(db, payload) so the service can atomically persist the run, request idempotency, task snapshot and execution lease. Original sibling source is unchanged.",
+    "P1: lead_agent/worker.py uses the existing provider-key redaction for saved run errors as well as events. Original sibling source is unchanged.",
+    "Hashes above describe upstream baselines, not these documented local changes. P1 service, HTTP handler, tests and documentation are new integrated-workspace files.",
+    "P2: dist/index.html loads research.js and updates the workspace title; dist/app.js adds research navigation and scopes qualification labels; dist/styles.css adds research layout styles. Their hashes above remain upstream baselines.",
+    "P2: backend/opportunity_service.py, dist/research.js and tests/p2 are new. Integration-only research_http.py and workspace_runtime.py attach opportunity persistence/routes. The original qualification server and rules are unchanged.",
+    "P3: new backend/handoff_service.py and tests/p3 implement explicit acceptance and contact lifecycle. Cases, receipts, opportunity mappings and request idempotency commit in one qualification DB transaction; research is read-only during acceptance.",
+    "P3: server.py adds case_today for received research cases, contactStatus on client reply and a missing-contact outreach guard. Existing sample clocks, qualification rules and agent code remain in place. The server.py hash above is the unchanged upstream baseline, not the integrated file hash.",
+    "P3: integrated research routes, opportunity summaries, startup flags and UI add handoff inbox/receipts, no-contact handling and human contact-stage records. Existing P2 HTTP/browser checks now cover the P3 routes as well.",
+    "P4: new theme_store.py and orchestrator_service.py persist scoped feedback reviews, manual/AI proposals, human decisions and immutable approved direction versions. Shared and personal direction heads are explicit; rubric/config import files are not rewritten.",
+    "P4: integrated ResearchService resolves the effective consultant direction and checks its version in the task transaction. Worker seed searches and expansion searches now use the approved direction while retaining the 500-character search limit.",
+    "P4: nine maintained documentation files were translated to English; upstream source archives remain byte-identical. AGENTS.md records English engineering files and Chinese user communication.",
+    "P4: orchestration routes/configuration, UI and isolated test helpers were extended; no changes were made to original sibling research, qualification rules or the upstream repository.",
+    "P5: demo.py, demo_providers.py and demo_workflow.py add an explicitly selected synthetic two-round rehearsal in separate databases, without .env or external calls. Worker card creation now preserves the saved run mode; default live behavior is unchanged. Integrated HTTP/runtime attach explicit demo metadata and providers; qualification demo mode is locked in a subclass. UI adds offline labels/company selectors and coalesces overlapping refreshes. Upstream baseline hashes and sibling sources remain unchanged.",
+    "Authorized discovery follow-up: lead_agent/worker.py retrieves up to two pages per problem search within existing web budgets, rejects invalid nonseed research before persistence, counts only validated cards toward discovery targets and offers bounded finish repair. Seed placeholders remain supported. tests/research/test_discovery_execution_guards.py verifies these constraints. No model, provider credentials, qualification logic or sibling sources were changed; upstream hashes above remain baselines.",
+    "Authorized staged discovery follow-up: new lead_agent/discovery.py adds versioned stages and a persisted, grounded candidate queue, dispatched by Worker for new_discovery_payload. Shared prepared research instructions move to research_prompt.py without changing seed behavior. Worker.search can skip automatic retrieval for stage-owned source selection; LiveProviders.discovery makes small stage-specific structured requests with the same configured model. New tests/research/test_staged_discovery.py covers the staged core. Existing UI/API seed behavior, qualification rules, sibling sources and upstream baseline hashes are retained. After the single live trial, malformed adapter responses were added to the per-company attempt count; this correction passed offline regression only and did not trigger another live call."
+  ]
+}

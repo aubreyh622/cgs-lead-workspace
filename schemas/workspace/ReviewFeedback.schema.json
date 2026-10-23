@@ -1,0 +1,58 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Request Id",
+      "type": "string"
+    },
+    "consultant_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Consultant Id",
+      "type": "string"
+    },
+    "scope": {
+      "enum": [
+        "theme",
+        "consultant",
+        "cgs"
+      ],
+      "title": "Scope",
+      "type": "string"
+    },
+    "feedback_ids": {
+      "items": {
+        "maxLength": 160,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 20,
+      "minItems": 1,
+      "title": "Feedback Ids",
+      "type": "array"
+    },
+    "base_theme_version": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Base Theme Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "consultant_id",
+    "scope",
+    "feedback_ids",
+    "base_theme_version"
+  ],
+  "title": "ReviewFeedback",
+  "type": "object"
+}
