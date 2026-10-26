@@ -8,6 +8,9 @@ The v2 backend joins three things into one product: the Step 1–8 prototype, Au
 |---|---|---|---|
 | 1 | Route | Build on Aubrey's backend; add Linda's rules; follow Linda's P0–P3 order | 26 Oct 2026 |
 | 2 | Framework | FastAPI, replacing the hand-written standard-library server for new endpoints | 26 Oct 2026 |
+| 3 | Database | SQLite through SQLAlchemy; switch to PostgreSQL later with one setting | 26 Oct 2026 |
+| — | Order of work | Backend first, with all tests and agents working; merge with the UI last | 26 Oct 2026 |
+| — | Who decides | Technical choices follow the recommendation and are recorded here; product choices go to Mikey | 26 Oct 2026 |
 
 ## Plan
 
@@ -15,12 +18,12 @@ The v2 backend joins three things into one product: the Step 1–8 prototype, Au
 |---|---|---|
 | 1 | Choose the route | Done |
 | 2 | FastAPI app, settings (APP_MODE, CRM_MODE), rules engine over HTTP, frontend served at `/` | Done |
-| 3 | One database whose tables match the v2 data model | Next |
-| 4 | P0: Step 4 and Step 8 decisions, stale packs, audit trail, all through the API, with tests | |
-| 5 | Frontend calls the API; offline demo still works without a server | |
-| 6 | P1: real evidence extraction and scoring proposals (A2/A3) with quote validation | |
-| 7 | P2: real discovery and research (Steps 1–3), outreach drafts (A1), next actions (A4), stall monitor | |
-| 8 | P3: Insightly and mail adapters, after CGS grants access | |
+| 3 | One database whose 20 tables match the v2 data model; demo seed; read endpoints (see DATABASE.md) | Done |
+| 4 | P0: every human action through the API (Step 4 and 8 decisions, evidence review, tasks, packs, feedback, direction approvals), with tests | Next |
+| 5 | P1: real evidence extraction and scoring proposals (A2/A3) with quote validation | |
+| 6 | P2: real discovery and research (Steps 1–3), outreach drafts (A1), next actions (A4), stall monitor | |
+| 7 | P3: Insightly and mail adapters, after CGS grants access | |
+| 8 | Merge with the UI: the prototype calls the API; offline demo still works without a server | |
 
 ## Run it (Windows)
 
@@ -30,7 +33,11 @@ The v2 backend joins three things into one product: the Step 1–8 prototype, Au
 
 From a terminal: `python -m api.main`. Tests: `python -m pytest -q` (the old P0–P5 suites plus `tests/v2`).
 
-## Endpoints in step 2
+## Endpoints
+
+Step 3 adds read endpoints: `GET /api/opportunities` (filter by stage or owner), `GET /api/opportunities/{id}`, `GET /api/companies/{id}/opportunities`, `GET /api/candidates`, `GET /api/direction`, `GET /api/feedback`, `GET /api/agent-runs`, `GET /api/stats`, and `POST /api/demo/reset` (demo mode only).
+
+### Step 2
 
 | Method | Path | Purpose |
 |---|---|---|

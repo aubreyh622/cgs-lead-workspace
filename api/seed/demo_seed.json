@@ -1,0 +1,2292 @@
+{
+ "today": "2026-10-26",
+ "me": "Alex Morgan",
+ "owners": [
+  "Alex Morgan",
+  "Sarah Patel",
+  "Daniel Brooks",
+  "Quinn Harper"
+ ],
+ "direction": {
+  "version": "v3",
+  "approvedOn": "2026-10-19",
+  "approvedBy": "Alex Morgan",
+  "basis": "mock",
+  "problem": "US manufacturers facing AI or digital operating-model change after a merger, product expansion or new technology leadership.",
+  "signals": [
+   "Merger or acquisition in the last 12 months",
+   "AI pilots that have not scaled",
+   "New digital or transformation leader",
+   "Product or plant expansion"
+  ],
+  "buyer_roles": [
+   "Chief Digital Officer",
+   "Chief Information Officer",
+   "Chief Strategy Officer",
+   "Head of Transformation",
+   "VP Operations",
+   "IT Manager"
+  ],
+  "exclusions": [
+   "Consulting firms and resellers",
+   "Companies with an active CGS engagement"
+  ],
+  "excluded_domains": [
+   "graniteridge.example"
+  ]
+ },
+ "versions": [
+  {
+   "v": "v3",
+   "scope": "Shared",
+   "on": "19 Oct 2026",
+   "by": "Alex Morgan",
+   "change": "Added “Product or plant expansion” as a signal"
+  },
+  {
+   "v": "v2",
+   "scope": "Shared",
+   "on": "8 Oct 2026",
+   "by": "Quinn Harper",
+   "change": "Excluded consulting firms and resellers"
+  },
+  {
+   "v": "v1",
+   "scope": "Shared",
+   "on": "1 Oct 2026",
+   "by": "Quinn Harper",
+   "change": "First research direction"
+  }
+ ],
+ "leads": [
+  {
+   "companyId": "halvorsen",
+   "oppTitle": "Digital baseline for the new Ohio foundry",
+   "team": "Digital operations",
+   "notes": [],
+   "proposals": [],
+   "evidence": [],
+   "tasks": [],
+   "suggestions": [],
+   "activity": [
+    {
+     "on": "2026-10-24",
+     "a": "h",
+     "t": "Accepted by Alex Morgan, rating 3"
+    },
+    {
+     "on": "2026-10-25",
+     "a": "a",
+     "t": "Outreach agent prepared a draft"
+    }
+   ],
+   "decisions": [],
+   "outreach": {
+    "status": "none"
+   },
+   "scores": {
+    "B": null,
+    "A": null,
+    "N": null,
+    "T": null,
+    "H": null,
+    "E": null
+   },
+   "conditions": {
+    "problem": null,
+    "fit": null,
+    "external": null,
+    "next": null,
+    "commercial": null,
+    "conflict": null
+   },
+   "blocker": null,
+   "revenue": null,
+   "problem": {
+    "team": "",
+    "process": "",
+    "problem": "",
+    "impact": "",
+    "target": "",
+    "service": ""
+   },
+   "source": {
+    "type": "ai",
+    "note": "AI recommendation, direction v2"
+   },
+   "version": "v2",
+   "lastProgress": "2026-10-24",
+   "sync": "local",
+   "id": "halvorsen",
+   "person": {
+    "name": "Priya Raman",
+    "title": "VP Digital Operations"
+   },
+   "company": {
+    "name": "Halvorsen Precision Castings",
+    "domain": "halvorsen-castings.example",
+    "industry": "Metal castings",
+    "hq": "Milwaukee, WI"
+   },
+   "stage": "identified",
+   "owner": "Alex Morgan",
+   "rating": 3,
+   "next": {
+    "action": "Review the outreach draft",
+    "due": "2026-10-28"
+   },
+   "attention": "Outreach draft ready",
+   "research": {
+    "facts": [
+     {
+      "id": "f1",
+      "text": "Halvorsen opened a third foundry in Ohio in August 2026.",
+      "src": "Company news",
+      "date": "21 Aug 2026"
+     }
+    ],
+    "hypothesis": "A new foundry may need a digital operations baseline.",
+    "relevance": "Relevant to CGS strategy and transformation planning.",
+    "alternative": "An internal team may already own this work.",
+    "unknowns": [
+     "Budget owner",
+     "Timing"
+    ],
+    "flags": [],
+    "priority": {
+     "tier": 3,
+     "tierWhy": "Mid-size manufacturer; scope not yet known",
+     "authority": "Director",
+     "authorityWhy": "Influences budget",
+     "relationship": "None",
+     "relationshipWhy": "No known connection",
+     "fit": "Moderate",
+     "fitWhy": "Matches 2 of 4 signals",
+     "confidence": "Medium"
+    },
+    "rec": {
+     "decision": "accept",
+     "reason": "Signals match the research direction."
+    },
+    "suggest": {
+     "owner": "Alex Morgan",
+     "next": "Send tailored outreach",
+     "due": "2026-10-30"
+    },
+    "usage": {
+     "searches": 4,
+     "pages": 6,
+     "calls": 3
+    }
+   }
+  },
+  {
+   "companyId": "bluegate",
+   "oppTitle": "Operating model for the ERP consolidation",
+   "team": "IT",
+   "notes": [],
+   "proposals": [],
+   "evidence": [],
+   "tasks": [],
+   "suggestions": [],
+   "activity": [
+    {
+     "on": "2026-10-20",
+     "a": "h",
+     "t": "Email sent by Alex Morgan"
+    }
+   ],
+   "decisions": [],
+   "outreach": {
+    "status": "sent",
+    "sentOn": "2026-10-20",
+    "via": "Email",
+    "subject": "ERP consolidation across Bluegate’s three sites"
+   },
+   "scores": {
+    "B": null,
+    "A": null,
+    "N": null,
+    "T": null,
+    "H": null,
+    "E": null
+   },
+   "conditions": {
+    "problem": null,
+    "fit": null,
+    "external": null,
+    "next": null,
+    "commercial": null,
+    "conflict": null
+   },
+   "blocker": null,
+   "revenue": null,
+   "problem": {
+    "team": "",
+    "process": "",
+    "problem": "",
+    "impact": "",
+    "target": "",
+    "service": ""
+   },
+   "source": {
+    "type": "ai",
+    "note": "AI recommendation, direction v2"
+   },
+   "version": "v2",
+   "lastProgress": "2026-10-20",
+   "sync": "local",
+   "id": "bluegate",
+   "person": {
+    "name": "Daniel Okafor",
+    "title": "Chief Information Officer"
+   },
+   "company": {
+    "name": "Bluegate Polymers",
+    "domain": "bluegate.example",
+    "industry": "Specialty polymers",
+    "hq": "Houston, TX"
+   },
+   "stage": "contacted",
+   "owner": "Alex Morgan",
+   "rating": 4,
+   "next": {
+    "action": "Send a follow-up if there is no reply",
+    "due": "2026-10-27"
+   },
+   "research": {
+    "facts": [
+     {
+      "id": "f1",
+      "text": "Bluegate announced an ERP consolidation program on 2 October 2026.",
+      "src": "Company press release",
+      "date": "2 Oct 2026"
+     }
+    ],
+    "hypothesis": "ERP consolidation may open a wider operating-model question.",
+    "relevance": "Relevant to CGS strategy and transformation planning.",
+    "alternative": "An internal team may already own this work.",
+    "unknowns": [
+     "Budget owner",
+     "Timing"
+    ],
+    "flags": [],
+    "priority": {
+     "tier": 4,
+     "tierWhy": "Mid-size manufacturer; scope not yet known",
+     "authority": "C-level",
+     "authorityWhy": "Influences budget",
+     "relationship": "None",
+     "relationshipWhy": "No known connection",
+     "fit": "Moderate",
+     "fitWhy": "Matches 2 of 4 signals",
+     "confidence": "Medium"
+    },
+    "rec": {
+     "decision": "accept",
+     "reason": "Signals match the research direction."
+    },
+    "suggest": {
+     "owner": "Alex Morgan",
+     "next": "Send tailored outreach",
+     "due": "2026-10-30"
+    },
+    "usage": {
+     "searches": 4,
+     "pages": 6,
+     "calls": 3
+    }
+   }
+  },
+  {
+   "companyId": "summit",
+   "oppTitle": "Outreach preparation",
+   "team": "Transformation office",
+   "notes": [],
+   "proposals": [],
+   "evidence": [],
+   "tasks": [],
+   "suggestions": [],
+   "activity": [
+    {
+     "on": "2026-10-12",
+     "a": "h",
+     "t": "LinkedIn message sent by Sarah Patel"
+    }
+   ],
+   "decisions": [],
+   "outreach": {
+    "status": "sent",
+    "sentOn": "2026-10-12",
+    "via": "LinkedIn message",
+    "subject": "Transformation priorities for 2027"
+   },
+   "scores": {
+    "B": null,
+    "A": null,
+    "N": null,
+    "T": null,
+    "H": null,
+    "E": null
+   },
+   "conditions": {
+    "problem": null,
+    "fit": null,
+    "external": null,
+    "next": null,
+    "commercial": null,
+    "conflict": null
+   },
+   "blocker": null,
+   "revenue": null,
+   "problem": {
+    "team": "",
+    "process": "",
+    "problem": "",
+    "impact": "",
+    "target": "",
+    "service": ""
+   },
+   "source": {
+    "type": "ai",
+    "note": "AI recommendation, direction v2"
+   },
+   "version": "v2",
+   "lastProgress": "2026-10-12",
+   "sync": "local",
+   "id": "summit",
+   "person": {
+    "name": "Nina Wilson",
+    "title": "Transformation Lead"
+   },
+   "company": {
+    "name": "Summit Energy",
+    "domain": "summit-energy.example",
+    "industry": "Energy equipment",
+    "hq": "Tulsa, OK"
+   },
+   "stage": "contacted",
+   "owner": "Sarah Patel",
+   "rating": 3,
+   "next": {
+    "action": "Send a follow-up",
+    "due": "2026-10-19"
+   },
+   "research": {
+    "facts": [
+     {
+      "id": "f1",
+      "text": "Summit Energy named a new transformation lead in July 2026.",
+      "src": "Company news",
+      "date": "9 Jul 2026"
+     }
+    ],
+    "hypothesis": "A new transformation lead may be setting priorities for 2027.",
+    "relevance": "Relevant to CGS strategy and transformation planning.",
+    "alternative": "An internal team may already own this work.",
+    "unknowns": [
+     "Budget owner",
+     "Timing"
+    ],
+    "flags": [],
+    "priority": {
+     "tier": 3,
+     "tierWhy": "Mid-size manufacturer; scope not yet known",
+     "authority": "Director",
+     "authorityWhy": "Influences budget",
+     "relationship": "None",
+     "relationshipWhy": "No known connection",
+     "fit": "Moderate",
+     "fitWhy": "Matches 2 of 4 signals",
+     "confidence": "Medium"
+    },
+    "rec": {
+     "decision": "accept",
+     "reason": "Signals match the research direction."
+    },
+    "suggest": {
+     "owner": "Alex Morgan",
+     "next": "Send tailored outreach",
+     "due": "2026-10-30"
+    },
+    "usage": {
+     "searches": 4,
+     "pages": 6,
+     "calls": 3
+    }
+   }
+  },
+  {
+   "companyId": "meridian",
+   "oppTitle": "Finance transformation",
+   "team": "Finance",
+   "notes": [],
+   "proposals": [],
+   "evidence": [
+    {
+     "key": "B",
+     "kind": "score",
+     "value": 4,
+     "quote": "Our project budget is approved and covers the initial consulting scope.",
+     "type": "client_statement",
+     "how": "accepted",
+     "on": "2026-10-14"
+    },
+    {
+     "key": "N",
+     "kind": "score",
+     "value": 4,
+     "quote": "Month-end reporting relies on manual reconciliations across four business units.",
+     "type": "client_statement",
+     "how": "accepted",
+     "on": "2026-10-14"
+    }
+   ],
+   "tasks": [
+    {
+     "id": "m1",
+     "title": "Confirm the decision-making group",
+     "side": "CGS",
+     "assignee": "Alex Morgan",
+     "due": "2026-10-21",
+     "status": "open"
+    },
+    {
+     "id": "m2",
+     "title": "Share a sample reporting workflow",
+     "side": "Client",
+     "assignee": "Emma Chen",
+     "due": "2026-10-20",
+     "status": "open"
+    }
+   ],
+   "suggestions": [],
+   "activity": [
+    {
+     "on": "2026-10-14",
+     "a": "h",
+     "t": "Reply recorded; stage set to Active"
+    }
+   ],
+   "decisions": [],
+   "outreach": {
+    "status": "none"
+   },
+   "scores": {
+    "B": 4,
+    "A": null,
+    "N": 4,
+    "T": 3,
+    "H": 5,
+    "E": 3
+   },
+   "conditions": {
+    "problem": true,
+    "fit": true,
+    "external": true,
+    "next": true,
+    "commercial": null,
+    "conflict": true
+   },
+   "blocker": null,
+   "revenue": {
+    "low": 600000,
+    "high": 800000
+   },
+   "problem": {
+    "team": "Finance team",
+    "process": "Month-end close",
+    "problem": "Reporting relies on manual reconciliations across four business units",
+    "impact": "Reporting delays",
+    "target": "Before the next operating-model review",
+    "service": "Finance operating-model redesign"
+   },
+   "source": {
+    "type": "ai",
+    "note": "AI recommendation, direction v2"
+   },
+   "version": "v2",
+   "lastProgress": "2026-10-14",
+   "sync": "local",
+   "id": "meridian",
+   "person": {
+    "name": "Emma Chen",
+    "title": "VP Finance"
+   },
+   "company": {
+    "name": "Meridian Industries",
+    "domain": "meridian-ind.example",
+    "industry": "Manufacturing",
+    "hq": "Cleveland, OH"
+   },
+   "stage": "active",
+   "owner": "Alex Morgan",
+   "rating": 4,
+   "next": {
+    "action": "Confirm the decision-making group",
+    "due": "2026-10-21"
+   },
+   "replyLabel": "need",
+   "research": {
+    "facts": [
+     {
+      "id": "f1",
+      "text": "Meridian announced a finance transformation office in September 2026.",
+      "src": "Company news",
+      "date": "15 Sep 2026"
+     }
+    ],
+    "hypothesis": "Finance transformation may need a target operating model.",
+    "relevance": "Relevant to CGS strategy and transformation planning.",
+    "alternative": "An internal team may already own this work.",
+    "unknowns": [
+     "Budget owner",
+     "Timing"
+    ],
+    "flags": [],
+    "priority": {
+     "tier": 4,
+     "tierWhy": "Mid-size manufacturer; scope not yet known",
+     "authority": "VP",
+     "authorityWhy": "Influences budget",
+     "relationship": "None",
+     "relationshipWhy": "No known connection",
+     "fit": "Moderate",
+     "fitWhy": "Matches 2 of 4 signals",
+     "confidence": "Medium"
+    },
+    "rec": {
+     "decision": "accept",
+     "reason": "Signals match the research direction."
+    },
+    "suggest": {
+     "owner": "Alex Morgan",
+     "next": "Send tailored outreach",
+     "due": "2026-10-30"
+    },
+    "usage": {
+     "searches": 4,
+     "pages": 6,
+     "calls": 3
+    }
+   }
+  },
+  {
+   "companyId": "cedarbay",
+   "oppTitle": "Supply chain assessment",
+   "team": "Operations",
+   "notes": [
+    {
+     "id": "n-cb",
+     "type": "Email",
+     "on": "2026-10-22",
+     "text": "Maya: Our project budget is approved and covers the initial scope. We shared the requested process maps with your team yesterday."
+    }
+   ],
+   "proposals": [
+    {
+     "id": "cb1",
+     "kind": "score",
+     "key": "B",
+     "value": 4,
+     "quote": "Our project budget is approved and covers the initial scope.",
+     "why": "Budget approval is now confirmed.",
+     "type": "client_statement",
+     "src": "n-cb",
+     "status": "pending"
+    }
+   ],
+   "evidence": [],
+   "tasks": [],
+   "suggestions": [],
+   "activity": [
+    {
+     "on": "2026-10-22",
+     "a": "a",
+     "t": "Evidence agent proposed Budget 3 → 4 from Maya’s email"
+    }
+   ],
+   "decisions": [],
+   "outreach": {
+    "status": "none"
+   },
+   "scores": {
+    "B": 3,
+    "A": 4,
+    "N": 4,
+    "T": 3,
+    "H": 3,
+    "E": 3
+   },
+   "conditions": {
+    "problem": true,
+    "fit": true,
+    "external": true,
+    "next": true,
+    "commercial": true,
+    "conflict": true
+   },
+   "blocker": null,
+   "revenue": {
+    "low": 500000,
+    "high": 700000
+   },
+   "problem": {
+    "team": "",
+    "process": "",
+    "problem": "",
+    "impact": "",
+    "target": "",
+    "service": ""
+   },
+   "source": {
+    "type": "ai",
+    "note": "AI recommendation, direction v2"
+   },
+   "version": "v2",
+   "lastProgress": "2026-10-22",
+   "sync": "local",
+   "id": "cedarbay",
+   "person": {
+    "name": "Maya Thompson",
+    "title": "Operations Director"
+   },
+   "company": {
+    "name": "Cedar Bay Logistics",
+    "domain": "cedarbay.example",
+    "industry": "Logistics",
+    "hq": "Savannah, GA"
+   },
+   "stage": "active",
+   "owner": "Sarah Patel",
+   "rating": 4,
+   "next": {
+    "action": "Review the new budget evidence",
+    "due": "2026-10-27"
+   },
+   "replyLabel": "need",
+   "research": {
+    "facts": [
+     {
+      "id": "f1",
+      "text": "Cedar Bay opened two distribution centers in 2026.",
+      "src": "Trade press",
+      "date": "3 Jun 2026"
+     }
+    ],
+    "hypothesis": "Network growth may need a planning model.",
+    "relevance": "Relevant to CGS strategy and transformation planning.",
+    "alternative": "An internal team may already own this work.",
+    "unknowns": [
+     "Budget owner",
+     "Timing"
+    ],
+    "flags": [],
+    "priority": {
+     "tier": 3,
+     "tierWhy": "Mid-size manufacturer; scope not yet known",
+     "authority": "Director",
+     "authorityWhy": "Influences budget",
+     "relationship": "None",
+     "relationshipWhy": "No known connection",
+     "fit": "Moderate",
+     "fitWhy": "Matches 2 of 4 signals",
+     "confidence": "Medium"
+    },
+    "rec": {
+     "decision": "accept",
+     "reason": "Signals match the research direction."
+    },
+    "suggest": {
+     "owner": "Alex Morgan",
+     "next": "Send tailored outreach",
+     "due": "2026-10-30"
+    },
+    "usage": {
+     "searches": 4,
+     "pages": 6,
+     "calls": 3
+    }
+   }
+  },
+  {
+   "companyId": "atlas",
+   "oppTitle": "Growth strategy review",
+   "team": "Strategy office",
+   "notes": [],
+   "proposals": [],
+   "evidence": [],
+   "tasks": [],
+   "suggestions": [],
+   "activity": [],
+   "decisions": [],
+   "outreach": {
+    "status": "none"
+   },
+   "scores": {
+    "B": 5,
+    "A": 5,
+    "N": 4,
+    "T": 5,
+    "H": 5,
+    "E": 3
+   },
+   "conditions": {
+    "problem": true,
+    "fit": true,
+    "external": false,
+    "next": true,
+    "commercial": true,
+    "conflict": true
+   },
+   "blocker": "NO_EXTERNAL_SUPPORT",
+   "revenue": {
+    "low": 1200000,
+    "high": 1500000
+   },
+   "problem": {
+    "team": "",
+    "process": "",
+    "problem": "",
+    "impact": "",
+    "target": "",
+    "service": ""
+   },
+   "source": {
+    "type": "ai",
+    "note": "AI recommendation, direction v2"
+   },
+   "version": "v2",
+   "lastProgress": "2026-10-19",
+   "sync": "local",
+   "id": "atlas",
+   "person": {
+    "name": "Sofia Reyes",
+    "title": "Strategy Director"
+   },
+   "company": {
+    "name": "Atlas Financial",
+    "domain": "atlas-fs.example",
+    "industry": "Financial services",
+    "hq": "Charlotte, NC"
+   },
+   "stage": "active",
+   "owner": "Daniel Brooks",
+   "rating": 5,
+   "next": {
+    "action": "Agree a future review trigger",
+    "due": "2026-11-06"
+   },
+   "replyLabel": "decline",
+   "research": {
+    "facts": [
+     {
+      "id": "f1",
+      "text": "Atlas froze discretionary spend for 2026.",
+      "src": "Earnings call",
+      "date": "30 Jul 2026"
+     }
+    ],
+    "hypothesis": "A spend freeze may lift in 2027.",
+    "relevance": "Relevant to CGS strategy and transformation planning.",
+    "alternative": "An internal team may already own this work.",
+    "unknowns": [
+     "Budget owner",
+     "Timing"
+    ],
+    "flags": [],
+    "priority": {
+     "tier": 3,
+     "tierWhy": "Mid-size manufacturer; scope not yet known",
+     "authority": "Director",
+     "authorityWhy": "Influences budget",
+     "relationship": "None",
+     "relationshipWhy": "No known connection",
+     "fit": "Moderate",
+     "fitWhy": "Matches 2 of 4 signals",
+     "confidence": "Medium"
+    },
+    "rec": {
+     "decision": "accept",
+     "reason": "Signals match the research direction."
+    },
+    "suggest": {
+     "owner": "Alex Morgan",
+     "next": "Send tailored outreach",
+     "due": "2026-10-30"
+    },
+    "usage": {
+     "searches": 4,
+     "pages": 6,
+     "calls": 3
+    }
+   }
+  },
+  {
+   "companyId": "alder",
+   "oppTitle": "Initial discovery",
+   "team": "Business development",
+   "notes": [],
+   "proposals": [],
+   "evidence": [],
+   "tasks": [],
+   "suggestions": [],
+   "activity": [],
+   "decisions": [],
+   "outreach": {
+    "status": "none"
+   },
+   "scores": {
+    "B": null,
+    "A": null,
+    "N": null,
+    "T": null,
+    "H": null,
+    "E": 1
+   },
+   "conditions": {
+    "problem": null,
+    "fit": null,
+    "external": null,
+    "next": null,
+    "commercial": null,
+    "conflict": true
+   },
+   "blocker": null,
+   "revenue": null,
+   "problem": {
+    "team": "",
+    "process": "",
+    "problem": "",
+    "impact": "",
+    "target": "",
+    "service": ""
+   },
+   "source": {
+    "type": "ai",
+    "note": "AI recommendation, direction v2"
+   },
+   "version": "v2",
+   "lastProgress": "2026-10-08",
+   "sync": "local",
+   "id": "alder",
+   "person": {
+    "name": "Oliver Kim",
+    "title": "Business Development Lead"
+   },
+   "company": {
+    "name": "Alder Biotech",
+    "domain": "alder-bio.example",
+    "industry": "Biotech",
+    "hq": "Boston, MA"
+   },
+   "stage": "active",
+   "owner": "Daniel Brooks",
+   "rating": 1,
+   "next": {
+    "action": "Confirm budget owner",
+    "due": "2026-10-30"
+   },
+   "replyLabel": "courtesy",
+   "research": {
+    "facts": [
+     {
+      "id": "f1",
+      "text": "Alder Biotech opened a pilot manufacturing site in 2026.",
+      "src": "Company news",
+      "date": "2 May 2026"
+     }
+    ],
+    "hypothesis": "Scale-up may need an operating plan.",
+    "relevance": "Relevant to CGS strategy and transformation planning.",
+    "alternative": "An internal team may already own this work.",
+    "unknowns": [
+     "Budget owner",
+     "Timing"
+    ],
+    "flags": [],
+    "priority": {
+     "tier": 3,
+     "tierWhy": "Mid-size manufacturer; scope not yet known",
+     "authority": "Director",
+     "authorityWhy": "Influences budget",
+     "relationship": "None",
+     "relationshipWhy": "No known connection",
+     "fit": "Moderate",
+     "fitWhy": "Matches 2 of 4 signals",
+     "confidence": "Medium"
+    },
+    "rec": {
+     "decision": "accept",
+     "reason": "Signals match the research direction."
+    },
+    "suggest": {
+     "owner": "Alex Morgan",
+     "next": "Send tailored outreach",
+     "due": "2026-10-30"
+    },
+    "usage": {
+     "searches": 4,
+     "pages": 6,
+     "calls": 3
+    }
+   }
+  },
+  {
+   "companyId": "harbour",
+   "oppTitle": "Customer experience strategy",
+   "team": "Customer experience",
+   "notes": [],
+   "proposals": [],
+   "evidence": [],
+   "tasks": [],
+   "suggestions": [],
+   "activity": [],
+   "decisions": [],
+   "outreach": {
+    "status": "none"
+   },
+   "scores": {
+    "B": 3,
+    "A": 3,
+    "N": 3,
+    "T": 2,
+    "H": 3,
+    "E": 2
+   },
+   "conditions": {
+    "problem": true,
+    "fit": true,
+    "external": true,
+    "next": null,
+    "commercial": true,
+    "conflict": true
+   },
+   "blocker": "PROJECT_DEFERRED",
+   "revenue": {
+    "low": 150000,
+    "high": 250000
+   },
+   "problem": {
+    "team": "",
+    "process": "",
+    "problem": "",
+    "impact": "",
+    "target": "",
+    "service": ""
+   },
+   "source": {
+    "type": "ai",
+    "note": "AI recommendation, direction v2"
+   },
+   "version": "v2",
+   "lastProgress": "2026-10-16",
+   "sync": "local",
+   "id": "harbour",
+   "person": {
+    "name": "Liam Davis",
+    "title": "Customer Experience Lead"
+   },
+   "company": {
+    "name": "Harbour Retail",
+    "domain": "harbour-retail.example",
+    "industry": "Retail",
+    "hq": "Portland, ME"
+   },
+   "stage": "active",
+   "owner": "Daniel Brooks",
+   "rating": 3,
+   "next": {
+    "action": "Agree a future review trigger",
+    "due": "2026-11-12"
+   },
+   "replyLabel": "defer",
+   "research": {
+    "facts": [
+     {
+      "id": "f1",
+      "text": "Harbour Retail delayed its store systems refresh to 2027.",
+      "src": "Earnings call",
+      "date": "8 Aug 2026"
+     }
+    ],
+    "hypothesis": "A delayed refresh may reopen next year.",
+    "relevance": "Relevant to CGS strategy and transformation planning.",
+    "alternative": "An internal team may already own this work.",
+    "unknowns": [
+     "Budget owner",
+     "Timing"
+    ],
+    "flags": [],
+    "priority": {
+     "tier": 3,
+     "tierWhy": "Mid-size manufacturer; scope not yet known",
+     "authority": "Director",
+     "authorityWhy": "Influences budget",
+     "relationship": "None",
+     "relationshipWhy": "No known connection",
+     "fit": "Moderate",
+     "fitWhy": "Matches 2 of 4 signals",
+     "confidence": "Medium"
+    },
+    "rec": {
+     "decision": "accept",
+     "reason": "Signals match the research direction."
+    },
+    "suggest": {
+     "owner": "Alex Morgan",
+     "next": "Send tailored outreach",
+     "due": "2026-10-30"
+    },
+    "usage": {
+     "searches": 4,
+     "pages": 6,
+     "calls": 3
+    }
+   }
+  },
+  {
+   "companyId": "northstar",
+   "oppTitle": "Operating model redesign",
+   "team": "Operations",
+   "notes": [],
+   "proposals": [],
+   "evidence": [],
+   "tasks": [],
+   "suggestions": [],
+   "activity": [
+    {
+     "on": "2026-10-23",
+     "a": "h",
+     "t": "Qualification pack submitted by Alex Morgan"
+    }
+   ],
+   "decisions": [],
+   "outreach": {
+    "status": "none"
+   },
+   "scores": {
+    "B": 4,
+    "A": 4,
+    "N": 4,
+    "T": 4,
+    "H": 2.5,
+    "E": 4
+   },
+   "conditions": {
+    "problem": true,
+    "fit": true,
+    "external": true,
+    "next": true,
+    "commercial": true,
+    "conflict": true
+   },
+   "blocker": null,
+   "revenue": {
+    "low": 600000,
+    "high": 600000
+   },
+   "problem": {
+    "team": "Operations leadership",
+    "process": "Regional service delivery",
+    "problem": "Five regions run different operating models",
+    "impact": "Costs and patient wait times vary widely",
+    "target": "A single model before the 2027 budget",
+    "service": "Operating-model redesign"
+   },
+   "source": {
+    "type": "ai",
+    "note": "AI recommendation, direction v2"
+   },
+   "version": "v2",
+   "lastProgress": "2026-10-23",
+   "sync": "local",
+   "id": "northstar",
+   "person": {
+    "name": "James Walker",
+    "title": "Chief Operating Officer"
+   },
+   "company": {
+    "name": "Northstar Health",
+    "domain": "northstar-health.example",
+    "industry": "Healthcare",
+    "hq": "Minneapolis, MN"
+   },
+   "stage": "approval",
+   "owner": "Alex Morgan",
+   "rating": 4,
+   "next": {
+    "action": "Awaiting qualification approval",
+    "due": "2026-10-28"
+   },
+   "replyLabel": "meet",
+   "research": {
+    "facts": [
+     {
+      "id": "f1",
+      "text": "Northstar merged two regional networks in 2026.",
+      "src": "Company press release",
+      "date": "14 May 2026"
+     }
+    ],
+    "hypothesis": "A merged network may need one operating model.",
+    "relevance": "Relevant to CGS strategy and transformation planning.",
+    "alternative": "An internal team may already own this work.",
+    "unknowns": [
+     "Budget owner",
+     "Timing"
+    ],
+    "flags": [],
+    "priority": {
+     "tier": 4,
+     "tierWhy": "Mid-size manufacturer; scope not yet known",
+     "authority": "C-level",
+     "authorityWhy": "Influences budget",
+     "relationship": "None",
+     "relationshipWhy": "No known connection",
+     "fit": "Moderate",
+     "fitWhy": "Matches 2 of 4 signals",
+     "confidence": "Medium"
+    },
+    "rec": {
+     "decision": "accept",
+     "reason": "Signals match the research direction."
+    },
+    "suggest": {
+     "owner": "Alex Morgan",
+     "next": "Send tailored outreach",
+     "due": "2026-10-30"
+    },
+    "usage": {
+     "searches": 4,
+     "pages": 6,
+     "calls": 3
+    }
+   }
+  },
+  {
+   "companyId": "kestrel",
+   "oppTitle": "Brand portfolio strategy",
+   "team": "Strategy",
+   "notes": [],
+   "proposals": [],
+   "evidence": [],
+   "tasks": [],
+   "suggestions": [],
+   "activity": [
+    {
+     "on": "2026-10-15",
+     "a": "h",
+     "t": "Approved by Quinn Harper; handed over from Alex Morgan to Sarah Patel"
+    }
+   ],
+   "decisions": [
+    {
+     "on": "2026-10-15",
+     "by": "Quinn Harper",
+     "role": "Director of Operations",
+     "decision": "Approved",
+     "note": "Handed over from Alex Morgan to Sarah Patel; accepted by Sarah Patel"
+    }
+   ],
+   "outreach": {
+    "status": "none"
+   },
+   "scores": {
+    "B": 4,
+    "A": 5,
+    "N": 4,
+    "T": 4,
+    "H": 3,
+    "E": 4
+   },
+   "conditions": {
+    "problem": true,
+    "fit": true,
+    "external": true,
+    "next": true,
+    "commercial": true,
+    "conflict": true
+   },
+   "blocker": null,
+   "revenue": {
+    "low": 1000000,
+    "high": 1200000
+   },
+   "problem": {
+    "team": "",
+    "process": "",
+    "problem": "",
+    "impact": "",
+    "target": "",
+    "service": ""
+   },
+   "source": {
+    "type": "ai",
+    "note": "AI recommendation, direction v2"
+   },
+   "version": "v2",
+   "lastProgress": "2026-10-15",
+   "sync": "pending",
+   "id": "kestrel",
+   "person": {
+    "name": "Mark Ellison",
+    "title": "Chief Strategy Officer"
+   },
+   "company": {
+    "name": "Kestrel Foods",
+    "domain": "kestrel-foods.example",
+    "industry": "Packaged foods",
+    "hq": "Des Moines, IA"
+   },
+   "stage": "qualification",
+   "owner": "Sarah Patel",
+   "rating": 5,
+   "next": {
+    "action": "Needs analysis meeting",
+    "due": "2026-11-03"
+   },
+   "research": {
+    "facts": [
+     {
+      "id": "f1",
+      "text": "Kestrel acquired two snack brands in 2026.",
+      "src": "Company press release",
+      "date": "2 Apr 2026"
+     }
+    ],
+    "hypothesis": "Brand integration needs a portfolio strategy.",
+    "relevance": "Relevant to CGS strategy and transformation planning.",
+    "alternative": "An internal team may already own this work.",
+    "unknowns": [
+     "Budget owner",
+     "Timing"
+    ],
+    "flags": [],
+    "priority": {
+     "tier": 5,
+     "tierWhy": "Mid-size manufacturer; scope not yet known",
+     "authority": "C-level",
+     "authorityWhy": "Influences budget",
+     "relationship": "None",
+     "relationshipWhy": "No known connection",
+     "fit": "Moderate",
+     "fitWhy": "Matches 2 of 4 signals",
+     "confidence": "Medium"
+    },
+    "rec": {
+     "decision": "accept",
+     "reason": "Signals match the research direction."
+    },
+    "suggest": {
+     "owner": "Alex Morgan",
+     "next": "Send tailored outreach",
+     "due": "2026-10-30"
+    },
+    "usage": {
+     "searches": 4,
+     "pages": 6,
+     "calls": 3
+    }
+   }
+  },
+  {
+   "companyId": "ostrander",
+   "oppTitle": "Plant automation operating model",
+   "team": "Transformation",
+   "notes": [],
+   "proposals": [],
+   "evidence": [],
+   "tasks": [],
+   "suggestions": [],
+   "activity": [],
+   "decisions": [],
+   "outreach": {
+    "status": "none"
+   },
+   "scores": {
+    "B": null,
+    "A": null,
+    "N": null,
+    "T": null,
+    "H": null,
+    "E": null
+   },
+   "conditions": {
+    "problem": null,
+    "fit": null,
+    "external": null,
+    "next": null,
+    "commercial": null,
+    "conflict": null
+   },
+   "blocker": null,
+   "revenue": null,
+   "problem": {
+    "team": "",
+    "process": "",
+    "problem": "",
+    "impact": "",
+    "target": "",
+    "service": ""
+   },
+   "source": {
+    "type": "ai",
+    "note": "AI recommendation, direction v2"
+   },
+   "version": "v3",
+   "lastProgress": "2026-10-20",
+   "sync": "local",
+   "id": "ostrander",
+   "person": {
+    "name": "Tom Becker",
+    "title": "Head of Transformation"
+   },
+   "company": {
+    "name": "Ostrander Metalworks",
+    "domain": "ostrander.example",
+    "industry": "Fabricated metals",
+    "hq": "Erie, PA"
+   },
+   "stage": "review",
+   "rating": 3,
+   "sentToReviewOn": "2026-10-25",
+   "research": {
+    "facts": [
+     {
+      "id": "f1",
+      "text": "Ostrander launched a plant automation program in July 2026.",
+      "src": "Trade press",
+      "date": "18 Jul 2026"
+     },
+     {
+      "id": "f2",
+      "text": "Tom Becker is listed as Head of Transformation on the company website.",
+      "src": "Company website",
+      "date": "checked 25 Oct 2026"
+     }
+    ],
+    "hypothesis": "An automation program may need an operating-model plan.",
+    "relevance": "Relevant to CGS strategy and transformation planning.",
+    "alternative": "An internal team may already own this work.",
+    "unknowns": [
+     "Budget owner",
+     "Timing"
+    ],
+    "flags": [
+     {
+      "type": "Identity mismatch",
+      "text": "A public profile says Tom Becker left Ostrander in August 2026. The company website has not been updated."
+     }
+    ],
+    "priority": {
+     "tier": 3,
+     "tierWhy": "Mid-size manufacturer; scope not yet known",
+     "authority": "Director",
+     "authorityWhy": "Influences budget",
+     "relationship": "None",
+     "relationshipWhy": "No known connection",
+     "fit": "Moderate",
+     "fitWhy": "Matches 2 of 4 signals",
+     "confidence": "Medium"
+    },
+    "rec": {
+     "decision": "return",
+     "reason": "The contact may have left the company. Confirm who now leads the automation program."
+    },
+    "suggest": {
+     "owner": "Alex Morgan",
+     "next": "Send tailored outreach",
+     "due": "2026-10-30"
+    },
+    "usage": {
+     "searches": 4,
+     "pages": 6,
+     "calls": 3
+    }
+   }
+  },
+  {
+   "companyId": "pellham",
+   "oppTitle": "Warehouse system replacement roadmap",
+   "team": "IT",
+   "notes": [],
+   "proposals": [],
+   "evidence": [],
+   "tasks": [],
+   "suggestions": [],
+   "activity": [],
+   "decisions": [],
+   "outreach": {
+    "status": "none"
+   },
+   "scores": {
+    "B": null,
+    "A": null,
+    "N": null,
+    "T": null,
+    "H": null,
+    "E": null
+   },
+   "conditions": {
+    "problem": null,
+    "fit": null,
+    "external": null,
+    "next": null,
+    "commercial": null,
+    "conflict": null
+   },
+   "blocker": null,
+   "revenue": null,
+   "problem": {
+    "team": "",
+    "process": "",
+    "problem": "",
+    "impact": "",
+    "target": "",
+    "service": ""
+   },
+   "source": {
+    "type": "ai",
+    "note": "AI recommendation, direction v2"
+   },
+   "version": "v3",
+   "lastProgress": "2026-10-20",
+   "sync": "local",
+   "id": "pellham",
+   "person": {
+    "name": "Grace Liu",
+    "title": "Director of IT"
+   },
+   "company": {
+    "name": "Pellham Packaging",
+    "domain": "pellham.example",
+    "industry": "Packaging",
+    "hq": "Akron, OH"
+   },
+   "stage": "review",
+   "rating": 2,
+   "sentToReviewOn": "2026-10-25",
+   "research": {
+    "facts": [
+     {
+      "id": "f1",
+      "text": "Pellham is replacing its warehouse management system in 2027.",
+      "src": "Job posting",
+      "date": "12 Oct 2026"
+     }
+    ],
+    "hypothesis": "A system replacement may need an IT roadmap.",
+    "relevance": "Relevant to CGS strategy and transformation planning.",
+    "alternative": "An internal team may already own this work.",
+    "unknowns": [
+     "Budget owner",
+     "Timing"
+    ],
+    "flags": [
+     {
+      "type": "Possible duplicate",
+      "text": "Grace Liu is already a CGS contact owned by Sarah Patel (2024 workshop)."
+     }
+    ],
+    "priority": {
+     "tier": 2,
+     "tierWhy": "Mid-size manufacturer; scope not yet known",
+     "authority": "Director",
+     "authorityWhy": "Influences budget",
+     "relationship": "None",
+     "relationshipWhy": "No known connection",
+     "fit": "Weak",
+     "fitWhy": "Matches 1 of 4 signals",
+     "confidence": "Medium"
+    },
+    "rec": {
+     "decision": "reject",
+     "reason": "Existing relationship owned by Sarah Patel, and the project is small."
+    },
+    "suggest": {
+     "owner": "Alex Morgan",
+     "next": "Send tailored outreach",
+     "due": "2026-10-30"
+    },
+    "usage": {
+     "searches": 4,
+     "pages": 6,
+     "calls": 3
+    }
+   }
+  },
+  {
+   "companyId": "marlow",
+   "oppTitle": "Merger integration plan",
+   "team": "Operations",
+   "notes": [],
+   "proposals": [],
+   "evidence": [],
+   "tasks": [],
+   "suggestions": [],
+   "activity": [],
+   "decisions": [],
+   "outreach": {
+    "status": "none"
+   },
+   "scores": {
+    "B": null,
+    "A": null,
+    "N": null,
+    "T": null,
+    "H": null,
+    "E": null
+   },
+   "conditions": {
+    "problem": null,
+    "fit": null,
+    "external": null,
+    "next": null,
+    "commercial": null,
+    "conflict": null
+   },
+   "blocker": null,
+   "revenue": null,
+   "problem": {
+    "team": "",
+    "process": "",
+    "problem": "",
+    "impact": "",
+    "target": "",
+    "service": ""
+   },
+   "source": {
+    "type": "ai",
+    "note": "AI recommendation, direction v2"
+   },
+   "version": "v3",
+   "lastProgress": "2026-10-20",
+   "sync": "local",
+   "id": "marlow",
+   "person": {
+    "name": "Victor Ames",
+    "title": "VP Operations"
+   },
+   "company": {
+    "name": "Marlow Fastening Systems",
+    "domain": "marlow.example",
+    "industry": "Industrial fasteners",
+    "hq": "Rockford, IL"
+   },
+   "stage": "researching",
+   "prog": 3,
+   "log": [],
+   "rating": 3,
+   "research": {
+    "facts": [
+     {
+      "id": "f1",
+      "text": "Marlow announced a merger with Tillman Fasteners on 1 October 2026.",
+      "src": "Company press release",
+      "date": "1 Oct 2026"
+     }
+    ],
+    "hypothesis": "Merger integration may need an operating-model plan.",
+    "relevance": "Relevant to CGS strategy and transformation planning.",
+    "alternative": "An internal team may already own this work.",
+    "unknowns": [
+     "Budget owner",
+     "Timing"
+    ],
+    "flags": [],
+    "priority": {
+     "tier": 3,
+     "tierWhy": "Mid-size manufacturer; scope not yet known",
+     "authority": "Director",
+     "authorityWhy": "Influences budget",
+     "relationship": "None",
+     "relationshipWhy": "No known connection",
+     "fit": "Moderate",
+     "fitWhy": "Matches 2 of 4 signals",
+     "confidence": "Medium"
+    },
+    "rec": {
+     "decision": "accept",
+     "reason": "Signals match the research direction."
+    },
+    "suggest": {
+     "owner": "Alex Morgan",
+     "next": "Send tailored outreach",
+     "due": "2026-10-30"
+    },
+    "usage": {
+     "searches": 3,
+     "pages": 4,
+     "calls": 2
+    }
+   }
+  },
+  {
+   "companyId": "westbrook",
+   "oppTitle": "Mill automation sequencing",
+   "team": "Operations",
+   "notes": [],
+   "proposals": [],
+   "evidence": [],
+   "tasks": [],
+   "suggestions": [],
+   "activity": [],
+   "decisions": [],
+   "outreach": {
+    "status": "none"
+   },
+   "scores": {
+    "B": null,
+    "A": null,
+    "N": null,
+    "T": null,
+    "H": null,
+    "E": null
+   },
+   "conditions": {
+    "problem": null,
+    "fit": null,
+    "external": null,
+    "next": null,
+    "commercial": null,
+    "conflict": null
+   },
+   "blocker": null,
+   "revenue": null,
+   "problem": {
+    "team": "",
+    "process": "",
+    "problem": "",
+    "impact": "",
+    "target": "",
+    "service": ""
+   },
+   "source": {
+    "type": "import",
+    "note": "Imported from the Midwest Manufacturing Summit attendee list"
+   },
+   "version": "v3",
+   "lastProgress": "2026-10-20",
+   "sync": "local",
+   "id": "westbrook",
+   "person": {
+    "name": "",
+    "title": "Chief Operating Officer"
+   },
+   "company": {
+    "name": "Westbrook Paper & Board",
+    "domain": "westbrook-pb.example",
+    "industry": "Paper and packaging",
+    "hq": "Green Bay, WI"
+   },
+   "stage": "researching",
+   "prog": 1,
+   "log": [],
+   "rating": 3,
+   "research": {
+    "facts": [
+     {
+      "id": "f1",
+      "text": "Westbrook is investing $80M in mill automation through 2027.",
+      "src": "Regional business journal",
+      "date": "22 Sep 2026"
+     }
+    ],
+    "hypothesis": "Automation spend may need a sequencing plan.",
+    "relevance": "Relevant to CGS strategy and transformation planning.",
+    "alternative": "An internal team may already own this work.",
+    "unknowns": [
+     "Budget owner",
+     "Timing"
+    ],
+    "flags": [
+     {
+      "type": "No contact found",
+      "text": "No verifiable COO found in public sources. The attendee list names the company only."
+     }
+    ],
+    "priority": {
+     "tier": 3,
+     "tierWhy": "Mid-size manufacturer; scope not yet known",
+     "authority": "Director",
+     "authorityWhy": "Influences budget",
+     "relationship": "None",
+     "relationshipWhy": "No known connection",
+     "fit": "Moderate",
+     "fitWhy": "Matches 2 of 4 signals",
+     "confidence": "Medium"
+    },
+    "rec": {
+     "decision": "accept",
+     "reason": "Signals match the research direction."
+    },
+    "suggest": {
+     "owner": "Alex Morgan",
+     "next": "Send tailored outreach",
+     "due": "2026-10-30"
+    },
+    "usage": {
+     "searches": 1,
+     "pages": 1,
+     "calls": 0
+    }
+   }
+  }
+ ],
+ "candidates": [
+  {
+   "id": "c1",
+   "star": true,
+   "company": "Corvane Industrial",
+   "domain": "corvane.example",
+   "person": "Elena Fischer",
+   "title": "Chief Digital Officer",
+   "whyPerson": "Owns digital and AI programs; reports to the CEO",
+   "why": "Closed the Arden Controls acquisition five weeks ago and is running two AI inspection pilots that have not scaled.",
+   "signal": "Acquisition closed",
+   "signalDate": "18 Sep 2026",
+   "status": "new"
+  },
+  {
+   "id": "c2",
+   "company": "Brightwater Valve Co.",
+   "domain": "brightwater.example",
+   "person": "Marcus Hale",
+   "title": "Chief Information Officer",
+   "whyPerson": "Sponsor of the ERP program",
+   "why": "Announced an ERP consolidation across five plants.",
+   "signal": "ERP consolidation",
+   "signalDate": "2 Oct 2026",
+   "status": "new"
+  },
+  {
+   "id": "c3",
+   "company": "Tamsin Aerostructures",
+   "domain": "tamsin-aero.example",
+   "person": "Nadia Petrova",
+   "title": "VP Operations Excellence",
+   "whyPerson": "Leads the new plant ramp-up",
+   "why": "Opened a second US plant and is hiring for a digital operations team.",
+   "signal": "Plant expansion",
+   "signalDate": "14 Aug 2026",
+   "status": "new"
+  },
+  {
+   "id": "c4",
+   "company": "Hollis & Reed Foods",
+   "domain": "hollisreed.example",
+   "person": "",
+   "title": "Chief Strategy Officer",
+   "whyPerson": "Role matches the direction; no verifiable person found",
+   "why": "Expanding into frozen meals with a new production line.",
+   "signal": "Product expansion",
+   "signalDate": "9 Sep 2026",
+   "status": "new",
+   "flags": [
+    "Contact to confirm"
+   ]
+  },
+  {
+   "id": "c5",
+   "company": "Quarry Point Materials",
+   "domain": "quarrypoint.example",
+   "person": "Owen Gallagher",
+   "title": "Head of Digital",
+   "whyPerson": "Named lead for the AI pilot",
+   "why": "Announced an AI demand-forecasting pilot at two quarries.",
+   "signal": "AI pilot",
+   "signalDate": "28 Jul 2026",
+   "status": "new"
+  },
+  {
+   "id": "c6",
+   "company": "Lindgren Medical Devices",
+   "domain": "lindgren-md.example",
+   "person": "Hannah Berg",
+   "title": "Chief Information Officer",
+   "whyPerson": "Owns the quality-system modernization",
+   "why": "Modernizing its FDA quality system after a 2026 audit finding.",
+   "signal": "Quality system program",
+   "signalDate": "17 Sep 2026",
+   "status": "new"
+  },
+  {
+   "id": "c7",
+   "company": "Redfern Automotive Seating",
+   "domain": "redfern.example",
+   "person": "James Whitaker",
+   "title": "Director of Strategy",
+   "whyPerson": "Leads merger integration planning",
+   "why": "Agreed to merge with Ellis Trim; integration starts in Q1 2027.",
+   "signal": "Merger announced",
+   "signalDate": "6 Oct 2026",
+   "status": "new"
+  },
+  {
+   "id": "c8",
+   "company": "Northgate Chemical",
+   "domain": "northgate-chem.example",
+   "person": "Aisha Rahman",
+   "title": "Chief Technology Officer",
+   "whyPerson": "Sponsor of the new transformation office",
+   "why": "Set up a transformation office reporting to the CTO.",
+   "signal": "New transformation office",
+   "signalDate": "23 Sep 2026",
+   "status": "new",
+   "flags": [
+    "Possible duplicate"
+   ]
+  },
+  {
+   "id": "c9",
+   "company": "Sable Creek Electronics",
+   "domain": "sablecreek.example",
+   "person": "Kevin Duarte",
+   "title": "VP IT",
+   "whyPerson": "Leads IT for the contract manufacturing division",
+   "why": "Launched a smart-factory initiative.",
+   "signal": "Smart-factory initiative",
+   "signalDate": "12 Jan 2026",
+   "status": "new",
+   "flags": [
+    "Signal may be stale"
+   ]
+  },
+  {
+   "id": "c10",
+   "company": "Arbor Fiberworks",
+   "domain": "arbor-fiber.example",
+   "person": "Lucy Tran",
+   "title": "Chief Operating Officer",
+   "whyPerson": "Owns the automation budget",
+   "why": "Committed $45M to plant automation over two years.",
+   "signal": "Automation investment",
+   "signalDate": "20 Aug 2026",
+   "status": "new"
+  }
+ ],
+ "feedback": [
+  {
+   "id": "fb1",
+   "subject": "Granite Ridge Steel",
+   "step": 4,
+   "outcome": "Rejected",
+   "reason": "Existing relationship or already in progress",
+   "scope": "theme",
+   "by": "Alex Morgan",
+   "on": "2026-10-22",
+   "minutes": 4,
+   "version": "v3"
+  },
+  {
+   "id": "fb2",
+   "subject": "Kestrel Foods",
+   "step": 4,
+   "outcome": "Accepted",
+   "reason": "Relevant signal",
+   "scope": "theme",
+   "by": "Quinn Harper",
+   "on": "2026-10-02",
+   "minutes": 8,
+   "version": "v2"
+  },
+  {
+   "id": "fb3",
+   "subject": "Summit Energy",
+   "step": 4,
+   "outcome": "Accepted",
+   "reason": "Strong contact",
+   "scope": "opportunity",
+   "by": "Sarah Patel",
+   "on": "2026-10-10",
+   "minutes": null,
+   "version": "v2"
+  },
+  {
+   "id": "fb4",
+   "subject": "Dunmore Plastics",
+   "step": 4,
+   "outcome": "Rejected",
+   "reason": "Contact lacks decision authority",
+   "scope": "theme",
+   "by": "Alex Morgan",
+   "on": "2026-10-21",
+   "minutes": 5,
+   "version": "v3"
+  },
+  {
+   "id": "fb5",
+   "subject": "Elkhorn Tooling",
+   "step": 4,
+   "outcome": "Rejected",
+   "reason": "Contact lacks decision authority",
+   "scope": "theme",
+   "by": "Daniel Brooks",
+   "on": "2026-10-23",
+   "minutes": 3,
+   "version": "v3"
+  },
+  {
+   "id": "fb6",
+   "subject": "Wexford Castings",
+   "step": 4,
+   "outcome": "Rejected",
+   "reason": "Contact lacks decision authority",
+   "scope": "theme",
+   "by": "Sarah Patel",
+   "on": "2026-10-24",
+   "minutes": 6,
+   "version": "v3"
+  },
+  {
+   "id": "fb7",
+   "subject": "Halvorsen Precision Castings",
+   "step": 4,
+   "outcome": "Accepted",
+   "reason": "Relevant signal",
+   "scope": "theme",
+   "by": "Alex Morgan",
+   "on": "2026-10-24",
+   "minutes": 7,
+   "version": "v3"
+  }
+ ],
+ "proposals": [
+  {
+   "id": "p1",
+   "type": "exclude",
+   "target": "Granite Ridge Steel",
+   "domain": "graniteridge.example",
+   "scope": "theme",
+   "origin": "feedback",
+   "rationale": "Rejected at Step 4: existing relationship owned by Daniel Brooks.",
+   "feedbackIds": [
+    "fb1"
+   ],
+   "status": "approved",
+   "decidedBy": "Alex Morgan",
+   "on": "2026-10-22"
+  },
+  {
+   "id": "p2",
+   "type": "direction",
+   "field": "buyer_roles",
+   "scope": "theme",
+   "origin": "ai",
+   "title": "Drop Manager-level roles from the buyer list",
+   "rationale": "3 theme-scoped rejections on direction v3 cite “Contact lacks decision authority” for Manager-level contacts.",
+   "before": [
+    "Chief Digital Officer",
+    "Chief Information Officer",
+    "Chief Strategy Officer",
+    "Head of Transformation",
+    "VP Operations",
+    "IT Manager"
+   ],
+   "after": [
+    "Chief Digital Officer",
+    "Chief Information Officer",
+    "Chief Strategy Officer",
+    "Head of Transformation",
+    "VP Operations"
+   ],
+   "feedbackIds": [
+    "fb4",
+    "fb5",
+    "fb6"
+   ],
+   "baseVersion": "v3",
+   "status": "pending",
+   "on": "2026-10-24"
+  }
+ ],
+ "runs": [
+  {
+   "id": "run-0418",
+   "agent": "Research agent",
+   "lead": "Ostrander Metalworks",
+   "model": "demo-fixture",
+   "prompt": "research-v2.3",
+   "status": "completed",
+   "on": "2026-10-25",
+   "calls": 4
+  },
+  {
+   "id": "run-0419",
+   "agent": "Research agent",
+   "lead": "Pellham Packaging",
+   "model": "demo-fixture",
+   "prompt": "research-v2.3",
+   "status": "completed",
+   "on": "2026-10-25",
+   "calls": 3
+  },
+  {
+   "id": "run-0420",
+   "agent": "Evidence agent (A2 + A3)",
+   "lead": "Cedar Bay Logistics",
+   "model": "demo-text-rules",
+   "prompt": "a2-1.4 / a3-1.2",
+   "status": "completed",
+   "on": "2026-10-22",
+   "calls": 2
+  },
+  {
+   "id": "run-0421",
+   "agent": "Feedback agent",
+   "lead": "Research theme v3",
+   "model": "demo-fixture",
+   "prompt": "manager-1.1",
+   "status": "completed",
+   "on": "2026-10-24",
+   "calls": 1
+  }
+ ],
+ "star": {
+  "research": {
+   "facts": [
+    {
+     "id": "f1",
+     "text": "Corvane completed its acquisition of Arden Controls on 18 September 2026, adding four plants for a combined network of twelve.",
+     "src": "Corvane press release",
+     "date": "18 Sep 2026"
+    },
+    {
+     "id": "f2",
+     "text": "Corvane is running AI-based visual inspection pilots at its Dayton and Greenville plants.",
+     "src": "Plant Operations Journal",
+     "date": "7 Oct 2026"
+    },
+    {
+     "id": "f3",
+     "text": "Elena Fischer joined Corvane as Chief Digital Officer in June 2026, reporting to the CEO.",
+     "src": "Corvane leadership page",
+     "date": "checked 26 Oct 2026"
+    },
+    {
+     "id": "f4",
+     "text": "Corvane reported 2025 revenue of $2.4 billion.",
+     "src": "Corvane 2025 annual report",
+     "date": "Mar 2026"
+    }
+   ],
+   "hypothesis": "Bringing Arden’s four plants into one operating model may force a decision on which AI pilots to scale and what the plants need first.",
+   "relevance": "Matches CGS first-mile AI planning: use-case sequencing and the operating model behind it.",
+   "alternative": "Corvane may already have an integration partner or an internal transformation office covering this work.",
+   "unknowns": [
+    "Is there budget for 2027 planning?",
+    "Is an integration advisor already engaged?"
+   ],
+   "flags": [],
+   "priority": {
+    "tier": 4,
+    "tierWhy": "Integration programs at a $2.4B manufacturer usually run above $500K. Company revenue alone is not converted into CGS revenue.",
+    "authority": "C-level",
+    "authorityWhy": "Reports to the CEO. A title is not proof of decision access.",
+    "relationship": "Second degree",
+    "relationshipWhy": "Jordan Lee (Fellow) worked with Corvane’s COO in 2023",
+    "fit": "Strong",
+    "fitWhy": "Matches 3 of 4 research signals",
+    "confidence": "Medium-high"
+   },
+   "rec": {
+    "decision": "accept",
+    "reason": "Recent acquisition and unscaled AI pilots line up with the research direction, and the contact leads digital programs."
+   },
+   "suggest": {
+    "owner": "Alex Morgan",
+    "next": "Send tailored outreach to Elena",
+    "due": "2026-10-29"
+   },
+   "usage": {
+    "searches": 6,
+    "pages": 9,
+    "calls": 5
+   }
+  },
+  "outreach": {
+   "status": "none",
+   "angles": [
+    {
+     "id": "a1",
+     "title": "Scaling AI pilots across the enlarged plant network",
+     "why": "Uses facts 1 and 2: twelve plants after Arden, two pilots running"
+    },
+    {
+     "id": "a2",
+     "title": "Integration planning after the Arden acquisition",
+     "why": "Uses fact 1: acquisition closed five weeks ago"
+    },
+    {
+     "id": "a3",
+     "title": "A new Chief Digital Officer’s first year",
+     "why": "Uses fact 3: Elena joined in June"
+    }
+   ],
+   "angle": "a1",
+   "channel": {
+    "best": "Email",
+    "why": "No direct relationship yet. Her email follows the published corporate format.",
+    "alt": "Ask Jordan Lee (Fellow) for an introduction through Corvane’s COO."
+   },
+   "tone": "standard",
+   "subject": "",
+   "body": ""
+  },
+  "drafts": {
+   "standard": {
+    "subject": "Scaling Corvane’s AI inspection pilots after the Arden acquisition",
+    "body": "Hi Elena,\n\nCongratulations on closing the Arden Controls acquisition [[f1|and bringing the network to twelve plants]]. With [[f2|AI inspection pilots already running at Dayton and Greenville]], the next question is usually which pilots to scale first and what each plant needs in place before they do.\n\nCGS helps manufacturers plan that first mile of AI adoption, from use-case sequencing to the operating model behind it. I would value 20 minutes to hear how you are approaching it, and I can share what we have seen work at similar manufacturers.\n\nWould a short call in the week of 2 November suit you?\n\nBest regards,\nAlex Morgan\nCGS Advisors"
+   },
+   "brief": {
+    "subject": "Twelve plants, two AI pilots: a quick question",
+    "body": "Hi Elena,\n\n[[f1|With Arden now part of Corvane]] and [[f2|inspection pilots live at Dayton and Greenville]], are you deciding which pilots to scale across the new network?\n\nWe help manufacturers plan exactly that step. Open to a 20-minute call the week of 2 November?\n\nAlex Morgan, CGS Advisors"
+   }
+  },
+  "reply": "Hi Alex, thanks for reaching out. Timing is good, as we are working through exactly this. Could we talk on Wednesday 4 November at 10:00 ET? Elena",
+  "note": "Call with Elena Fischer, 4 Nov 2026 (45 min). Elena brought her plant operations lead, Marco Silva.\n\nElena said the two AI inspection pilots \"work in isolation, but we have no plan for scaling them across the twelve plants we now run after the Arden acquisition.\" Without a plan, each plant is choosing its own tools.\n\nOn outside help: \"We'd rather bring in a partner for the first-mile plan than build it ourselves.\"\n\nElena owns the 2027 transformation budget; spend above $250K needs CEO sign-off, which she expects in January.\n\nThis would be Corvane's first project with CGS.\n\nAgreed next step: a half-day scoping workshop on 24 November with her operations and IT leads. Marco will send the plant list before then.",
+  "proposals": [
+   {
+    "kind": "score",
+    "key": "N",
+    "value": 4,
+    "quote": "work in isolation, but we have no plan for scaling them across the twelve plants we now run after the Arden acquisition",
+    "why": "Problem, its impact across twelve plants, and the support needed are all stated.",
+    "type": "client_statement",
+    "id": "sp0",
+    "src": "NOTE_ID",
+    "status": "pending"
+   },
+   {
+    "kind": "cond",
+    "key": "problem",
+    "value": true,
+    "quote": "work in isolation, but we have no plan for scaling them across the twelve plants we now run after the Arden acquisition",
+    "why": "The client described a specific problem in her own words.",
+    "type": "client_statement",
+    "id": "sp1",
+    "src": "NOTE_ID",
+    "status": "pending"
+   },
+   {
+    "kind": "cond",
+    "key": "external",
+    "value": true,
+    "quote": "We'd rather bring in a partner for the first-mile plan than build it ourselves.",
+    "why": "She said she would rather bring in a partner.",
+    "type": "client_statement",
+    "id": "sp2",
+    "src": "NOTE_ID",
+    "status": "pending"
+   },
+   {
+    "kind": "score",
+    "key": "B",
+    "value": 3,
+    "quote": "Elena owns the 2027 transformation budget; spend above $250K needs CEO sign-off, which she expects in January.",
+    "why": "Funding source and approval route are known; CEO approval is pending.",
+    "type": "client_statement",
+    "id": "sp3",
+    "src": "NOTE_ID",
+    "status": "pending"
+   },
+   {
+    "kind": "score",
+    "key": "A",
+    "value": 4,
+    "quote": "Elena owns the 2027 transformation budget; spend above $250K needs CEO sign-off, which she expects in January.",
+    "why": "Elena owns the budget and is in the conversation. The CEO signs off.",
+    "type": "client_statement",
+    "id": "sp4",
+    "src": "NOTE_ID",
+    "status": "pending"
+   },
+   {
+    "kind": "cond",
+    "key": "commercial",
+    "value": true,
+    "quote": "Elena owns the 2027 transformation budget; spend above $250K needs CEO sign-off, which she expects in January.",
+    "why": "Funding source and decision path are both described.",
+    "type": "client_statement",
+    "id": "sp5",
+    "src": "NOTE_ID",
+    "status": "pending"
+   },
+   {
+    "kind": "score",
+    "key": "T",
+    "value": 3,
+    "quote": "Agreed next step: a half-day scoping workshop on 24 November with her operations and IT leads.",
+    "why": "A target date for the workshop is set.",
+    "type": "client_statement",
+    "id": "sp6",
+    "src": "NOTE_ID",
+    "status": "pending"
+   },
+   {
+    "kind": "cond",
+    "key": "next",
+    "value": true,
+    "quote": "Agreed next step: a half-day scoping workshop on 24 November with her operations and IT leads.",
+    "why": "Both sides agreed the workshop with a date.",
+    "type": "client_statement",
+    "id": "sp7",
+    "src": "NOTE_ID",
+    "status": "pending"
+   },
+   {
+    "kind": "score",
+    "key": "E",
+    "value": 4,
+    "quote": "Elena brought her plant operations lead, Marco Silva. Marco will send the plant list before then.",
+    "why": "The client is bringing people in and sharing information.",
+    "type": "client_statement",
+    "id": "sp8",
+    "src": "NOTE_ID",
+    "status": "pending"
+   },
+   {
+    "kind": "score",
+    "key": "H",
+    "value": 2.5,
+    "quote": "This would be Corvane's first project with CGS.",
+    "why": "First collaboration is confirmed, so the neutral rule applies.",
+    "type": "client_statement",
+    "id": "sp9",
+    "src": "NOTE_ID",
+    "status": "pending"
+   },
+   {
+    "kind": "cond",
+    "key": "fit",
+    "value": true,
+    "quote": "CGS capability list: First-mile AI planning (use-case sequencing, operating model design).",
+    "why": "The stated problem matches a listed capability. Confirm internally.",
+    "type": "approved_research",
+    "id": "sp10",
+    "src": "NOTE_ID",
+    "status": "pending"
+   },
+   {
+    "kind": "cond",
+    "key": "conflict",
+    "value": true,
+    "quote": "No conflicting statements between the reply (28 Oct) and the call notes (4 Nov).",
+    "why": "Cross-check of all sources for this opportunity.",
+    "type": "internal_note",
+    "id": "sp11",
+    "src": "NOTE_ID",
+    "status": "pending"
+   }
+  ],
+  "problem": {
+   "team": "Digital office and plant operations",
+   "process": "Scaling AI inspection across the plant network",
+   "problem": "Two AI inspection pilots run in isolation with no plan to scale them",
+   "impact": "Each of the twelve plants is choosing its own tools after the Arden acquisition",
+   "target": "A first-mile plan before the 2027 budget is approved in January",
+   "service": "CGS first-mile AI planning"
+  }
+ }
+}

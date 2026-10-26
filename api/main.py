@@ -1,7 +1,7 @@
 """CGS Lead Workspace v2 API (FastAPI).
 
-Step 2 of the backend plan: the framework, settings, the rules engine over HTTP,
-and the Step 1-8 frontend served from the same address. Data storage arrives in step 3.
+Step 2: framework, settings, the rules engine over HTTP, the Step 1-8 frontend at /.
+Step 3: one database (SQLite via SQLAlchemy), seeded with the synthetic demo records in demo mode.
 
 Run:  python -m api.main         then open http://127.0.0.1:8800/  (API docs at /docs)
 """
@@ -17,9 +17,12 @@ from backend.rules import (
     ANCHORS, CONDITION_QUESTIONS, CONDITIONS, FLOORS, LABELS, QUESTIONS, REASONS,
     RULE_VERSION, WEIGHTS, calculate, delta, validate_score,
 )
+from api.db import Database
+from api.routes import router
+from api.seed import load_demo
 from api.settings import Settings, load_settings
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 Dim = Literal["B", "A", "N", "T", "H", "E"]
 Cond = Literal["problem", "fit", "external", "next", "commercial", "conflict"]
 Blocker = Literal[tuple(REASONS)]  # type: ignore[valid-type]
@@ -102,6 +105,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "Synthetic data only. The rules engine, not an AI model, calculates every score.",
     )
     app.state.settings = settings
+    app.state.db = Database(settings.database_url)
+    if settings.app_mode == "demo":
+        load_demo(app.state.db)  # only fills an empty database
+    app.include_router(router)
 
     @app.get("/api/health", tags=["system"], summary="Is the server running?")
     def health():
