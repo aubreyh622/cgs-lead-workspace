@@ -32,6 +32,7 @@ class Settings:
     db_path: Path = ROOT / "runtime" / "workspace-v2.sqlite3"
     frontend: Path = ROOT / "frontend" / "index.html"
     database_url: str = ""  # empty = SQLite file at db_path; set DATABASE_URL for PostgreSQL later
+    users: tuple[str, ...] = ("Alex Morgan", "Sarah Patel", "Daniel Brooks", "Quinn Harper")  # no login yet; pick a name
 
     def __post_init__(self):
         if self.app_mode not in APP_MODES:
@@ -51,4 +52,5 @@ def load_settings(env_file: Path | None = ROOT / ".env") -> Settings:
         port=int(os.environ.get("CGS_V2_PORT", "8800")),
         db_path=ROOT / Path(os.environ.get("CGS_V2_DB_PATH", "runtime/workspace-v2.sqlite3")),
         database_url=os.environ.get("DATABASE_URL", ""),
+        **({"users": tuple(u.strip() for u in os.environ["CGS_USERS"].split(",") if u.strip())} if os.environ.get("CGS_USERS") else {}),
     )

@@ -2,6 +2,7 @@
 
 Step 2: framework, settings, the rules engine over HTTP, the Step 1-8 frontend at /.
 Step 3: one database (SQLite via SQLAlchemy), seeded with the synthetic demo records in demo mode.
+Step 4: every human action in Steps 1-8 and the learning loop (api/actions.py, api/services.py).
 
 Run:  python -m api.main         then open http://127.0.0.1:8800/  (API docs at /docs)
 """
@@ -9,7 +10,8 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field, model_validator
 
@@ -18,11 +20,17 @@ from backend.rules import (
     RULE_VERSION, WEIGHTS, calculate, delta, validate_score,
 )
 from api.db import Database
+from api.models import DirectionVersion, Setting
+from sqlalchemy import select
+import json
+from datetime import date
+from api.actions import router as actions_router
 from api.routes import router
+from api.services import ActionError
 from api.seed import load_demo
 from api.settings import Settings, load_settings
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 Dim = Literal["B", "A", "N", "T", "H", "E"]
 Cond = Literal["problem", "fit", "external", "next", "commercial", "conflict"]
 Blocker = Literal[tuple(REASONS)]  # type: ignore[valid-type]
@@ -96,6 +104,15 @@ class Change(BaseModel):
     after: Result
 
 
+def starting_direction() -> DirectionVersion:
+    from api.settings import ROOT
+    b = json.loads((ROOT / "config" / "problem_brief.json").read_text(encoding="utf-8"))
+    return DirectionVersion(version="v1", scope="shared", problem=b["problem"], signals=b["signals"], buyer_roles=b["buyer_roles"],
+                            exclusions=b["exclusions"], excluded_domains=b["excluded_domains"], approved_by=b["approved_by"],
+                            approved_on=date.fromisoformat(b["approved_at"][:10]), basis=b["approval_basis"],
+                            change=f"Imported from config/problem_brief.json ({b['version']})")
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or load_settings()
     app = FastAPI(
@@ -108,7 +125,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.db = Database(settings.database_url)
     if settings.app_mode == "demo":
         load_demo(app.state.db)  # only fills an empty database
+    with app.state.db.session() as s:
+        if not s.get(Setting, "owners"):
+            s.add(Setting(key="owners", value=list(settings.users)))
+        if not s.scalar(select(DirectionVersion.version).limit(1)):
+            s.add(starting_direction())  # live mode: Aubrey's approved problem brief becomes v1
     app.include_router(router)
+    app.include_router(actions_router)
+
+    @app.exception_handler(ActionError)
+    async def action_error(_: Request, exc: ActionError):
+        return JSONResponse({"error": str(exc), "code": exc.code}, status_code=exc.status)
 
     @app.get("/api/health", tags=["system"], summary="Is the server running?")
     def health():

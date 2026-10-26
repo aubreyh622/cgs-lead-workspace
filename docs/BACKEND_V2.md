@@ -11,6 +11,7 @@ The v2 backend joins three things into one product: the Step 1–8 prototype, Au
 | 3 | Database | SQLite through SQLAlchemy; switch to PostgreSQL later with one setting | 26 Oct 2026 |
 | — | Order of work | Backend first, with all tests and agents working; merge with the UI last | 26 Oct 2026 |
 | — | Who decides | Technical choices follow the recommendation and are recorded here; product choices go to Mikey | 26 Oct 2026 |
+| 4 | Who is acting | No login yet. Each request names the person in the `X-User` header, chosen from `CGS_USERS`; every change records the name | 26 Oct 2026 |
 
 ## Plan
 
@@ -19,8 +20,8 @@ The v2 backend joins three things into one product: the Step 1–8 prototype, Au
 | 1 | Choose the route | Done |
 | 2 | FastAPI app, settings (APP_MODE, CRM_MODE), rules engine over HTTP, frontend served at `/` | Done |
 | 3 | One database whose 20 tables match the v2 data model; demo seed; read endpoints (see DATABASE.md) | Done |
-| 4 | P0: every human action through the API (Step 4 and 8 decisions, evidence review, tasks, packs, feedback, direction approvals), with tests | Next |
-| 5 | P1: real evidence extraction and scoring proposals (A2/A3) with quote validation | |
+| 4 | P0: every human action through the API (Step 4 and 8 decisions, evidence review, tasks, packs, feedback, direction approvals), with tests | Done |
+| 5 | P1: real evidence extraction and scoring proposals (A2/A3) with quote validation | Next |
 | 6 | P2: real discovery and research (Steps 1–3), outreach drafts (A1), next actions (A4), stall monitor | |
 | 7 | P3: Insightly and mail adapters, after CGS grants access | |
 | 8 | Merge with the UI: the prototype calls the API; offline demo still works without a server | |
@@ -35,7 +36,30 @@ From a terminal: `python -m api.main`. Tests: `python -m pytest -q` (the old P0�
 
 ## Endpoints
 
-Step 3 adds read endpoints: `GET /api/opportunities` (filter by stage or owner), `GET /api/opportunities/{id}`, `GET /api/companies/{id}/opportunities`, `GET /api/candidates`, `GET /api/direction`, `GET /api/feedback`, `GET /api/agent-runs`, `GET /api/stats`, and `POST /api/demo/reset` (demo mode only).
+### Step 4: actions (all need the `X-User` header)
+
+| Step | What a person does | Endpoint | Rule the backend enforces |
+|---|---|---|---|
+| 1 | Pick or skip a candidate | `POST /api/candidates/{id}/pick`, `/skip` | Skip needs a reason and scope; “existing relationship” or “competitor” proposes an exclusion for approval |
+| 1 | Add a lead by hand | `POST /api/opportunities` | Company is required |
+| 2–3 | Stop, resume, retry research | `POST /api/opportunities/{id}/research/{stop,resume,retry}` | Live mode shows the failure; it never invents a brief |
+| 4 | Accept, return or reject | `POST /api/opportunities/{id}/step4` | Accept needs the duplicate check; reject “Other” needs a comment; review time is optional and never counted as zero |
+| 4 | Confirm a contact; save another opportunity at the same company | `POST …/contact`, `POST …/siblings` | Confirming needs where it was verified |
+| 5 | Save the draft; record sent, follow-up, nurture | `PUT …/outreach/draft`, `POST …/outreach/sent`, `/followup`, `POST …/nurture` | The workspace never sends email itself |
+| 6 | Record a reply | `POST …/outreach/reply` | Any reply makes the opportunity Active at once; the label comes after |
+| 6 | Add notes and get suggestions | `POST …/notes` | The note is saved even if analysis fails; a client quote that is not in the notes is thrown away |
+| 6 | Accept, edit or reject a suggestion | `POST /api/proposals/{id}` | Edit and reject need a reason; replacing a confirmed value needs a reason |
+| 6–7 | Review a score, condition, revenue or blocker by hand; edit the need statement | `POST …/review`, `PATCH …/need` | Every change needs a reason and marks a submitted pack out of date |
+| 7 | Get up to 3 next actions; turn one into a task; tick a task | `POST …/suggestions`, `POST /api/suggestions/{id}/task`, `POST /api/tasks/{id}/toggle` | A suggestion becomes a task only with an owner and date; finishing a task never changes a score |
+| 7 | Submit or resubmit the pack | `POST …/packs` | Not Ready needs an exception reason |
+| 8 | Approve, return, nurture, close | `POST /api/packs/{id}/decision` | An out-of-date pack cannot be approved; a handover needs the new owner's acceptance; approval sets Insightly sync to pending |
+| Loop | Propose, analyze, approve or reject direction changes | `POST /api/direction/proposals`, `/analyze`, `/proposals/{id}/{approve,reject}` | Whitelisted fields only; a proposal made on an older version cannot be approved; personal versions apply to one person |
+
+Agents in this step are demo text rules ported from the prototype (`api/demo_agents.py`). In live mode they record a failed run and return an error.
+
+### Step 3: reads
+
+Read endpoints: `GET /api/opportunities` (filter by stage or owner), `GET /api/opportunities/{id}`, `GET /api/companies/{id}/opportunities`, `GET /api/candidates`, `GET /api/direction`, `GET /api/feedback`, `GET /api/agent-runs`, `GET /api/stats`, and `POST /api/demo/reset` (demo mode only).
 
 ### Step 2
 
