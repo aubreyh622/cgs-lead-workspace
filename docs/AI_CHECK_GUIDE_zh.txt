@@ -1,0 +1,30 @@
+在你自己的电脑上测试 AI 连接（大约 15 分钟，只需要做一次）
+
+整个过程只会发送虚构的演示文字，不会用到任何客户信息。
+
+第 1 步：解压
+  右键 AFP接力\backend\cgs-workspace-v2.zip，选“全部解压缩”。解压后会得到 cgs-workspace 文件夹。
+
+第 2 步：确认电脑上有 Python（没有的话装一下）
+  打开 https://www.python.org/downloads/ ，下载 3.12 或更新的版本。
+  安装时，第一个界面最下面的“Add python.exe to PATH”一定要打勾。
+
+第 3 步：安装依赖
+  双击 cgs-workspace 文件夹里的 Setup.cmd，等它显示 “Setup complete”，然后按任意键关闭窗口。
+
+第 4 步：拿一把 Gemini 钥匙（免费）
+  打开 https://aistudio.google.com/ ，用 Google 账号登录，点 “Get API key”，再点 “Create API key”。
+  复制那一串以 AIza 开头的字符，不要发给任何人，也不要发给我。
+
+第 5 步：把钥匙放进设置文件
+  在 cgs-workspace 文件夹里找到 .env 文件（如果看不到，在资源管理器的“查看”里勾选“隐藏的项目”）。
+  右键 → 打开方式 → 记事本。找到这一行：
+      GEMINI_API_KEY=
+  在等号后面粘贴你的钥匙，中间不要有空格，然后保存。
+
+第 6 步：运行检查
+  双击 Check AI.cmd。
+  最后显示 “RESULT: AI connection works.” 就说明成功了。
+  不管成功还是失败，都把整个窗口截图发给我。截图里不会出现你的钥匙。
+
+如果显示 “model” 相关的错误：窗口里会列出你的钥匙能用的模型。把其中一个名字填进 .env 的 AI_MODEL= 后面，保存，再双击 Check AI.cmd 一次。

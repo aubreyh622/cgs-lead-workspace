@@ -32,6 +32,8 @@ class Settings:
     db_path: Path = ROOT / "runtime" / "workspace-v2.sqlite3"
     frontend: Path = ROOT / "frontend" / "index.html"
     database_url: str = ""  # empty = SQLite file at db_path; set DATABASE_URL for PostgreSQL later
+    ai_provider: str = "gemini"  # gemini | openai; switch any time, see api/llm.py
+    ai_model: str = ""           # empty = the provider's default model
     users: tuple[str, ...] = ("Alex Morgan", "Sarah Patel", "Daniel Brooks", "Quinn Harper")  # no login yet; pick a name
 
     def __post_init__(self):
@@ -52,5 +54,7 @@ def load_settings(env_file: Path | None = ROOT / ".env") -> Settings:
         port=int(os.environ.get("CGS_V2_PORT", "8800")),
         db_path=ROOT / Path(os.environ.get("CGS_V2_DB_PATH", "runtime/workspace-v2.sqlite3")),
         database_url=os.environ.get("DATABASE_URL", ""),
+        ai_provider=os.environ.get("AI_PROVIDER", "gemini").strip().lower(),
+        ai_model=os.environ.get("AI_MODEL", "").strip(),
         **({"users": tuple(u.strip() for u in os.environ["CGS_USERS"].split(",") if u.strip())} if os.environ.get("CGS_USERS") else {}),
     )

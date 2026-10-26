@@ -11,6 +11,7 @@ The v2 backend joins three things into one product: the Step 1–8 prototype, Au
 | 3 | Database | SQLite through SQLAlchemy; switch to PostgreSQL later with one setting | 26 Oct 2026 |
 | — | Order of work | Backend first, with all tests and agents working; merge with the UI last | 26 Oct 2026 |
 | — | Who decides | Technical choices follow the recommendation and are recorded here; product choices go to Mikey | 26 Oct 2026 |
+| 5 | AI provider | Gemini for now (free tier, synthetic data only). Switchable: change AI_PROVIDER and AI_MODEL in .env; OpenAI is already supported. Use a paid or CGS account before any real client data, because the free tier may use inputs to improve Google products | 26 Oct 2026 |
 | 4 | Who is acting | No login yet. Each request names the person in the `X-User` header, chosen from `CGS_USERS`; every change records the name | 26 Oct 2026 |
 
 ## Plan
@@ -21,8 +22,8 @@ The v2 backend joins three things into one product: the Step 1–8 prototype, Au
 | 2 | FastAPI app, settings (APP_MODE, CRM_MODE), rules engine over HTTP, frontend served at `/` | Done |
 | 3 | One database whose 20 tables match the v2 data model; demo seed; read endpoints (see DATABASE.md) | Done |
 | 4 | P0: every human action through the API (Step 4 and 8 decisions, evidence review, tasks, packs, feedback, direction approvals), with tests | Done |
-| 5 | P1: real evidence extraction and scoring proposals (A2/A3) with quote validation | Next |
-| 6 | P2: real discovery and research (Steps 1–3), outreach drafts (A1), next actions (A4), stall monitor | |
+| 5 | P1: real evidence extraction and scoring proposals (A2/A3) and reply labels, through a switchable AI provider; code checks every proposal | Done; first real run on Mikey's computer pending |
+| 6 | P2: real discovery and research (Steps 1–3), outreach drafts (A1), next actions (A4), feedback agent, stall monitor | Next |
 | 7 | P3: Insightly and mail adapters, after CGS grants access | |
 | 8 | Merge with the UI: the prototype calls the API; offline demo still works without a server | |
 
@@ -33,6 +34,17 @@ The v2 backend joins three things into one product: the Step 1–8 prototype, Au
 3. Open http://127.0.0.1:8800/ for the workspace and http://127.0.0.1:8800/docs for the interactive API page.
 
 From a terminal: `python -m api.main`. Tests: `python -m pytest -q` (the old P0–P5 suites plus `tests/v2`).
+
+## AI agents (step 5)
+
+- `api/llm.py` is the plug between agents and AI companies. Agents call `provider.json(...)`; `AI_PROVIDER` picks Gemini or OpenAI.
+- `api/live_agents.py` holds the real A2 + A3 agent and the reply labeler. Before a person sees anything, code checks each proposal:
+  - Every quote must appear word for word in the notes.
+  - Keys and scores must be valid under the rubric.
+  - An inference can never mark a condition as met.
+  - At most one proposal per key, and 12 in total.
+- Each call is logged in `agent_runs` with the model, prompt version and tokens. If a call fails, the note is still saved, the failed run is recorded, and the API returns the error. It never falls back to demo results.
+- `Check AI.cmd` (`python -m api.check_ai`) sends two synthetic requests and prints what the AI proposed and what the checks kept. Run it after adding a key.
 
 ## Endpoints
 

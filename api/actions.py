@@ -29,7 +29,8 @@ def demo_today(s, settings) -> date:
 def ctx(request: Request, x_user: str | None = Header(None, description="The person acting, from GET /api/users")):
     db = request.app.state.db
     session = db.sessions()
-    c = S.Ctx(s=session, actor=x_user or "", today=demo_today(session, request.app.state.settings), settings=request.app.state.settings)
+    c = S.Ctx(s=session, actor=x_user or "", today=demo_today(session, request.app.state.settings), settings=request.app.state.settings,
+              provider_factory=getattr(request.app.state, "provider_factory", None))
     users = S.owners_list(c)
     if not x_user or x_user not in users:
         session.close()

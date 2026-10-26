@@ -6,6 +6,7 @@ Each function checks the workflow rules, writes the change, and appends history.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, Callable
 from datetime import date, datetime, timedelta, timezone
 import re
 import uuid
@@ -14,6 +15,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api import demo_agents as A
+from api import live_agents as L
+from api.llm import LLMError, make_provider
 from api import models as m
 from api.settings import Settings
 from backend.rules import CONDITIONS, LABELS, REASONS, RULE_VERSION, WEIGHTS, calculate, validate_score
@@ -44,6 +47,7 @@ class Ctx:
     actor: str
     today: date
     settings: Settings
+    provider_factory: Callable[[], Any] | None = None  # tests inject a fake AI company here
 
     @property
     def demo(self) -> bool:
@@ -126,25 +130,42 @@ def score_delta_text(o: m.Opportunity, key: str, value) -> str:
     return f"{key} {'pending' if old is None else f'{old:g}'} → {'pending' if value is None else f'{value:g}'}: Q {sign(after['ql'] - before['ql'])}, P {sign(after['pl'] - before['pl'])}"
 
 
-def record_run(c: Ctx, agent: str, o: m.Opportunity | None, prompt: str, calls: int, status="completed", error=None, subject="") -> str:
+def record_run(c: Ctx, agent: str, o: m.Opportunity | None, prompt: str, calls: int, status="completed", error=None, subject="",
+               model: str | None = None, usage=None) -> str:
     rid = A.run_id()
     c.s.add(m.AgentRun(id=rid, agent=agent, opportunity_id=o.id if o else None, subject=subject or (o.company.name if o else ""),
-                       model=A.DEMO_MODEL if c.demo else "live-provider", prompt_version=prompt, status=status, calls=calls,
-                       error=error, on=c.today))
+                       model=model or (A.DEMO_MODEL if c.demo else "live-provider"), prompt_version=prompt, status=status, calls=calls,
+                       tokens_in=getattr(usage, "tokens_in", None), tokens_out=getattr(usage, "tokens_out", None), error=error, on=c.today))
     c.s.flush()
     return rid
 
 
-def run_agent(c: Ctx, agent: str, o: m.Opportunity | None, prompt: str, fn, calls=1, subject=""):
-    """Run a demo agent, or record a failed run in live mode. Returns (result, run_id)."""
+def provider(c: Ctx):
+    if c.provider_factory:
+        return c.provider_factory()
+    return make_provider(c.settings.ai_provider, c.settings.ai_model)
+
+
+def run_agent(c: Ctx, agent: str, o: m.Opportunity | None, prompt: str, fn, calls=1, subject="", live=None, live_prompt=None):
+    """Run an agent and log the run. Returns (result, run_id).
+
+    Demo mode runs fn() (text rules). Live mode runs live(provider) when that agent has a real version;
+    otherwise, or when the AI call fails, it records a failed run and raises. It never falls back to demo results.
+    """
+    if c.demo:
+        return fn(), record_run(c, agent, o, prompt, calls, subject=subject)
+    prompt = live_prompt or prompt
     try:
-        A.require_demo(c.settings.app_mode, agent)
-        result = fn()
-    except A.AgentUnavailable as e:
-        record_run(c, agent, o, prompt, 0, "failed", str(e), subject)
+        if live is None:
+            A.require_demo(c.settings.app_mode, agent)
+        p = provider(c)
+        result, usage = live(p)
+    except (A.AgentUnavailable, LLMError) as e:
+        record_run(c, agent, o, prompt, 0, "failed", str(e), subject, model=None)
         c.s.commit()  # keep the failure record even though the request fails
-        raise ActionError(str(e), 503, "agent_unavailable")
-    return result, record_run(c, agent, o, prompt, calls, subject=subject)
+        code = "agent_unavailable" if isinstance(e, A.AgentUnavailable) else f"ai_{e.kind}"
+        raise ActionError(str(e), 503, code)
+    return result, record_run(c, agent, o, prompt, 1, subject=subject, model=p.label, usage=usage)
 
 
 def feedback(c: Ctx, subject: str, step: int, outcome: str, reason: str, scope: str, version: str,
@@ -437,10 +458,11 @@ def record_reply(c: Ctx, opp_id: str, text: str, on: date | None) -> dict:
     touch(c, o)
     log(c, o.id, "h", f"Reply recorded by {c.actor}; stage set to Active")
     try:
-        label, _ = run_agent(c, "A2 Evidence and engagement", o, "a2-1.4", lambda: A.label_reply(text))
+        label, _ = run_agent(c, "A2 Evidence and engagement", o, "a2-1.4", lambda: A.label_reply(text),
+                             live=lambda p: L.label_reply(p, text), live_prompt=L.LABEL_PROMPT_VERSION)
     except ActionError as e:
         o.reply_label = "pending"
-        log(c, o.id, "s", "Reply label pending: the AI provider is not connected. Classify by hand.")
+        log(c, o.id, "s", f"Reply label pending ({e}). Classify by hand; the opportunity is Active either way.")
         return {"replyLabel": "pending", "warning": str(e)}
     o.reply_label = label
     log(c, o.id, "a", f"Evidence agent labeled the reply: {label}")
@@ -459,7 +481,11 @@ def add_note(c: Ctx, opp_id: str, type_: str, on: date | None, text: str, analyz
         return {"noteId": note.id, "proposals": 0}
     c.s.commit()  # the original text is saved even if analysis fails
     star = o.company_id == "corvane" and o.title.startswith("Scaling AI")
-    found, run = run_agent(c, "A2 + A3 Evidence and qualification", o, "a2-1.4 / a3-1.2", lambda: A.extract_evidence(note.text, star), calls=2)
+    context = {"company": o.company.name, "opportunity": o.title, "team": o.team,
+               "confirmed_scores": o.scores, "confirmed_conditions": o.conditions, "confirmed_blocker": o.blocker}
+    (found, dropped_by_check), run = run_agent(
+        c, "A2 + A3 Evidence and qualification", o, "a2-1.4 / a3-1.2", lambda: (A.extract_evidence(note.text, star), {}), calls=2,
+        live=lambda p: L.extract_evidence(p, note.text, context), live_prompt=L.EVIDENCE_PROMPT_VERSION)
     existing = {(p.kind, p.key) for p in c.s.scalars(select(m.Proposal).where(m.Proposal.opportunity_id == o.id, m.Proposal.status != "rejected"))}
     kept, dropped = 0, 0
     for p in found:
@@ -471,8 +497,12 @@ def add_note(c: Ctx, opp_id: str, type_: str, on: date | None, text: str, analyz
         c.s.add(m.Proposal(id=new_id("pr"), opportunity_id=o.id, note_id=note.id, agent_run_id=run, kind=p["kind"], key=p["key"],
                            value=p["value"], quote=p["quote"], why=p["why"], evidence_type=p["type"]))
         kept += 1
-    log(c, o.id, "a", f"Evidence agent proposed {kept} item{'s' if kept != 1 else ''} for review" + (f"; {dropped} rejected for quotes not found in the notes" if dropped else ""))
-    return {"noteId": note.id, "proposals": kept, "droppedForInvalidQuote": dropped}
+    dropped += dropped_by_check.get("quote_not_found", 0)
+    others = {k: v for k, v in dropped_by_check.items() if k != "quote_not_found"}
+    log(c, o.id, "a", f"Evidence agent proposed {kept} item{'s' if kept != 1 else ''} for review"
+        + (f"; {dropped} dropped because the quote is not in the notes" if dropped else "")
+        + (f"; also dropped: {others}" if others else ""))
+    return {"noteId": note.id, "proposals": kept, "droppedForInvalidQuote": dropped, "droppedOther": others}
 
 
 def _valid_value(kind: str, key: str, value):
