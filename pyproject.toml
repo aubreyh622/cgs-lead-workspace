@@ -8,10 +8,12 @@ dependencies = [
   "pydantic==2.14.1",
   "python-dotenv==1.2.4",
   "tldextract==5.4.0",
+  "fastapi==0.162.0",
+  "uvicorn==0.54.0",
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests/p0", "tests/p1", "tests/p2", "tests/p3", "tests/p4", "tests/p5"]
+testpaths = ["tests/p0", "tests/p1", "tests/p2", "tests/p3", "tests/p4", "tests/p5", "tests/v2"]
 pythonpath = ["."]
 addopts = "-p no:cacheprovider"
 markers = ["loopback: real localhost HTTP socket checks; requires loopback permission"]
