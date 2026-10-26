@@ -1,0 +1,140 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "handoff_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Handoff Id",
+      "type": "string"
+    },
+    "opportunity_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Opportunity Id",
+      "type": "string"
+    },
+    "opportunity_revision": {
+      "minimum": 1,
+      "title": "Opportunity Revision",
+      "type": "integer"
+    },
+    "status": {
+      "default": "pending_acceptance",
+      "enum": [
+        "pending_acceptance",
+        "accepted",
+        "needs_research",
+        "rejected"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "case_id": {
+      "anyOf": [
+        {
+          "maxLength": 160,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Case Id"
+    },
+    "reviewer": {
+      "anyOf": [
+        {
+          "maxLength": 160,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reviewer"
+    },
+    "decided_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Decided At"
+    },
+    "reason": {
+      "default": "",
+      "maxLength": 4000,
+      "title": "Reason",
+      "type": "string"
+    },
+    "owner_id": {
+      "anyOf": [
+        {
+          "maxLength": 160,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Owner Id"
+    },
+    "next_action": {
+      "anyOf": [
+        {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Next Action"
+    },
+    "due_date": {
+      "anyOf": [
+        {
+          "format": "date",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Due Date"
+    },
+    "initial_contact_status": {
+      "const": "not_contacted",
+      "default": "not_contacted",
+      "title": "Initial Contact Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "handoff_id",
+    "opportunity_id",
+    "opportunity_revision"
+  ],
+  "title": "HandoffReceipt",
+  "type": "object"
+}

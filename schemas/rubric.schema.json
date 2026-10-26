@@ -1,0 +1,97 @@
+{
+  "$defs": {
+    "Dimension": {
+      "additionalProperties": false,
+      "properties": {
+        "weight": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Weight",
+          "type": "number"
+        },
+        "anchors": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Anchors",
+          "type": "object"
+        }
+      },
+      "required": [
+        "weight",
+        "anchors"
+      ],
+      "title": "Dimension",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "title": "Version",
+      "type": "string"
+    },
+    "dimensions": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Dimension"
+      },
+      "title": "Dimensions",
+      "type": "object"
+    },
+    "high_threshold": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "High Threshold",
+      "type": "number"
+    },
+    "medium_threshold": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Medium Threshold",
+      "type": "number"
+    },
+    "approved_by": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Approved By"
+    },
+    "approved_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Approved At"
+    },
+    "approval_basis": {
+      "default": "pending",
+      "enum": [
+        "pending",
+        "mock",
+        "cgs"
+      ],
+      "title": "Approval Basis",
+      "type": "string"
+    }
+  },
+  "required": [
+    "version",
+    "dimensions",
+    "high_threshold",
+    "medium_threshold"
+  ],
+  "title": "Rubric",
+  "type": "object"
+}

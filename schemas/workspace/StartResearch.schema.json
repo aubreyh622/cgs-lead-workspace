@@ -1,0 +1,84 @@
+{
+  "$defs": {
+    "Seed": {
+      "additionalProperties": false,
+      "properties": {
+        "company": {
+          "maxLength": 200,
+          "minLength": 2,
+          "title": "Company",
+          "type": "string"
+        },
+        "domain": {
+          "title": "Domain",
+          "type": "string"
+        }
+      },
+      "required": [
+        "company",
+        "domain"
+      ],
+      "title": "Seed",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Request Id",
+      "type": "string"
+    },
+    "consultant_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Consultant Id",
+      "type": "string"
+    },
+    "company": {
+      "$ref": "#/$defs/Seed"
+    },
+    "theme_id": {
+      "anyOf": [
+        {
+          "maxLength": 160,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Theme Id"
+    },
+    "theme_version": {
+      "anyOf": [
+        {
+          "maxLength": 160,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Theme Version"
+    }
+  },
+  "required": [
+    "request_id",
+    "consultant_id",
+    "company"
+  ],
+  "title": "StartResearch",
+  "type": "object"
+}

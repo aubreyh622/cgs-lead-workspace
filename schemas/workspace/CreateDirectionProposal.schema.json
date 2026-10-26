@@ -1,0 +1,162 @@
+{
+  "$defs": {
+    "ResearchDirectionPatch": {
+      "additionalProperties": false,
+      "properties": {
+        "problem": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "minLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Problem"
+        },
+        "signals": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 4000,
+                "minLength": 1,
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Signals"
+        },
+        "buyer_roles": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 4000,
+                "minLength": 1,
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Buyer Roles"
+        },
+        "exclusions": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 4000,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exclusions"
+        },
+        "excluded_domains": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 160,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Excluded Domains"
+        }
+      },
+      "title": "ResearchDirectionPatch",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Request Id",
+      "type": "string"
+    },
+    "consultant_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Consultant Id",
+      "type": "string"
+    },
+    "scope": {
+      "enum": [
+        "theme",
+        "consultant",
+        "cgs"
+      ],
+      "title": "Scope",
+      "type": "string"
+    },
+    "feedback_ids": {
+      "items": {
+        "maxLength": 160,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 20,
+      "minItems": 1,
+      "title": "Feedback Ids",
+      "type": "array"
+    },
+    "base_theme_version": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Base Theme Version",
+      "type": "string"
+    },
+    "patch": {
+      "$ref": "#/$defs/ResearchDirectionPatch"
+    },
+    "rationale": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Rationale",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "consultant_id",
+    "scope",
+    "feedback_ids",
+    "base_theme_version",
+    "patch",
+    "rationale"
+  ],
+  "title": "CreateDirectionProposal",
+  "type": "object"
+}

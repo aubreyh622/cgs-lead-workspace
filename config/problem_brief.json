@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "brief_id": "cgs-ai-first-mile",
+  "version": "0.3-event-pilot",
+  "capability": "AI and digital transformation strategy and first-mile planning",
+  "problem": "Find manufacturers with evidenced business events or challenges that may create AI, digital strategy or operating-model planning work. A merger, divestiture, product expansion or leadership change can justify investigation without public proof of an unresolved problem. The challenge and need for external advice remain hypotheses.",
+  "industry": "Manufacturing",
+  "geography": "Manufacturing operations in the United States; headquarters may be elsewhere",
+  "signals": ["AI pilot scaling difficulties", "Fragmented digital initiatives", "New transformation leadership or operating-model review", "Merger or product expansion requiring technology and operating-model integration"],
+  "exclusions": ["Pure resellers", "Consulting competitors", "Outside the manufacturing or US-operations cohort; missing cohort evidence remains unknown"],
+  "excluded_domains": [],
+  "buyer_roles": ["Chief Information Officer", "Chief Digital Officer", "Chief Strategy Officer", "Head of Transformation"],
+  "acceptable_sources": ["Official company pages and dated announcements", "Public regulatory filings", "Credible business publications with attributable reporting"],
+  "signal_max_age_days": 365,
+  "role_max_age_days": 180,
+  "approved_by": "Mock prototype decision authorized by user; not CGS approval",
+  "approved_at": "2026-10-20T20:00:00-04:00",
+  "approval_basis": "mock",
+  "pipeline_owner": "Mock downstream pipeline owner",
+  "missing_contact_owner": "downstream"
+}

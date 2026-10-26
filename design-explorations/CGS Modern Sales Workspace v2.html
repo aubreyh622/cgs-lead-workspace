@@ -1,0 +1,868 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CGS Modern Sales Workspace — Design Exploration</title>
+  <style>
+    /*
+      CGS design system
+      Type: 32 / 24 / 18 / 14 / 12; Segoe UI Variable first.
+      Palette: deep ink #15363d, teal #245f52, canvas #f4f6f3, panel #fff.
+      Spacing: 4 / 8 / 12 / 16 / 24 / 32. Corners: 8–14px.
+      Structure: persistent work queue + company context + agent operations + human decision.
+    */
+    :root {
+      color-scheme: light;
+      --nav: #15363d;
+      --nav-2: #1c4448;
+      --teal: #245f52;
+      --teal-2: #317664;
+      --ink: #17363c;
+      --muted: #5b706d;
+      --quiet: #7c8e8a;
+      --canvas: #f4f6f3;
+      --panel: #ffffff;
+      --line: #d8e1dd;
+      --line-strong: #bdcdc7;
+      --positive: #e4f0e8;
+      --positive-ink: #245a42;
+      --attention: #fbefdc;
+      --attention-ink: #855d22;
+      --risk: #f8e9e5;
+      --risk-ink: #984b3d;
+      --blue: #e9f0f5;
+      --blue-ink: #315f79;
+      --focus: #80a998;
+      --shadow: 0 18px 48px rgba(18, 48, 51, .16);
+      --density: 12px;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      color: var(--ink);
+      background: var(--canvas);
+      font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
+      outline: 3px solid color-mix(in srgb, var(--focus) 55%, transparent);
+      outline-offset: 2px;
+    }
+    .icon { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+    .icon.small { width: 15px; height: 15px; }
+    .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 224px minmax(0, 1fr);
+      background: var(--canvas);
+    }
+
+    .sidebar {
+      background: var(--nav);
+      color: #eaf2ef;
+      padding: 22px 14px 16px;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .brand { display: flex; align-items: center; gap: 11px; min-height: 40px; padding: 0 8px 20px; }
+    .brand-mark { width: 30px; height: 30px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 3px; }
+    .brand-mark span { background: #d7e8df; border-radius: 2px; }
+    .brand-mark span:nth-child(2), .brand-mark span:nth-child(3) { background: #8eb7a6; }
+    .brand strong { display: block; font-size: 16px; letter-spacing: .02em; }
+    .brand small { display: block; color: #a9c1b9; font-size: 11px; margin-top: 1px; }
+    .nav-label { color: #89a69d; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; padding: 17px 11px 7px; }
+    .nav-item {
+      width: 100%; min-height: 42px; border: 0; background: transparent; color: #bcd0ca;
+      display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: 8px; text-align: left; cursor: pointer;
+    }
+    .nav-item:hover { background: rgba(255,255,255,.07); color: #fff; }
+    .nav-item.active { background: #fff; color: var(--nav); font-weight: 650; }
+    .nav-item .badge { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; display: grid; place-items: center; border-radius: 10px; font-size: 11px; background: rgba(255,255,255,.12); }
+    .nav-item.active .badge { background: var(--positive); color: var(--positive-ink); }
+    .sidebar-foot { margin-top: auto; padding: 14px 9px 2px; border-top: 1px solid rgba(255,255,255,.1); }
+    .status-line { display: flex; align-items: center; gap: 8px; color: #bcd0ca; font-size: 12px; }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #91c5a4; box-shadow: 0 0 0 3px rgba(145,197,164,.13); }
+    .demo-label { display: block; color: #829e95; font-size: 10px; margin-top: 7px; }
+
+    .workspace { min-width: 0; height: 100vh; display: grid; grid-template-rows: 64px 1fr; }
+    .topbar {
+      background: rgba(255,255,255,.96); border-bottom: 1px solid var(--line); padding: 0 22px;
+      display: flex; align-items: center; gap: 16px; position: relative; z-index: 10;
+    }
+    .mobile-menu { display: none; border: 0; background: transparent; width: 42px; height: 42px; place-items: center; cursor: pointer; }
+    .top-title { min-width: 188px; }
+    .top-title strong { display: block; font-size: 15px; }
+    .top-title span { color: var(--muted); font-size: 11px; }
+    .command {
+      flex: 1; max-width: 600px; height: 40px; border: 1px solid var(--line); background: #f8faf8; border-radius: 9px;
+      display: flex; align-items: center; gap: 9px; padding: 0 12px; color: var(--muted);
+    }
+    .command input { min-width: 0; flex: 1; border: 0; outline: none; background: transparent; color: var(--ink); }
+    .command kbd { border: 1px solid var(--line); background: #fff; border-radius: 5px; padding: 1px 6px; font-size: 10px; color: var(--quiet); box-shadow: 0 1px 0 rgba(0,0,0,.04); }
+    .top-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .icon-btn { width: 40px; height: 40px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 9px; background: #fff; cursor: pointer; }
+    .icon-btn:hover { border-color: var(--line-strong); background: #f8faf8; }
+    .avatar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--nav); color: #fff; font-size: 11px; font-weight: 700; }
+
+    .page-head {
+      padding: 18px 22px 0; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; background: var(--canvas);
+    }
+    .eyebrow { color: var(--teal); font-size: 11px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 5px; }
+    h1 { font-size: 24px; line-height: 1.2; margin: 0; letter-spacing: -.025em; }
+    .subhead { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+    .head-actions { display: flex; gap: 8px; }
+    .btn { min-height: 40px; border-radius: 9px; padding: 0 14px; border: 1px solid var(--line-strong); background: #fff; font-weight: 650; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+    .btn:hover { background: #f8faf8; }
+    .btn.primary { border-color: var(--teal); background: var(--teal); color: #fff; }
+    .btn.primary:hover { background: var(--nav); }
+    .btn.ghost { border-color: transparent; background: transparent; color: var(--teal); }
+    .btn.small { min-height: 34px; padding: 0 10px; font-size: 12px; }
+
+    .work-area { min-height: 0; padding: 14px 22px 22px; display: grid; grid-template-rows: auto auto 1fr; gap: 12px; }
+    .page-view { display: none; min-width: 0; min-height: 0; overflow: hidden; }
+    .page-view.active { display: grid; }
+    #salesView { grid-template-rows: auto 1fr; }
+    .module-view { grid-template-rows: auto 1fr; }
+    .module-body { min-height: 0; padding: 14px 22px 22px; overflow: auto; }
+    .module-grid { min-height: 100%; display: grid; grid-template-columns: minmax(340px, .75fr) minmax(520px, 1.25fr); gap: 12px; }
+    .module-stack { min-height: 0; display: flex; flex-direction: column; }
+    .module-pad { padding: 18px; overflow: auto; }
+    .module-intro { padding: 14px 16px; border-bottom: 1px solid var(--line); background: #f8faf8; }
+    .module-intro strong { display: block; font-size: 13px; }
+    .module-intro p { margin: 4px 0 0; color: var(--muted); font-size: 11px; max-width: 70ch; }
+    .record-list { min-height: 0; overflow: auto; }
+    .record-row { width: 100%; border: 0; border-bottom: 1px solid #e8eeeb; background: #fff; padding: 14px 15px; text-align: left; cursor: pointer; display: grid; grid-template-columns: 36px 1fr auto; align-items: center; gap: 11px; }
+    .record-row:hover { background: #f7faf8; }
+    .record-row.selected { background: #eef5f1; box-shadow: inset 3px 0 0 var(--teal); }
+    .record-row strong { display: block; font-size: 12px; }
+    .record-row p { margin: 3px 0 0; color: var(--muted); font-size: 10px; }
+    .record-meta { color: var(--muted); font-size: 10px; text-align: right; }
+    .workflow-strip { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line); margin-bottom: 18px; }
+    .workflow-step { min-height: 72px; padding: 11px 12px; border-right: 1px solid var(--line); }
+    .workflow-step:last-child { border-right: 0; }
+    .workflow-step span { color: var(--muted); font-size: 9px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .workflow-step strong { display: block; margin-top: 5px; font-size: 11px; }
+    .workflow-step.current { background: var(--positive); }
+    .module-section { margin-bottom: 22px; }
+    .module-section:last-child { margin-bottom: 0; }
+    .module-section h2 { margin: 0 0 5px; font-size: 16px; }
+    .module-section > p { margin: 0 0 12px; color: var(--muted); font-size: 11px; }
+    .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .field { min-width: 0; }
+    .field.full { grid-column: 1 / -1; }
+    .field label { display: block; margin-bottom: 5px; color: var(--muted); font-size: 10px; font-weight: 700; }
+    .field input, .field textarea, .field select { width: 100%; min-height: 40px; border: 1px solid var(--line-strong); border-radius: 8px; background: #fff; color: var(--ink); padding: 9px 10px; font: inherit; font-size: 12px; }
+    .field textarea { min-height: 72px; resize: vertical; }
+    .boundary-note { padding: 11px 12px; border: 1px solid var(--line); background: #f8faf8; color: var(--muted); font-size: 10px; }
+    .checklist { border: 1px solid var(--line); }
+    .check-row { min-height: 47px; padding: 9px 12px; display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 9px; border-bottom: 1px solid var(--line); }
+    .check-row:last-child { border-bottom: 0; }
+    .check-mark { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: var(--positive); color: var(--positive-ink); font-size: 10px; font-weight: 800; }
+    .check-mark.missing { background: var(--attention); color: var(--attention-ink); }
+    .check-row strong { font-size: 11px; }
+    .check-row small { color: var(--muted); font-size: 10px; }
+    .decision-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+    .agent-board { border: 1px solid var(--line); background: #fff; }
+    .agent-board-row { min-height: 84px; padding: 13px 15px; display: grid; grid-template-columns: minmax(180px,.7fr) minmax(260px,1.2fr) minmax(220px,1fr) 110px; align-items: center; gap: 14px; border-bottom: 1px solid var(--line); cursor: pointer; }
+    .agent-board-row:last-child { border-bottom: 0; }
+    .agent-board-row:hover { background: #f7faf8; }
+    .agent-board-name { display: flex; align-items: center; gap: 10px; }
+    .agent-board-name strong { font-size: 12px; }
+    .agent-board-copy span { display: block; color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 4px; }
+    .agent-board-copy strong { font-size: 11px; }
+    .score-table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--line); }
+    .score-table th, .score-table td { padding: 13px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-size: 11px; }
+    .score-table th { color: var(--muted); font-size: 9px; letter-spacing: .07em; text-transform: uppercase; background: #f8faf8; }
+    .score-table tr:last-child td { border-bottom: 0; }
+    .score-table td:first-child { width: 190px; font-weight: 720; }
+    .decision-key { display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid var(--line); margin-top: 14px; background: #fff; }
+    .decision-key div { padding: 12px; border-right: 1px solid var(--line); }
+    .decision-key div:last-child { border-right: 0; }
+    .decision-key strong { display: block; font-size: 10px; }
+    .decision-key span { display: block; color: var(--muted); font-size: 9px; margin-top: 3px; }
+    .settings-grid { display: grid; grid-template-columns: minmax(480px, 1fr) minmax(360px, .8fr); gap: 12px; }
+    .setting-row { min-height: 61px; padding: 11px 15px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 16px; }
+    .setting-row:last-child { border-bottom: 0; }
+    .setting-copy { min-width: 0; }
+    .setting-copy strong { display: block; font-size: 11px; }
+    .setting-copy span { color: var(--muted); font-size: 10px; }
+    .setting-control { margin-left: auto; flex: none; }
+    .source-list { margin: 0; padding: 0; list-style: none; }
+    .source-list li { padding: 11px 0; border-bottom: 1px solid #e8eeeb; display: flex; justify-content: space-between; gap: 12px; font-size: 11px; }
+    .source-list li:last-child { border-bottom: 0; }
+    .source-list span { color: var(--muted); }
+    body:not([data-page="sales"]) .tweaks-trigger, body:not([data-page="sales"]) .tweaks { display: none !important; }
+    .snapshot {
+      display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr));
+      background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+    }
+    .metric { padding: 12px 15px; border-right: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .metric:last-child { border-right: 0; }
+    .metric-label { color: var(--muted); font-size: 11px; }
+    .metric-value { font-size: 18px; font-weight: 720; letter-spacing: -.02em; }
+    .metric-note { margin-top: 2px; color: var(--quiet); font-size: 10px; }
+    .metric-mark { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 9px; background: var(--positive); color: var(--positive-ink); }
+    .metric.attention .metric-mark { background: var(--attention); color: var(--attention-ink); }
+    .metric.blue .metric-mark { background: var(--blue); color: var(--blue-ink); }
+
+    .views-bar { min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 8px; }
+    .view-tabs { min-width: 0; display: flex; align-items: center; gap: 3px; overflow-x: auto; scrollbar-width: none; }
+    .view-tab { white-space: nowrap; min-height: 36px; border: 0; border-radius: 8px; background: transparent; padding: 0 11px; color: var(--muted); font-size: 12px; font-weight: 650; cursor: pointer; }
+    .view-tab:hover { background: #e9eeeb; color: var(--ink); }
+    .view-tab.active { background: var(--nav); color: #fff; }
+    .view-tab span { opacity: .72; margin-left: 5px; }
+    .filter-actions { margin-left: auto; display: flex; gap: 7px; }
+
+    .content-grid { min-height: 0; display: grid; gap: 12px; grid-template-columns: minmax(430px, 1.15fr) minmax(310px, .85fr) 250px; }
+    .surface { min-width: 0; min-height: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+    .surface-head { min-height: 51px; padding: 0 15px; display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+    .surface-title { font-size: 13px; font-weight: 720; }
+    .surface-meta { margin-left: 8px; color: var(--muted); font-size: 11px; }
+    .surface-tools { margin-left: auto; display: flex; align-items: center; gap: 5px; }
+
+    .queue { display: flex; flex-direction: column; }
+    .queue-list { overflow: auto; min-height: 0; }
+    .queue-row {
+      width: 100%; border: 0; border-bottom: 1px solid #e8eeeb; background: #fff; text-align: left; cursor: pointer;
+      display: grid; grid-template-columns: 36px minmax(146px, 1.2fr) minmax(120px, .9fr) minmax(146px, 1fr) 84px;
+      align-items: center; column-gap: 11px; padding: var(--density) 14px; color: var(--ink); position: relative;
+    }
+    .queue-row:last-child { border-bottom: 0; }
+    .queue-row:hover { background: #f7faf8; }
+    .queue-row.selected { background: #eef5f1; box-shadow: inset 3px 0 0 var(--teal); }
+    .company-avatar { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; background: #e8efec; color: var(--teal); font-size: 11px; font-weight: 750; }
+    .company-name { display: block; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cell-caption { color: var(--muted); font-size: 11px; display: block; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .next-action { font-size: 12px; font-weight: 650; line-height: 1.3; }
+    .next-action small { font-weight: 400; color: var(--muted); display: block; margin-top: 3px; }
+    .pill { display: inline-flex; align-items: center; gap: 5px; min-height: 24px; border-radius: 12px; padding: 0 8px; font-size: 10px; font-weight: 720; white-space: nowrap; }
+    .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .72; }
+    .pill.review { background: var(--attention); color: var(--attention-ink); }
+    .pill.ready { background: var(--positive); color: var(--positive-ink); }
+    .pill.research { background: var(--blue); color: var(--blue-ink); }
+    .pill.followup { background: #f0ebf5; color: #6c4d82; }
+    .assignee { display: flex; align-items: center; gap: 7px; font-size: 11px; }
+    .mini-avatar { width: 25px; height: 25px; border-radius: 50%; background: var(--nav); color: #fff; display: grid; place-items: center; font-size: 9px; font-weight: 700; }
+    .empty { padding: 36px; text-align: center; color: var(--muted); }
+
+    .context { display: flex; flex-direction: column; }
+    .context-top { padding: 16px 16px 12px; border-bottom: 1px solid var(--line); }
+    .context-title-line { display: flex; align-items: flex-start; gap: 11px; }
+    .context-logo { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 10px; background: var(--nav); color: #fff; font-size: 12px; font-weight: 750; flex: none; }
+    .context-title { min-width: 0; }
+    .context-title h2 { margin: 0 0 2px; font-size: 18px; line-height: 1.2; letter-spacing: -.015em; }
+    .context-title p { margin: 0; color: var(--muted); font-size: 11px; }
+    .close-context { display: none; margin-left: auto; }
+    .context-actions { display: flex; gap: 7px; margin-top: 13px; }
+    .context-tabs { display: flex; padding: 0 10px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+    .context-tab { min-height: 42px; border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 0 8px; color: var(--muted); font-size: 11px; font-weight: 650; cursor: pointer; white-space: nowrap; }
+    .context-tab.active { color: var(--teal); border-bottom-color: var(--teal); }
+    .context-body { overflow: auto; padding: 15px; min-height: 0; }
+    .context-section { margin-bottom: 20px; }
+    .section-kicker { margin: 0 0 9px; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .09em; text-transform: uppercase; }
+    .next-step { border-left: 3px solid var(--teal); background: #f3f7f4; padding: 11px 12px; }
+    .next-step strong { display: block; font-size: 12px; }
+    .next-step p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+    .key-grid { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); }
+    .key-item { padding: 10px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .key-item:nth-child(2n) { border-right: 0; }
+    .key-item:nth-last-child(-n+2) { border-bottom: 0; }
+    .key-item span { display: block; color: var(--muted); font-size: 10px; margin-bottom: 3px; }
+    .key-item strong { font-size: 11px; font-weight: 680; }
+    .evidence-item, .activity-item, .person-item { padding: 10px 0; border-bottom: 1px solid #e8eeeb; }
+    .evidence-item:last-child, .activity-item:last-child, .person-item:last-child { border-bottom: 0; }
+    .evidence-head { display: flex; gap: 8px; align-items: center; }
+    .evidence-item strong, .activity-item strong, .person-item strong { font-size: 11px; }
+    .evidence-item p, .activity-item p, .person-item p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
+    .source-link { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; color: var(--teal); font-size: 10px; font-weight: 650; }
+    .decision-box { border: 1px solid var(--line-strong); padding: 12px; background: #fff; }
+    .decision-box p { margin: 4px 0 10px; color: var(--muted); font-size: 11px; }
+
+    .agents { display: flex; flex-direction: column; }
+    .agent-summary { padding: 13px 14px; border-bottom: 1px solid var(--line); background: #f8faf8; }
+    .agent-summary strong { font-size: 12px; }
+    .agent-summary p { margin: 3px 0 0; color: var(--muted); font-size: 10px; }
+    .agent-list { overflow: auto; }
+    .agent-card { width: 100%; border: 0; border-bottom: 1px solid #e8eeeb; background: #fff; text-align: left; padding: 13px 14px; cursor: pointer; }
+    .agent-card:hover { background: #f7faf8; }
+    .agent-line { display: flex; align-items: center; gap: 9px; }
+    .agent-icon { width: 30px; height: 30px; border: 1px solid var(--line); background: #f1f5f3; display: grid; place-items: center; border-radius: 8px; color: var(--teal); }
+    .agent-name { font-size: 11px; font-weight: 720; }
+    .agent-status { display: flex; align-items: center; gap: 5px; margin-top: 2px; color: var(--positive-ink); font-size: 9px; font-weight: 650; }
+    .agent-status::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: #5f9b72; }
+    .agent-card.paused .agent-status { color: var(--attention-ink); }
+    .agent-card.paused .agent-status::before { background: #c18c3d; }
+    .agent-detail { margin: 9px 0 0 39px; color: var(--muted); font-size: 10px; }
+    .agent-count { margin-left: auto; min-width: 22px; height: 22px; display: grid; place-items: center; border-radius: 11px; background: var(--attention); color: var(--attention-ink); font-size: 9px; font-weight: 750; }
+    .agent-boundary { margin: auto 12px 12px; padding: 10px; border: 1px solid var(--line); color: var(--muted); font-size: 10px; }
+
+    /* Three related directions: conservative queue, balanced split, novel agent cockpit. */
+    body[data-layout="focused"] .content-grid { grid-template-columns: 1fr; }
+    body[data-layout="focused"] .context, body[data-layout="focused"] .agents { display: none; }
+    body[data-layout="focused"] .queue-row { grid-template-columns: 36px minmax(180px, 1.3fr) minmax(150px, 1fr) minmax(180px, 1.2fr) 100px; }
+    body[data-layout="focused"] .queue { max-width: 1120px; }
+    body[data-layout="split"] .content-grid { grid-template-columns: minmax(430px, 1.2fr) minmax(340px, .8fr); }
+    body[data-layout="split"] .agents { display: none; }
+    body[data-density="compact"] { --density: 8px; }
+
+    .drawer-backdrop { display: none; }
+    .toast { position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 18px); padding: 10px 13px; background: var(--nav); color: #fff; border-radius: 8px; opacity: 0; pointer-events: none; transition: .2s ease; z-index: 80; box-shadow: var(--shadow); font-size: 12px; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    .tweaks-trigger { position: fixed; right: 20px; bottom: 20px; z-index: 90; min-height: 42px; border: 0; border-radius: 22px; padding: 0 15px; background: var(--nav); color: #fff; box-shadow: var(--shadow); font-size: 11px; font-weight: 720; cursor: pointer; display: flex; align-items: center; gap: 7px; }
+    .tweaks { position: fixed; right: 20px; bottom: 72px; width: 292px; z-index: 90; background: #fff; border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 12px; padding: 15px; display: none; }
+    .tweaks.open { display: block; }
+    .tweaks-head { display: flex; align-items: flex-start; margin-bottom: 13px; }
+    .tweaks-head strong { font-size: 13px; }
+    .tweaks-head p { margin: 3px 0 0; color: var(--muted); font-size: 10px; }
+    .tweaks-close { margin-left: auto; width: 30px; height: 30px; border: 0; border-radius: 7px; background: #f1f4f2; cursor: pointer; }
+    .control-group { margin-top: 13px; }
+    .control-label { display: block; margin-bottom: 7px; color: var(--muted); font-size: 10px; font-weight: 720; letter-spacing: .08em; text-transform: uppercase; }
+    .segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+    .segment { min-height: 35px; border: 1px solid var(--line); background: #fff; border-radius: 7px; font-size: 10px; font-weight: 650; cursor: pointer; }
+    .segment.active { background: var(--nav); border-color: var(--nav); color: #fff; }
+    .switch-line { min-height: 37px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .switch-line span { font-size: 11px; }
+    .switch { width: 38px; height: 22px; border: 0; border-radius: 11px; padding: 3px; background: #b9c6c2; cursor: pointer; transition: .2s; }
+    .switch::after { content: ""; display: block; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: .2s; }
+    .switch.on { background: var(--teal); }
+    .switch.on::after { transform: translateX(16px); }
+    .reference-note { margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--line); color: var(--muted); font-size: 9px; line-height: 1.5; }
+
+    dialog { width: min(520px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 14px; color: var(--ink); box-shadow: var(--shadow); }
+    dialog::backdrop { background: rgba(17,45,48,.36); backdrop-filter: blur(2px); }
+    .dialog-head { padding: 17px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: flex-start; gap: 12px; }
+    .dialog-head h2 { margin: 0; font-size: 18px; }
+    .dialog-head p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+    .dialog-close { margin-left: auto; }
+    .dialog-body { padding: 17px 18px; }
+    .agent-fact { display: grid; grid-template-columns: 110px 1fr; gap: 12px; padding: 9px 0; border-bottom: 1px solid #e8eeeb; font-size: 11px; }
+    .agent-fact span { color: var(--muted); }
+    .dialog-foot { padding: 13px 18px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 8px; }
+
+    @media (max-width: 1500px) {
+      body:not([data-layout="focused"]) .queue-row { grid-template-columns: 34px minmax(130px, 1fr) 100px minmax(130px, .9fr); }
+      body:not([data-layout="focused"]) .queue-row > :nth-child(5) { display: none; }
+    }
+    @media (max-width: 1220px) {
+      .content-grid { grid-template-columns: minmax(420px, 1.1fr) minmax(310px, .9fr); }
+      body[data-layout="cockpit"] .agents { display: none; }
+      .snapshot { grid-template-columns: repeat(2, 1fr); }
+      .metric:nth-child(2) { border-right: 0; }
+      .metric:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+    }
+    @media (max-width: 900px) {
+      body { overflow: auto; }
+      .app { grid-template-columns: 76px minmax(0, 1fr); }
+      .sidebar { padding-inline: 10px; }
+      .brand { justify-content: center; padding-inline: 0; }
+      .brand-copy, .nav-label, .nav-item span:not(.badge), .sidebar-foot { display: none; }
+      .nav-item { justify-content: center; padding: 0; }
+      .nav-item .badge { position: absolute; margin: -22px -30px 0 0; }
+      .content-grid, body[data-layout="split"] .content-grid { grid-template-columns: 1fr; }
+      .context { display: none; position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 92vw); z-index: 70; border-radius: 0; box-shadow: var(--shadow); }
+      .context.mobile-open { display: flex; }
+      .close-context { display: grid; }
+      .drawer-backdrop.open { display: block; position: fixed; inset: 0; z-index: 69; background: rgba(17,45,48,.3); }
+    }
+    @media (max-width: 680px) {
+      .app { display: block; }
+      .sidebar { display: none; }
+      .workspace { height: auto; min-height: 100vh; grid-template-rows: 58px auto auto; }
+      .topbar { padding: 0 12px; }
+      .mobile-menu { display: grid; }
+      .top-title { min-width: 0; }
+      .top-title span, .command { display: none; }
+      .page-head { align-items: flex-start; padding: 16px 14px 0; }
+      .page-head > div:first-child { min-width: 0; }
+      h1 { font-size: 21px; }
+      .subhead { max-width: 280px; }
+      .head-actions .btn:first-child { display: none; }
+      .head-actions .btn.primary { width: 44px; padding: 0; font-size: 0; }
+      .head-actions .btn.primary .icon { margin: 0; }
+      .work-area { padding: 12px 14px 80px; }
+      .snapshot { grid-template-columns: repeat(2, 1fr); }
+      .metric { padding: 10px; }
+      .metric-mark { display: none; }
+      .views-bar { align-items: flex-start; overflow: hidden; }
+      .filter-actions { display: none; }
+      .queue-row, body[data-layout="focused"] .queue-row { grid-template-columns: 34px minmax(0, 1fr) 86px; gap: 9px; }
+      .queue-row > :nth-child(3), .queue-row > :nth-child(4) { display: none; }
+      .surface-head { padding: 0 12px; }
+      .tweaks-trigger { right: 14px; bottom: 14px; }
+      .tweaks { right: 14px; bottom: 64px; width: min(292px, calc(100vw - 28px)); }
+    }
+  </style>
+</head>
+<body data-layout="cockpit" data-density="comfortable" data-page="sales">
+  <svg aria-hidden="true" class="sr-only">
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10.5V20h13v-9.5M9.5 20v-6h5v6"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M8.5 12h.01M15.5 12h.01M9 16h6"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3-9 5 9 5 9-5-9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M14 7l5 5-5 5"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  </svg>
+
+  <div class="app">
+    <aside class="sidebar" aria-label="Primary navigation">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+        <span class="brand-copy"><strong>CGS</strong><small>Lead workspace</small></span>
+      </div>
+      <div class="nav-label">Workspace</div>
+      <button class="nav-item active" data-page="sales"><svg class="icon"><use href="#i-home"/></svg><span>Sales workspace</span></button>
+      <button class="nav-item" data-page="research"><svg class="icon"><use href="#i-search"/></svg><span>Research</span><span class="badge">2</span></button>
+      <button class="nav-item" data-page="approvals"><svg class="icon"><use href="#i-check"/></svg><span>Approvals</span><span class="badge">1</span></button>
+      <button class="nav-item" data-page="agents"><svg class="icon"><use href="#i-bot"/></svg><span>Agent operations</span><span class="badge">4</span></button>
+      <div class="nav-label">Manage</div>
+      <button class="nav-item" data-page="scoring"><svg class="icon"><use href="#i-layers"/></svg><span>Scoring guide</span></button>
+      <button class="nav-item" data-page="settings"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></button>
+      <div class="sidebar-foot">
+        <div class="status-line"><span class="status-dot"></span>Local workspace ready</div>
+        <span class="demo-label">Offline synthetic design preview</span>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <button class="mobile-menu" aria-label="Open navigation"><svg class="icon"><use href="#i-list"/></svg></button>
+        <div class="top-title"><strong id="topTitle">Sales workspace</strong><span id="topSubtitle">Early-funnel operations</span></div>
+        <label class="command">
+          <svg class="icon small"><use href="#i-search"/></svg>
+          <span class="sr-only">Search cases</span>
+          <input id="globalSearch" type="search" placeholder="Search companies, people, or actions">
+          <kbd>⌘ K</kbd>
+        </label>
+        <div class="top-actions">
+          <button class="icon-btn" aria-label="Recent activity"><svg class="icon"><use href="#i-clock"/></svg></button>
+          <span class="avatar" aria-label="Alex Morgan">AM</span>
+        </div>
+      </header>
+
+      <div class="page-view active" id="salesView">
+      <section class="page-head">
+        <div>
+          <div class="eyebrow">Today’s work</div>
+          <h1>Move the right opportunities forward</h1>
+          <p class="subhead">Review agent-prepared evidence, make the decision, and leave every case with a clear next step.</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn"><svg class="icon small"><use href="#i-filter"/></svg>Customize view</button>
+          <button class="btn primary" id="newResearch"><svg class="icon small"><use href="#i-plus"/></svg>New research</button>
+        </div>
+      </section>
+
+      <section class="work-area">
+        <div class="snapshot" aria-label="Workspace summary">
+          <div class="metric"><div><div class="metric-label">Open cases</div><div class="metric-value" id="openCount">7</div><div class="metric-note">Synthetic workspace</div></div><span class="metric-mark"><svg class="icon small"><use href="#i-list"/></svg></span></div>
+          <div class="metric attention"><div><div class="metric-label">Needs your review</div><div class="metric-value" id="reviewCount">3</div><div class="metric-note">Human decision required</div></div><span class="metric-mark"><svg class="icon small"><use href="#i-check"/></svg></span></div>
+          <div class="metric"><div><div class="metric-label">Ready for approval</div><div class="metric-value" id="readyCount">1</div><div class="metric-note">No automatic acceptance</div></div><span class="metric-mark"><svg class="icon small"><use href="#i-arrow"/></svg></span></div>
+          <div class="metric blue"><div><div class="metric-label">Agents active</div><div class="metric-value">3<span style="font-size:11px;color:var(--muted);font-weight:500"> / 4</span></div><div class="metric-note">One waiting for input</div></div><span class="metric-mark"><svg class="icon small"><use href="#i-bot"/></svg></span></div>
+        </div>
+
+        <div class="views-bar">
+          <div class="view-tabs" role="tablist" aria-label="Saved views">
+            <button class="view-tab active" data-view="all">My work <span id="allBadge">7</span></button>
+            <button class="view-tab" data-view="review">Needs review <span>3</span></button>
+            <button class="view-tab" data-view="ready">Ready for approval <span>1</span></button>
+            <button class="view-tab" data-view="followup">Follow-ups <span>2</span></button>
+          </div>
+          <div class="filter-actions">
+            <button class="btn small"><svg class="icon small"><use href="#i-filter"/></svg>Filter</button>
+            <button class="btn small">Sort: Next action</button>
+          </div>
+        </div>
+
+        <div class="content-grid">
+          <section class="surface queue" aria-labelledby="queueTitle">
+            <div class="surface-head"><span class="surface-title" id="queueTitle">Priority work queue</span><span class="surface-meta" id="queueMeta">7 cases</span><span class="surface-tools"><button class="icon-btn" style="width:32px;height:32px" aria-label="Queue options">•••</button></span></div>
+            <div class="queue-list" id="queueList"></div>
+          </section>
+
+          <section class="surface context" id="contextPanel" aria-labelledby="contextCompany">
+            <div class="context-top">
+              <div class="context-title-line">
+                <span class="context-logo" id="contextLogo">MI</span>
+                <div class="context-title"><h2 id="contextCompany">Meridian Industries</h2><p id="contextSubtitle">Manufacturing · North America</p></div>
+                <button class="icon-btn close-context" id="closeContext" aria-label="Close company details"><svg class="icon"><use href="#i-close"/></svg></button>
+              </div>
+              <div class="context-actions"><button class="btn primary small" id="openCase">Open case</button><button class="btn small" id="reviewEvidence">Review evidence</button></div>
+            </div>
+            <div class="context-tabs" role="tablist" aria-label="Company information">
+              <button class="context-tab active" data-context="summary">Summary</button>
+              <button class="context-tab" data-context="evidence">Evidence</button>
+              <button class="context-tab" data-context="people">People</button>
+              <button class="context-tab" data-context="activity">Activity</button>
+            </div>
+            <div class="context-body" id="contextBody"></div>
+          </section>
+
+          <aside class="surface agents" aria-labelledby="agentsTitle">
+            <div class="surface-head"><span class="surface-title" id="agentsTitle">Agent operations</span><span class="surface-meta">Live status</span></div>
+            <div class="agent-summary"><strong>Agents prepare. Your team decides.</strong><p>Work pauses at evidence and approval boundaries.</p></div>
+            <div class="agent-list" id="agentList"></div>
+            <div class="agent-boundary">No email sends, CRM writes, or qualification approvals happen automatically in this preview.</div>
+          </aside>
+        </div>
+      </section>
+      </div>
+
+      <section class="page-view module-view" id="moduleView" aria-live="polite">
+        <div class="page-head">
+          <div>
+            <div class="eyebrow" id="moduleEyebrow">Workspace</div>
+            <h1 id="moduleTitle">Research</h1>
+            <p class="subhead" id="moduleSubhead"></p>
+          </div>
+          <div class="head-actions" id="moduleActions"></div>
+        </div>
+        <div class="module-body" id="moduleBody"></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="drawer-backdrop" id="backdrop"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <button class="tweaks-trigger" id="tweaksTrigger" aria-expanded="false"><svg class="icon small"><use href="#i-sliders"/></svg>Compare directions</button>
+  <aside class="tweaks" id="tweaks" aria-label="Design direction controls">
+    <div class="tweaks-head"><div><strong>Interface direction</strong><p>Same workflow, three levels of ambition.</p></div><button class="tweaks-close" id="tweaksClose" aria-label="Close controls">×</button></div>
+    <div class="control-group">
+      <span class="control-label">Layout</span>
+      <div class="segmented">
+        <button class="segment" data-layout-choice="focused" title="Conservative: work list first">A · Queue</button>
+        <button class="segment" data-layout-choice="split" title="Balanced: list and context">B · Split</button>
+        <button class="segment active" data-layout-choice="cockpit" title="Novel: multi-agent operations">C · Cockpit</button>
+      </div>
+    </div>
+    <div class="control-group">
+      <span class="control-label">Density</span>
+      <div class="segmented" style="grid-template-columns:1fr 1fr">
+        <button class="segment" data-density-choice="compact">Compact</button>
+        <button class="segment active" data-density-choice="comfortable">Comfortable</button>
+      </div>
+    </div>
+    <div class="control-group"><div class="switch-line"><span>Keep agent status visible</span><button class="switch on" id="agentSwitch" role="switch" aria-checked="true" aria-label="Keep agent status visible"></button></div></div>
+    <div class="reference-note"><strong>Reference boundary:</strong> inspired by current HubSpot workspace patterns—saved views, queue + context, agent visibility, explicit approvals. CGS branding, evidence model, and composition remain original.</div>
+  </aside>
+
+  <dialog id="agentDialog" aria-labelledby="agentDialogTitle">
+    <div class="dialog-head"><span class="agent-icon"><svg class="icon"><use href="#i-bot"/></svg></span><div><h2 id="agentDialogTitle">Agent details</h2><p id="agentDialogSubtitle"></p></div><button class="icon-btn dialog-close" id="dialogClose" aria-label="Close"><svg class="icon"><use href="#i-close"/></svg></button></div>
+    <div class="dialog-body" id="agentDialogBody"></div>
+    <div class="dialog-foot"><button class="btn" id="pauseAgent">Pause agent</button><button class="btn primary" id="viewAgentWork">View prepared work</button></div>
+  </dialog>
+
+  <script>
+    const cases = [
+      { id:'meridian', name:'Meridian Industries', initials:'MI', sector:'Manufacturing', region:'North America', stage:'Finance transformation', status:'review', label:'Needs review', owner:'Alex Morgan', ownerInitials:'AM', contact:'Emma Chen', role:'VP Finance', revenue:'$600–800K', next:'Validate transformation trigger', due:'Today', confidence:'Medium', signal:'Finance operating model change', evidence:[['Public fact','Leadership page confirms Emma Chen as VP Finance.'],['Opportunity hypothesis','Transformation program may create demand for operating-model support.'],['Research gap','Budget, decision process, and timeline are not confirmed.']] },
+      { id:'northstar', name:'Northstar Health', initials:'NH', sector:'Healthcare', region:'Canada', stage:'Operating model redesign', status:'review', label:'Needs review', owner:'Alex Morgan', ownerInitials:'AM', contact:'James Walker', role:'COO', revenue:'$600K', next:'Review source freshness', due:'Today', confidence:'Medium', signal:'Operating-model redesign', evidence:[['Public fact','A public update references an operating-model redesign.'],['Opportunity hypothesis','The redesign may require cross-functional change support.'],['Research gap','Executive sponsorship is not confirmed.']] },
+      { id:'atlas', name:'Atlas Financial', initials:'AF', sector:'Financial services', region:'United States', stage:'Growth strategy review', status:'ready', label:'Ready', owner:'Sarah Patel', ownerInitials:'SP', contact:'Sofia Reyes', role:'Chief Strategy Officer', revenue:'$1.2–1.5M', next:'Approve discovery handoff', due:'Today', confidence:'High', signal:'Growth strategy review', evidence:[['Public fact','Strategy leadership and stated growth priorities are supported by current sources.'],['Opportunity hypothesis','A focused discovery conversation could test strategic fit.'],['Qualification evidence','Owner, next action, and review rationale are prepared for approval.']] },
+      { id:'alder', name:'Alder Biotech', initials:'AB', sector:'Life sciences', region:'North America', stage:'Initial discovery', status:'research', label:'Research gap', owner:'Daniel Brooks', ownerInitials:'DB', contact:'Oliver Kim', role:'VP Operations', revenue:'Unknown', next:'Find a second reliable source', due:'Tomorrow', confidence:'Low', signal:'Capacity expansion', evidence:[['Public fact','A public hiring signal suggests operations growth.'],['Opportunity hypothesis','Growth may create operating pressure.'],['Research gap','No reliable second source or revenue range yet.']] },
+      { id:'cedar', name:'Cedar Bay Logistics', initials:'CL', sector:'Logistics', region:'Canada', stage:'Supply chain assessment', status:'followup', label:'Follow-up', owner:'Sarah Patel', ownerInitials:'SP', contact:'Maya Thompson', role:'SVP Operations', revenue:'$500–700K', next:'Prepare follow-up brief', due:'Oct 26', confidence:'Medium', signal:'Network optimization', evidence:[['Public fact','Company materials describe a network optimization initiative.'],['Opportunity hypothesis','The initiative may benefit from an independent assessment.'],['Research feedback','Clarify whether the scope is regional or enterprise-wide.']] },
+      { id:'harbour', name:'Harbour Retail', initials:'HR', sector:'Retail', region:'Canada', stage:'Customer experience strategy', status:'review', label:'Needs review', owner:'Daniel Brooks', ownerInitials:'DB', contact:'Liam Davis', role:'Chief Customer Officer', revenue:'$150–250K', next:'Separate fact from hypothesis', due:'Oct 26', confidence:'Medium', signal:'CX modernization', evidence:[['Public fact','A customer-experience modernization program is publicly described.'],['Opportunity hypothesis','There may be a near-term strategy engagement.'],['Research gap','Procurement readiness and budget are unknown.']] },
+      { id:'summit', name:'Summit Energy', initials:'SE', sector:'Energy', region:'North America', stage:'Outreach preparation', status:'followup', label:'Follow-up', owner:'Alex Morgan', ownerInitials:'AM', contact:'Nina Wilson', role:'Director, Transformation', revenue:'Unknown', next:'Confirm contact relevance', due:'Oct 27', confidence:'Low', signal:'Transformation office launch', evidence:[['Public fact','A transformation-office role was announced.'],['Opportunity hypothesis','The new office may need portfolio governance support.'],['Research gap','Contact relevance and commercial value are unconfirmed.']] }
+    ];
+
+    const agents = [
+      { id:'research', name:'Research agent', status:'Running', count:2, detail:'Checking sources for Alder Biotech', scope:'Finds public facts and flags stale or missing sources.', boundary:'Cannot convert assumptions into facts.', last:'Updated 4 min ago' },
+      { id:'evidence', name:'Evidence agent', status:'Running', count:3, detail:'Binding passages to 3 claims', scope:'Connects each claim to an exact passage and source.', boundary:'Cannot approve unsupported claims.', last:'Updated 2 min ago' },
+      { id:'qualification', name:'Qualification agent', status:'Waiting for input', count:1, detail:'Atlas Financial needs approval', scope:'Prepares readiness rationale from accepted evidence.', boundary:'A human must make the qualification decision.', last:'Updated 8 min ago' },
+      { id:'followup', name:'Follow-up agent', status:'Running', count:2, detail:'Preparing two review briefs', scope:'Drafts a next-step brief after a human decision.', boundary:'Cannot send email or write to CRM.', last:'Updated 6 min ago' }
+    ];
+
+    const state = {
+      page: localStorage.getItem('cgs-page') || 'sales',
+      selected: localStorage.getItem('cgs-selected') || 'meridian',
+      view: localStorage.getItem('cgs-view') || 'all',
+      context: 'summary',
+      layout: localStorage.getItem('cgs-layout') || 'cockpit',
+      density: localStorage.getItem('cgs-density') || 'comfortable',
+      agentVisible: localStorage.getItem('cgs-agent-visible') !== 'false',
+      settings: { publicFacts:true, draftBriefs:true, crmWrites:false, emailSends:false },
+      query: ''
+    };
+
+    const $ = (selector, root=document) => root.querySelector(selector);
+    const $$ = (selector, root=document) => [...root.querySelectorAll(selector)];
+    const icon = (id, small=false) => `<svg class="icon${small ? ' small' : ''}" aria-hidden="true"><use href="#${id}"/></svg>`;
+    const currentCase = () => cases.find(item => item.id === state.selected) || cases[0];
+
+    function filteredCases() {
+      const q = state.query.trim().toLowerCase();
+      return cases.filter(item => {
+        const viewMatch = state.view === 'all' || item.status === state.view;
+        const searchMatch = !q || [item.name,item.sector,item.owner,item.contact,item.next,item.signal].join(' ').toLowerCase().includes(q);
+        return viewMatch && searchMatch;
+      });
+    }
+
+    function renderQueue() {
+      const list = filteredCases();
+      $('#queueMeta').textContent = `${list.length} case${list.length === 1 ? '' : 's'}`;
+      $('#queueList').innerHTML = list.length ? list.map(item => `
+        <button class="queue-row ${item.id === state.selected ? 'selected' : ''}" data-case="${item.id}" aria-label="Open ${item.name}">
+          <span class="company-avatar">${item.initials}</span>
+          <span><span class="company-name">${item.name}</span><span class="cell-caption">${item.sector} · ${item.stage}</span></span>
+          <span><span class="pill ${item.status}">${item.label}</span><span class="cell-caption">${item.confidence} confidence</span></span>
+          <span class="next-action">${item.next}<small>${item.due}</small></span>
+          <span class="assignee"><span class="mini-avatar">${item.ownerInitials}</span><span>${item.owner.split(' ')[0]}</span></span>
+        </button>`).join('') : `<div class="empty"><strong>No matching cases</strong><div>Try a different saved view or search.</div></div>`;
+      $$('.queue-row').forEach(row => row.addEventListener('click', () => selectCase(row.dataset.case)));
+    }
+
+    function renderContext() {
+      const item = currentCase();
+      $('#contextLogo').textContent = item.initials;
+      $('#contextCompany').textContent = item.name;
+      $('#contextSubtitle').textContent = `${item.sector} · ${item.region}`;
+      let html = '';
+      if (state.context === 'summary') html = `
+        <section class="context-section"><h3 class="section-kicker">Next best action</h3><div class="next-step"><strong>${item.next}</strong><p>Due ${item.due} · Owner ${item.owner}</p></div></section>
+        <section class="context-section"><h3 class="section-kicker">Case context</h3><div class="key-grid">
+          <div class="key-item"><span>Stage</span><strong>${item.stage}</strong></div><div class="key-item"><span>Estimated 12-mo. revenue</span><strong>${item.revenue}</strong></div>
+          <div class="key-item"><span>Priority confidence</span><strong>${item.confidence}</strong></div><div class="key-item"><span>Qualification</span><strong>${item.status === 'ready' ? 'Prepared for approval' : 'Not confirmed'}</strong></div>
+        </div></section>
+        <section class="context-section"><h3 class="section-kicker">Why now</h3><div class="evidence-item"><strong>${item.signal}</strong><p>This is an opportunity hypothesis until the cited evidence is accepted by a reviewer.</p><span class="source-link">${icon('i-layers',true)} ${item.evidence.length} evidence items</span></div></section>
+        <section class="context-section"><h3 class="section-kicker">Human decision</h3><div class="decision-box"><strong>${item.status === 'ready' ? 'Approval is ready for review' : 'Evidence review is required'}</strong><p>Agent work remains a recommendation. Confirm the rationale and next action before the case moves forward.</p><button class="btn primary small" data-action="decision">${item.status === 'ready' ? 'Review approval' : 'Review evidence'}</button></div></section>`;
+      if (state.context === 'evidence') html = `<section class="context-section"><h3 class="section-kicker">Evidence ledger</h3>${item.evidence.map((e,i) => `<div class="evidence-item"><div class="evidence-head"><span class="pill ${i === 0 ? 'ready' : i === 1 ? 'review' : 'research'}">${e[0]}</span></div><p>${e[1]}</p><span class="source-link">${icon('i-layers',true)} Open stored source passage</span></div>`).join('')}</section>`;
+      if (state.context === 'people') html = `<section class="context-section"><h3 class="section-kicker">Relevant people</h3><div class="person-item"><strong>${item.contact}</strong><p>${item.role} · Recommended contact for human review</p></div><div class="person-item"><strong>${item.owner}</strong><p>CGS case owner · Responsible for next decision</p></div></section><section class="context-section"><h3 class="section-kicker">Contact boundary</h3><div class="decision-box"><strong>No outreach has been sent</strong><p>Contact recommendations and draft language require human acceptance.</p></div></section>`;
+      if (state.context === 'activity') html = `<section class="context-section"><h3 class="section-kicker">Case activity</h3><div class="activity-item"><strong>Evidence agent prepared claim mapping</strong><p>Today · Awaiting review</p></div><div class="activity-item"><strong>Research agent checked source freshness</strong><p>Today · Public sources only</p></div><div class="activity-item"><strong>${item.owner} set the next action</strong><p>Yesterday · ${item.next}</p></div></section>`;
+      $('#contextBody').innerHTML = html;
+      $('[data-action="decision"]')?.addEventListener('click', () => { state.context = 'evidence'; syncContextTabs(); renderContext(); showToast('Opened the evidence ledger for human review.'); });
+    }
+
+    function renderAgents() {
+      $('#agentList').innerHTML = agents.map(agent => `
+        <button class="agent-card ${agent.status.includes('Waiting') ? 'paused' : ''}" data-agent="${agent.id}">
+          <span class="agent-line"><span class="agent-icon">${icon('i-bot',true)}</span><span><span class="agent-name">${agent.name}</span><span class="agent-status">${agent.status}</span></span><span class="agent-count">${agent.count}</span></span>
+          <span class="agent-detail">${agent.detail}</span>
+        </button>`).join('');
+      $$('.agent-card').forEach(card => card.addEventListener('click', () => openAgent(card.dataset.agent)));
+    }
+
+    function selectCase(id) {
+      state.selected = id;
+      localStorage.setItem('cgs-selected', id);
+      state.context = 'summary';
+      renderQueue(); renderContext(); syncContextTabs();
+      if (window.innerWidth <= 900 || state.layout === 'focused') openContextDrawer();
+    }
+
+    function syncContextTabs() {
+      $$('.context-tab').forEach(tab => tab.classList.toggle('active', tab.dataset.context === state.context));
+    }
+
+    function openContextDrawer() { $('#contextPanel').classList.add('mobile-open'); $('#backdrop').classList.add('open'); }
+    function closeContextDrawer() { $('#contextPanel').classList.remove('mobile-open'); $('#backdrop').classList.remove('open'); }
+    function showToast(message) { const el=$('#toast'); el.textContent=message; el.classList.add('show'); clearTimeout(showToast.timer); showToast.timer=setTimeout(()=>el.classList.remove('show'),2600); }
+
+    function openAgent(id) {
+      const agent = agents.find(a => a.id === id);
+      $('#agentDialogTitle').textContent = agent.name;
+      $('#agentDialogSubtitle').textContent = `${agent.status} · ${agent.last}`;
+      $('#agentDialogBody').innerHTML = `<div class="agent-fact"><span>Current work</span><strong>${agent.detail}</strong></div><div class="agent-fact"><span>Scope</span><strong>${agent.scope}</strong></div><div class="agent-fact"><span>Control boundary</span><strong>${agent.boundary}</strong></div><div class="agent-fact"><span>Items needing review</span><strong>${agent.count}</strong></div>`;
+      $('#pauseAgent').textContent = agent.status.includes('Waiting') ? 'Resume agent' : 'Pause agent';
+      $('#agentDialog').showModal();
+    }
+
+    const pages = {
+      research: { top:'Research', topSub:'Evidence collection', eyebrow:'Research workspace', title:'Build evidence before making the case', subhead:'Start from a company and a problem signal, then close the specific gaps that block a human decision.' },
+      approvals: { top:'Approvals', topSub:'Human decision queue', eyebrow:'Decision workspace', title:'Approve the evidence, not the automation', subhead:'Review the record, resolve missing facts, and explicitly decide whether the case should move forward.' },
+      agents: { top:'Agent operations', topSub:'Work and control status', eyebrow:'Operations workspace', title:'See what every agent is doing', subhead:'Monitor current work, review queues, and control boundaries without mixing agent activity with human decisions.' },
+      scoring: { top:'Scoring guide', topSub:'Decision framework', eyebrow:'Manage', title:'Keep three decisions separate', subhead:'Discovery priority, estimated CGS revenue, and qualification readiness answer different questions and should never collapse into one score.' },
+      settings: { top:'Settings', topSub:'Workspace controls', eyebrow:'Manage', title:'Set the limits before agents run', subhead:'Control permitted actions, evidence sources, and handoff behavior for this offline synthetic workspace.' }
+    };
+
+    function moduleTemplate(page) {
+      if (page === 'research') return `
+        <div class="module-grid">
+          <section class="surface module-stack">
+            <div class="surface-head"><span class="surface-title">Research queue</span><span class="surface-meta">2 gaps blocking review</span></div>
+            <div class="module-intro"><strong>Work the gap, not the whole internet.</strong><p>Each case states exactly what is missing and what decision that evidence unlocks.</p></div>
+            <div class="record-list">
+              <button class="record-row selected" data-open-case="alder"><span class="company-avatar">AB</span><span><strong>Alder Biotech</strong><p>Find a second reliable source for the capacity-expansion signal.</p></span><span class="record-meta">Tomorrow<br>Low confidence</span></button>
+              <button class="record-row" data-open-case="summit"><span class="company-avatar">SE</span><span><strong>Summit Energy</strong><p>Confirm Nina Wilson’s role and relevance to the new transformation office.</p></span><span class="record-meta">Oct 27<br>Low confidence</span></button>
+            </div>
+          </section>
+          <section class="surface module-stack">
+            <div class="surface-head"><span class="surface-title">New bounded research</span><span class="surface-meta">Public sources only</span></div>
+            <div class="module-pad">
+              <div class="workflow-strip"><div class="workflow-step current"><span>01 Define</span><strong>Company + problem signal</strong></div><div class="workflow-step"><span>02 Research</span><strong>Retrieve permitted sources</strong></div><div class="workflow-step"><span>03 Validate</span><strong>Bind exact passages</strong></div><div class="workflow-step"><span>04 Review</span><strong>Human accepts or returns</strong></div></div>
+              <section class="module-section"><h2>Research brief</h2><p>Define the question before an agent searches. This prevents broad, low-signal research.</p><div class="field-grid">
+                <div class="field"><label for="researchCompany">Company</label><input id="researchCompany" value="Alder Biotech"></div>
+                <div class="field"><label for="researchRegion">Region</label><select id="researchRegion"><option>North America</option><option>Canada</option><option>United States</option></select></div>
+                <div class="field full"><label for="researchSignal">Problem or capability signal</label><input id="researchSignal" value="Capacity expansion may be creating operating pressure"></div>
+                <div class="field full"><label for="researchQuestion">Evidence gap to close</label><textarea id="researchQuestion">Find a current official source and one independent source that confirm the timing and scope of the expansion.</textarea></div>
+              </div></section>
+              <section class="module-section"><h2>Required evidence</h2><div class="checklist"><div class="check-row"><span class="check-mark">✓</span><span><strong>Official company source</strong><small>Required before review</small></span><span class="pill ready">Required</span></div><div class="check-row"><span class="check-mark">✓</span><span><strong>Independent corroborating source</strong><small>Current and attributable</small></span><span class="pill ready">Required</span></div><div class="check-row"><span class="check-mark missing">!</span><span><strong>Unknowns retained explicitly</strong><small>Budget, authority, and timing remain unknown until supported</small></span><span class="pill review">Guardrail</span></div></div></section>
+              <div class="boundary-note">The research agent can retrieve and organize public evidence. It cannot approve a claim, infer budget, or mark an opportunity qualified.</div>
+              <div class="decision-actions"><button class="btn" data-module-action="clear-research">Clear</button><button class="btn primary" data-module-action="prepare-research">Prepare research run</button></div>
+            </div>
+          </section>
+        </div>`;
+
+      if (page === 'approvals') return `
+        <div class="module-grid">
+          <section class="surface module-stack">
+            <div class="surface-head"><span class="surface-title">Approval queue</span><span class="surface-meta">1 ready</span></div>
+            <div class="record-list"><button class="record-row selected" data-open-case="atlas"><span class="company-avatar">AF</span><span><strong>Atlas Financial</strong><p>Growth strategy review · Discovery handoff prepared</p></span><span class="record-meta">Today<br>Sarah Patel</span></button></div>
+          </section>
+          <section class="surface module-stack">
+            <div class="surface-head"><span class="surface-title">Human acceptance record</span><span class="surface-meta">Atlas Financial</span></div>
+            <div class="module-pad">
+              <div class="workflow-strip"><div class="workflow-step"><span>01 Research</span><strong>Sources collected</strong></div><div class="workflow-step"><span>02 Evidence</span><strong>Claims bound</strong></div><div class="workflow-step current"><span>03 Decide</span><strong>Human approval</strong></div><div class="workflow-step"><span>04 Handoff</span><strong>Owner takes action</strong></div></div>
+              <section class="module-section"><h2>Acceptance checklist</h2><p>Every requirement must be visible before the reviewer decides.</p><div class="checklist">
+                <div class="check-row"><span class="check-mark">✓</span><span><strong>Organization and relevant person verified</strong><small>Atlas Financial · Sofia Reyes, Chief Strategy Officer</small></span><span>Complete</span></div>
+                <div class="check-row"><span class="check-mark">✓</span><span><strong>Problem signal connected to a CGS capability</strong><small>Growth strategy review · discovery fit is still a hypothesis</small></span><span>Complete</span></div>
+                <div class="check-row"><span class="check-mark">✓</span><span><strong>Facts, hypotheses, and unknowns separated</strong><small>Three exact source passages retained</small></span><span>Complete</span></div>
+                <div class="check-row"><span class="check-mark">✓</span><span><strong>Duplicate and relationship check</strong><small>No existing relationship found in the synthetic dataset</small></span><span>Complete</span></div>
+                <div class="check-row"><span class="check-mark">✓</span><span><strong>Owner, next action, and due date</strong><small>Sarah Patel · approve discovery handoff · today</small></span><span>Complete</span></div>
+              </div></section>
+              <section class="module-section"><h2>Decision</h2><div class="boundary-note">Approval confirms that the record is ready for a human-led discovery handoff. It does not confirm budget, authority, willingness to buy, or a qualified opportunity.</div><div class="decision-actions"><button class="btn" data-module-action="return-research">Return for research</button><button class="btn primary" data-module-action="approve-handoff">Approve human handoff</button></div></section>
+            </div>
+          </section>
+        </div>`;
+
+      if (page === 'agents') return `
+        <div class="module-stack">
+          <div class="snapshot" style="margin-bottom:12px"><div class="metric"><div><div class="metric-label">Agents configured</div><div class="metric-value">4</div><div class="metric-note">Bounded roles</div></div></div><div class="metric"><div><div class="metric-label">Currently running</div><div class="metric-value">3</div><div class="metric-note">Public-data workflow</div></div></div><div class="metric attention"><div><div class="metric-label">Waiting for a person</div><div class="metric-value">1</div><div class="metric-note">Qualification decision</div></div></div><div class="metric"><div><div class="metric-label">External actions</div><div class="metric-value">0</div><div class="metric-note">No sends or CRM writes</div></div></div></div>
+          <section class="agent-board"><div class="surface-head"><span class="surface-title">Agent roster</span><span class="surface-meta">Select an agent for scope and controls</span></div>${agents.map(agent => `<button class="agent-board-row" data-agent="${agent.id}"><span class="agent-board-name"><span class="agent-icon">${icon('i-bot')}</span><span><strong>${agent.name}</strong><span class="agent-status">${agent.status}</span></span></span><span class="agent-board-copy"><span>Current work</span><strong>${agent.detail}</strong></span><span class="agent-board-copy"><span>Control boundary</span><strong>${agent.boundary}</strong></span><span class="record-meta">${agent.count} to review<br>${agent.last}</span></button>`).join('')}</section>
+          <div class="boundary-note" style="margin-top:12px">Agent status is operational information. Approval status remains a separate human decision.</div>
+        </div>`;
+
+      if (page === 'scoring') return `
+        <div class="module-stack">
+          <section class="surface"><div class="surface-head"><span class="surface-title">Decision framework</span><span class="surface-meta">Three lenses, no opaque composite score</span></div><div class="module-pad">
+            <table class="score-table"><thead><tr><th>Decision lens</th><th>Question it answers</th><th>Inputs</th><th>Output</th><th>Important boundary</th></tr></thead><tbody>
+              <tr><td>Discovery priority</td><td>Is this worth working now?</td><td>Problem signal, capability fit, evidence freshness, geography, relationship context</td><td>Pursue now / Research further / Watchlist / Reject / Existing relationship</td><td>Unknown revenue does not automatically mean low priority.</td></tr>
+              <tr><td>Estimated 12-month CGS revenue</td><td>What might the engagement be worth to CGS?</td><td>Engagement type, likely scope, comparable work, confidence</td><td>Revenue band or Unknown</td><td>This is not the prospect’s revenue or purchase probability.</td></tr>
+              <tr><td>Qualification readiness</td><td>Is there enough verified evidence for the next human step?</td><td>Verified person, sources, relationship check, owner, action, due date</td><td>Needs research / Ready for review / Accepted</td><td>Public signals do not prove budget, authority, or willingness to buy.</td></tr>
+            </tbody></table>
+            <div class="decision-key"><div><strong>Pursue now</strong><span>Strong problem signal and credible fit</span></div><div><strong>Research further</strong><span>Promising but evidence is incomplete</span></div><div><strong>Watchlist</strong><span>Valid signal without near-term action</span></div><div><strong>Reject</strong><span>Outside target or unsupported</span></div><div><strong>Existing relationship</strong><span>Route to the known owner</span></div></div>
+          </div></section>
+        </div>`;
+
+      return `
+        <div class="settings-grid">
+          <section class="surface"><div class="surface-head"><span class="surface-title">Agent permissions</span><span class="surface-meta">Prototype controls</span></div>
+            <div class="setting-row"><span class="setting-copy"><strong>Retrieve public facts</strong><span>Search approved public sources and retain exact passages.</span></span><button class="switch setting-control ${state.settings.publicFacts?'on':''}" role="switch" aria-checked="${state.settings.publicFacts}" data-setting="publicFacts"></button></div>
+            <div class="setting-row"><span class="setting-copy"><strong>Prepare draft research briefs</strong><span>Organize evidence and next-action recommendations for review.</span></span><button class="switch setting-control ${state.settings.draftBriefs?'on':''}" role="switch" aria-checked="${state.settings.draftBriefs}" data-setting="draftBriefs"></button></div>
+            <div class="setting-row"><span class="setting-copy"><strong>Write to CRM</strong><span>Disabled. A human-controlled integration would be required.</span></span><button class="switch setting-control ${state.settings.crmWrites?'on':''}" role="switch" aria-checked="${state.settings.crmWrites}" data-setting="crmWrites"></button></div>
+            <div class="setting-row"><span class="setting-copy"><strong>Send external email</strong><span>Disabled. Drafts must remain inside the review workflow.</span></span><button class="switch setting-control ${state.settings.emailSends?'on':''}" role="switch" aria-checked="${state.settings.emailSends}" data-setting="emailSends"></button></div>
+          </section>
+          <section class="surface"><div class="surface-head"><span class="surface-title">Workspace boundaries</span><span class="surface-meta">Offline synthetic preview</span></div><div class="module-pad">
+            <section class="module-section"><h2>Permitted data</h2><ul class="source-list"><li><strong>Public company sources</strong><span>Allowed</span></li><li><strong>Public news and filings</strong><span>Allowed</span></li><li><strong>Synthetic test records</strong><span>Allowed</span></li><li><strong>Client-confidential material</strong><span>Not in this preview</span></li></ul></section>
+            <section class="module-section"><h2>Decision ownership</h2><p>Qualification, acceptance, outreach, and CRM updates remain human-controlled.</p></section>
+            <div class="decision-actions"><button class="btn primary" data-module-action="save-settings">Save preview settings</button></div>
+          </div></section>
+        </div>`;
+    }
+
+    function bindModuleActions() {
+      $$('[data-open-case]', $('#moduleBody')).forEach(row => row.addEventListener('click', () => { state.selected=row.dataset.openCase; localStorage.setItem('cgs-selected',state.selected); switchPage('sales'); renderQueue(); renderContext(); }));
+      $$('[data-agent]', $('#moduleBody')).forEach(row => row.addEventListener('click', () => openAgent(row.dataset.agent)));
+      $$('[data-setting]', $('#moduleBody')).forEach(control => control.addEventListener('click', () => {
+        const key=control.dataset.setting;
+        if (key === 'crmWrites' || key === 'emailSends') { showToast('This permission stays disabled in the offline preview.'); return; }
+        state.settings[key]=!state.settings[key]; control.classList.toggle('on',state.settings[key]); control.setAttribute('aria-checked',String(state.settings[key]));
+      }));
+      $$('[data-module-action]', $('#moduleBody')).forEach(button => button.addEventListener('click', () => {
+        const messages={
+          'clear-research':'Research brief cleared in the preview.',
+          'prepare-research':'Research run prepared. A human would confirm before it starts.',
+          'return-research':'Atlas Financial returned to research with reviewer feedback.',
+          'approve-handoff':'Atlas Financial approved for a human-led discovery handoff.',
+          'save-settings':'Preview settings saved locally.'
+        };
+        showToast(messages[button.dataset.moduleAction]);
+      }));
+    }
+
+    function renderModule(page) {
+      const meta=pages[page];
+      $('#moduleEyebrow').textContent=meta.eyebrow;
+      $('#moduleTitle').textContent=meta.title;
+      $('#moduleSubhead').textContent=meta.subhead;
+      $('#moduleActions').innerHTML=page==='research' ? `<button class="btn primary" data-module-action="prepare-research">${icon('i-plus',true)}New research brief</button>` : '';
+      $('#moduleBody').innerHTML=moduleTemplate(page);
+      bindModuleActions();
+      $('[data-module-action="prepare-research"]', $('#moduleActions'))?.addEventListener('click', () => $('#researchCompany')?.focus());
+    }
+
+    function switchPage(page) {
+      if (!['sales','research','approvals','agents','scoring','settings'].includes(page)) page='sales';
+      state.page=page; localStorage.setItem('cgs-page',page); document.body.dataset.page=page;
+      $$('.nav-item[data-page]').forEach(item => item.classList.toggle('active',item.dataset.page===page));
+      $('#salesView').classList.toggle('active',page==='sales');
+      $('#moduleView').classList.toggle('active',page!=='sales');
+      $('#tweaks').classList.remove('open'); $('#tweaksTrigger').setAttribute('aria-expanded','false');
+      if (page==='sales') { $('#topTitle').textContent='Sales workspace'; $('#topSubtitle').textContent='Early-funnel operations'; }
+      else { $('#topTitle').textContent=pages[page].top; $('#topSubtitle').textContent=pages[page].topSub; renderModule(page); }
+    }
+
+    function applyDesignState() {
+      document.body.dataset.layout = state.layout;
+      document.body.dataset.density = state.density;
+      $$('.segment[data-layout-choice]').forEach(btn => btn.classList.toggle('active', btn.dataset.layoutChoice === state.layout));
+      $$('.segment[data-density-choice]').forEach(btn => btn.classList.toggle('active', btn.dataset.densityChoice === state.density));
+      $('#agentSwitch').classList.toggle('on', state.agentVisible);
+      $('#agentSwitch').setAttribute('aria-checked', String(state.agentVisible));
+      const agentsPanel = $('.agents');
+      if (!state.agentVisible) agentsPanel.style.display = 'none'; else agentsPanel.style.removeProperty('display');
+    }
+
+    $$('.view-tab').forEach(tab => tab.addEventListener('click', () => {
+      state.view = tab.dataset.view; localStorage.setItem('cgs-view', state.view);
+      $$('.view-tab').forEach(t => t.classList.toggle('active', t === tab)); renderQueue();
+    }));
+    $$('.context-tab').forEach(tab => tab.addEventListener('click', () => { state.context = tab.dataset.context; syncContextTabs(); renderContext(); }));
+    $('#globalSearch').addEventListener('input', e => { state.query = e.target.value; if (state.page!=='sales') switchPage('sales'); renderQueue(); });
+    document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); $('#globalSearch').focus(); } });
+    $('#closeContext').addEventListener('click', closeContextDrawer); $('#backdrop').addEventListener('click', closeContextDrawer);
+    $('#openCase').addEventListener('click', () => showToast(`${currentCase().name} case opened in this design preview.`));
+    $('#reviewEvidence').addEventListener('click', () => { state.context='evidence'; syncContextTabs(); renderContext(); if (window.innerWidth <= 900) openContextDrawer(); });
+    $('#newResearch').addEventListener('click', () => switchPage('research'));
+    $('#tweaksTrigger').addEventListener('click', () => { const open=$('#tweaks').classList.toggle('open'); $('#tweaksTrigger').setAttribute('aria-expanded', String(open)); });
+    $('#tweaksClose').addEventListener('click', () => { $('#tweaks').classList.remove('open'); $('#tweaksTrigger').setAttribute('aria-expanded','false'); });
+    $$('.segment[data-layout-choice]').forEach(btn => btn.addEventListener('click', () => { state.layout=btn.dataset.layoutChoice; localStorage.setItem('cgs-layout',state.layout); applyDesignState(); closeContextDrawer(); }));
+    $$('.segment[data-density-choice]').forEach(btn => btn.addEventListener('click', () => { state.density=btn.dataset.densityChoice; localStorage.setItem('cgs-density',state.density); applyDesignState(); }));
+    $('#agentSwitch').addEventListener('click', () => { state.agentVisible=!state.agentVisible; localStorage.setItem('cgs-agent-visible',String(state.agentVisible)); applyDesignState(); });
+    $('#dialogClose').addEventListener('click', () => $('#agentDialog').close());
+    $('#pauseAgent').addEventListener('click', () => { $('#agentDialog').close(); showToast('Agent state changed for preview only.'); });
+    $('#viewAgentWork').addEventListener('click', () => { $('#agentDialog').close(); showToast('Filtered the queue to work prepared by this agent.'); });
+    $$('.nav-item[data-page]').forEach(btn => btn.addEventListener('click', () => switchPage(btn.dataset.page)));
+
+    // Normalize saved state if an older prototype value is present.
+    if (!['focused','split','cockpit'].includes(state.layout)) state.layout='cockpit';
+    if (!['compact','comfortable'].includes(state.density)) state.density='comfortable';
+    if (!['all','review','ready','followup'].includes(state.view)) state.view='all';
+    if (!['sales','research','approvals','agents','scoring','settings'].includes(state.page)) state.page='sales';
+    $$('.view-tab').forEach(tab => tab.classList.toggle('active', tab.dataset.view === state.view));
+    $('#openCount').textContent = cases.length;
+    $('#reviewCount').textContent = cases.filter(c => c.status === 'review').length;
+    $('#readyCount').textContent = cases.filter(c => c.status === 'ready').length;
+    $('#allBadge').textContent = cases.length;
+    renderQueue(); renderContext(); renderAgents(); syncContextTabs(); applyDesignState(); switchPage(state.page);
+  </script>
+</body>
+</html>
