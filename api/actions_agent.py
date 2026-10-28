@@ -22,6 +22,7 @@ from api.demo_agents import quote_in_text
 VERSION = "a4-agent-1.0"
 MAX_SUGGESTIONS = 3
 APPROVER = "approver"  # the gap key for the approver's question on a returned pack
+NICE_TO_HAVE = ("H", "revenue")  # gaps the rules engine lists but that do not stop Ready
 
 SYSTEM = """You are A4, the action agent of CGS Advisors, a consulting firm. An opportunity has stalled, or the approver returned
 its qualification pack. Suggest up to three next actions that move it toward a qualification decision.
@@ -34,7 +35,8 @@ How to work:
 - Record each action with suggest. Each one closes one open gap (its gap_key) and is one concrete thing to do or ask,
   with the question to put in the next conversation. When the notes support it, give the sentence word for word as quote.
 - If the approver returned the pack, the first action answers the approver's question (gap_key "approver").
-- Prefer gaps that block readiness (minimum scores and conditions) over nice-to-have ones. Do not repeat an open task.
+- Cover every open gap marked blocks_readiness, up to three actions; funding and
+  decision access usually matter most. Use the remaining actions for nice-to-have gaps. Do not repeat an open task.
 - Do not assign owners or dates and do not promise anything to the client (no fees, discounts or guarantees). People decide those.
 - suggest is checked at once; if it is rejected, read the reason and fix it or choose another gap.
 - When you are done, call finish with one sentence.
@@ -82,7 +84,8 @@ def actions_agent(c, o: m.Opportunity, rules: dict, approver_q: str = "", why: s
         return {"company": o.company.name, "stage": o.stage, "today": c.today.isoformat(), "readiness": rules["readiness"],
                 "days_without_progress": idle, "why_you_were_asked": why or "A person asked for next actions.",
                 **({"approver_returned_the_pack_with": approver_q} if approver_q else {}),
-                "open_gaps": [{"gap_key": k, "label": g["label"], "question": g["question"]} for k, g in gaps.items()],
+                "open_gaps": [{"gap_key": k, "label": g["label"], "question": g["question"],
+                               "blocks_readiness": k not in NICE_TO_HAVE} for k, g in gaps.items()],
                 "open_tasks": [{"title": t.title, "side": t.side, "assignee": t.assignee, "due": t.due.isoformat(),
                                 "overdue": t.due < c.today} for t in open_tasks],
                 "done_tasks": [t.title for t in tasks if t.status == "done"][:10],

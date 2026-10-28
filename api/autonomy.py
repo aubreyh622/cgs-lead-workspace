@@ -81,6 +81,7 @@ def patrol(c: S.Ctx) -> list[m.AgentJob]:
     t, s = c.today, c.s
     follow, stall = int(J.setting(s, "follow_days")), int(J.setting(s, "stall_days"))
     found = []
+    J.expire_inbox(s, t)
 
     def add(kind, o, reason, payload=None):
         job = J.enqueue(s, t, kind, o.id if o else None, "patrol", reason, payload, requested_by="Patrol")

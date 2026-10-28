@@ -100,7 +100,9 @@ def run(spec: AgentSpec, provider: Provider, task: str, may_call: Callable[[], b
             else:
                 tool_calls += tool is not spec.finish
                 try:
-                    content = tool.run(call.args if isinstance(call.args, dict) else {})
+                    # a null optional argument counts as left out; otherwise str(None) would reach the tools as "None"
+                    args = {k: v for k, v in call.args.items() if v is not None} if isinstance(call.args, dict) else {}
+                    content = tool.run(args)
                 except ToolError as e:
                     content = {"error": str(e)}
                 except (KeyError, TypeError, ValueError) as e:

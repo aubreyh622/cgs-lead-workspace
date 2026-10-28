@@ -106,7 +106,7 @@ def enqueue(s, today: date, kind: str, opp_id: str | None, trigger: str, reason:
 
 def to_inbox(s, today: date, job: m.AgentJob | None, kind: str, title: str, body: str = "", data: dict | None = None,
              opp: m.Opportunity | None = None, owner: str | None = None, agent: str | None = None) -> m.InboxItem:
-    if opp and kind in ("actions", "ready", "reminder"):  # a newer one replaces an unread older one for the same opportunity
+    if opp and kind in ("actions", "ready", "reminder", "advice"):  # a newer one replaces an unread older one for the same opportunity
         for old in s.scalars(select(m.InboxItem).where(m.InboxItem.opportunity_id == opp.id, m.InboxItem.kind == kind, m.InboxItem.status == "new")):
             old.status, old.decided_by = "dismissed", "Replaced by a newer item"
     item = m.InboxItem(id=new_id("in"), owner=owner if owner is not None else (opp.owner if opp else None),
@@ -117,6 +117,14 @@ def to_inbox(s, today: date, job: m.AgentJob | None, kind: str, title: str, body
     s.add(item)
     s.flush()
     return item
+
+
+def expire_inbox(s, today: date) -> int:
+    """Unread items past their expiry date leave the inbox; the agents prepare a new one when it is still needed."""
+    old = list(s.scalars(select(m.InboxItem).where(m.InboxItem.status == "new", m.InboxItem.expires_on < today)))
+    for it in old:
+        it.status, it.decided_by = "dismissed", f"Expired after {INBOX_DAYS} days unread"
+    return len(old)
 
 
 def payload_hash(kind: str, title: str, body: str, data: dict) -> str:

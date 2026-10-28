@@ -82,6 +82,13 @@ def test_code_rejects_what_the_direction_or_the_workspace_rules_out():
     assert record["dropped"] == {"no_source": 1, "excluded": 1, "already_known": 1, "duplicate": 1}
 
 
+def test_one_company_per_nomination():
+    """Found in the bug sweep: Claude nominated "Kessler Motion Controls and Arcwell Drives" as one company."""
+    assert D.two_companies("Kessler Motion Controls and Arcwell Drives")
+    assert not D.two_companies("Barnes and Noble") and not D.two_companies("Redstone Pump & Compressor")
+    assert not D.two_companies("Arm and Hammer Products")  # one side is a single word: likely one name
+
+
 def test_searches_and_reads_are_capped_and_reads_stay_on_found_pages():
     search = Search()
     t, record = tools(search)

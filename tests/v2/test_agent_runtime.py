@@ -158,3 +158,13 @@ def test_tests_never_reach_the_internet_or_the_real_keys():
     assert os.environ.get("PYTHON_DOTENV_DISABLED") and not os.environ.get("GEMINI_API_KEY") and not os.environ.get("TAVILY_API_KEY")
     with pytest.raises(PermissionError):
         socket.getaddrinfo("generativelanguage.googleapis.com", 443)
+
+
+def test_a_null_optional_argument_counts_as_left_out():
+    """Found in the bug sweep: str(None) reached the tools as "None" (a person lookup for the role "None", a quote "None")."""
+    seen = []
+    keep = R.Tool("keep", "Keep a value.", R.params({"word": {"type": "string"}, "extra": {"type": "string"}}, ["word"]),
+                  lambda a: seen.append(dict(a)) or {"ok": True})
+    ai = Script(gemini(call("keep", {"word": "hi", "extra": None})), gemini(call("finish", {"answer": "done"})))
+    out = R.run(spec(tools=(keep,)), make_provider("gemini", "m", key="k", transport=ai), "Keep hi.")
+    assert out.status == "done" and seen == [{"word": "hi"}]

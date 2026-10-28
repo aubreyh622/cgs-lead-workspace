@@ -186,7 +186,9 @@ keeps the text rule).
   opportunity's stage at that moment, and an expiry date (14 days). Applying is refused when the item is not the version the
   person saw (send `payload_hash`), when the opportunity has moved to another stage, when it has expired, or, for a draft,
   when a fact it cites now says something else in the brief. Dismissing is always allowed. Applying a draft adds the facts
-  it cites to the brief, so the citations resolve.
+  it cites to the brief, so the citations resolve. The daily patrol first dismisses unread items past their expiry date, and
+  a new manager note (like new next actions or reminders) replaces the unread one for the same opportunity.
+- A `null` argument from the model counts as left out (`api/agent_runtime.py`), so no tool ever sees the text "None".
 - Demo mode keeps the text rules for all three agents. The single-step `extract_evidence` and `write_outreach` remain for
   `Check AI.cmd` and the AI exam.
 - `GET /api/agent-runs/{id}` shows every step: what the model said, which tools it called with which arguments, and what they returned.

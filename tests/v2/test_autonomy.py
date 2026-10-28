@@ -7,6 +7,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api import autonomy as AU
+from api import jobs as J
+from api import models as m
 from api.llm import make_provider
 from api.main import create_app
 from api.search import MockSearch
@@ -396,3 +398,21 @@ def test_budget_counts_every_ai_request(live):
     run = api.get("/api/agent-runs").json()[0]
     assert ai.calls == ["discovery"] * 3
     assert run["agent"] == "Discovery agent" and run["calls"] == 3  # every model turn counts
+
+
+def test_old_inbox_items_expire_and_a_new_manager_note_replaces_the_unread_one(live):
+    """Found in the bug sweep: after five months the inbox still showed Day 8 items, and two notes for the same lead."""
+    app, api = live(SchemaAI())
+    with app.state.db.session() as s:
+        c = AU.agent_ctx(app, s)
+        o = s.get(m.Opportunity, "meridian")
+        first = J.to_inbox(s, c.today, None, "advice", "Manager: Meridian", "First note.", opp=o, agent="Manager agent").id
+        second = J.to_inbox(s, c.today, None, "advice", "Manager: Meridian", "Newer note.", opp=o, agent="Manager agent").id
+        s.commit()
+    new = {i["id"] for i in api.get("/api/inbox").json()}
+    assert second in new and first not in new
+    api.post("/api/demo/advance-days?days=15", headers=ME)
+    api.post("/api/agents/patrol", headers=ME)
+    assert second not in {i["id"] for i in api.get("/api/inbox").json()}
+    old = next(i for i in api.get("/api/inbox", params={"status": "all"}).json() if i["id"] == second)
+    assert old["status"] == "dismissed"
