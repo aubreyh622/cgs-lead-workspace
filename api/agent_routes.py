@@ -118,10 +118,11 @@ def manager_compare(request: Request, day: str | None = None):
 
 
 class ItemAction(BaseModel):
-    action: Literal["apply", "done", "dismiss"]
+    action: Literal["apply", "send", "done", "dismiss"]
     payload_hash: str | None = Field(None, description="The payloadHash you saw. Send it, and apply refuses any other version")
+    to: str | None = Field(None, description="send only: the address you approved (see GET /api/opportunities/{id}/outreach/email?itemId=...)")
 
 
-@router.post("/inbox/{item_id}", summary="Apply, finish or dismiss what an agent prepared")
+@router.post("/inbox/{item_id}", summary="Apply, finish or dismiss what an agent prepared; an email draft can be approved and sent at once (action send)")
 def act(item_id: str, body: ItemAction, c: S.Ctx = Actor):
-    return AU.apply_item(c, item_id, body.action, body.payload_hash)
+    return AU.apply_item(c, item_id, body.action, body.payload_hash, body.to)

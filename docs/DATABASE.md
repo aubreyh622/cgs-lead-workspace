@@ -9,17 +9,17 @@ Code reaches the file through SQLAlchemy, a translator layer. To move to a share
 | Table | One row is… | Workflow step | Who writes it |
 |---|---|---|---|
 | `companies` | a company | 1–3 | research agent, person |
-| `contacts` | a person at a company; the name can be empty ("contact to confirm") | 2, 4 | research agent, person confirms |
+| `contacts` | a person at a company; the name can be empty ("contact to confirm"); `email` only as a person entered it | 2, 4 | research agent, person confirms |
 | `opportunities` | one possible piece of work at one company; a company can have several | all | everyone |
 | `candidates` | a Step 1 recommendation not yet picked | 1 | discovery agent |
 | `research_tasks` | progress of one research run (running, paused, failed, done) | 2–3 | research agent |
 | `research_briefs` | the brief: dated facts, hypothesis, flags, priority | 3 | research agent; frozen at Step 4 |
 | `decisions` | a human decision at Step 4 or Step 8 | 4, 8 | person only |
-| `outreach` | the message draft and when it was sent and answered | 5 | A1 drafts, person sends |
+| `outreach` | the message draft and when it was sent and answered; with email on, the address used and the Gmail thread and waiting draft ids | 5 | Outreach agent drafts, person sends |
 | `notes` | an email or meeting notes, in the original words | 6 | person |
-| `proposals` | an AI suggestion (a score, condition or blocker) with its quote | 6 | A2/A3 agents |
+| `proposals` | an AI suggestion (a score, condition or blocker) with its quote | 6 | Evidence agent |
 | `evidence` | what a person confirmed, and how (accepted, edited, manual review) | 6–7 | person only |
-| `suggestions` | an AI-suggested next action, not yet agreed | 7 | A4 agent |
+| `suggestions` | an AI-suggested next action, not yet agreed | 7 | Next-step agent |
 | `tasks` | an agreed action with an owner and a date | 6–7 | person only |
 | `packs` | a frozen qualification pack sent for Step 8 approval | 7–8 | person |
 | `feedback` | why someone skipped, accepted, returned or rejected something | 1, 4 | person |
@@ -30,6 +30,9 @@ Code reaches the file through SQLAlchemy, a translator layer. To move to a share
 | `inbox_items` | what an agent prepared for a person (draft, facts, contact, suggestion, reminder) and what the person did with it | all | agents, people |
 | `activity` | one line of history for an opportunity | all | system |
 | `settings` | workspace settings, such as the demo date | — | system |
+| `connector_switches` | which connector a person switched on or off for an agent (`*` = every agent), with who, when and why | all | person (permission screen) |
+| `permission_changes` | every change to the agents' connector permissions and daily limits, with the state before and after and the previous setting (for undo) | all | person (append-only) |
+| `connector_uses` | one call to a connector: day, agent (or "Workspace (person)", "Mail rules"), connector, what was called, outcome (ok, failed, denied, limit) | all | the toolkit gate (append-only) |
 
 ## Rules the database follows
 

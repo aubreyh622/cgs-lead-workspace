@@ -54,7 +54,8 @@ def candidates(request: Request, status: Literal["new", "sent", "skipped"] | Non
             q = q.where(m.Candidate.status == status)
         return [{"id": c.id, "round": c.round, "company": c.company, "domain": c.domain, "person": c.person, "title": c.title,
                  "whyPerson": c.why_person, "why": c.why, "signal": c.signal, "signalDate": c.signal_date, "flags": c.flags,
-                 "status": c.status, "skipReason": c.skip_reason, "skipScope": c.skip_scope, "sourceUrl": c.source_url, "quote": c.evidence_quote} for c in s.scalars(q).all()]
+                 "status": c.status, "skipReason": c.skip_reason, "skipScope": c.skip_scope, "sourceUrl": c.source_url, "quote": c.evidence_quote,
+                 "problemId": c.problem_id, "problem": c.problem} for c in s.scalars(q).all()]
 
 
 @router.get("/direction", tags=["learning loop"], summary="Current shared research direction and its history")

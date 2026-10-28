@@ -49,6 +49,7 @@ class Contact(Base):
     confirmed_by: Mapped[Optional[str]] = mapped_column(String(100))
     confirmed_on: Mapped[Optional[date]] = mapped_column(Date)
     confirmed_note: Mapped[Optional[str]] = mapped_column(Text)        # where the name and role were verified
+    email: Mapped[Optional[str]] = mapped_column(String(200))         # entered by a person; agents never guess an address
 
 
 class Opportunity(Base):
@@ -77,6 +78,7 @@ class Opportunity(Base):
     revenue_low: Mapped[Optional[int]] = mapped_column(Integer)
     revenue_high: Mapped[Optional[int]] = mapped_column(Integer)
     need: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)   # team, process, problem, impact, target, service
+    target_problem: Mapped[Optional[str]] = mapped_column(Text)  # the direction's problem discovery found it for (a hypothesis)
     crm_sync: Mapped[str] = mapped_column(String(20), default="local_saved")  # local_saved | sync_pending | synced | sync_failed
     revision: Mapped[int] = mapped_column(Integer, default=1)          # guards against two people saving over each other
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
@@ -143,6 +145,8 @@ class Candidate(Base):
     demo_star: Mapped[bool] = mapped_column(Boolean, default=False)
     source_url: Mapped[Optional[str]] = mapped_column(Text)  # the search result a live nomination came from
     evidence_quote: Mapped[Optional[str]] = mapped_column(Text)  # the sentence in that source that shows the signal
+    problem_id: Mapped[Optional[str]] = mapped_column(String(20))  # which problem in the direction it was found for
+    problem: Mapped[Optional[str]] = mapped_column(Text)
 
 
 class Outreach(Base):
@@ -158,6 +162,10 @@ class Outreach(Base):
     sent_via: Mapped[Optional[str]] = mapped_column(String(60))
     reply_on: Mapped[Optional[date]] = mapped_column(Date)
     reply_text: Mapped[Optional[str]] = mapped_column(Text)
+    to_email: Mapped[Optional[str]] = mapped_column(String(200))       # the address a person chose for this email
+    mail_thread_id: Mapped[Optional[str]] = mapped_column(String(120))  # the Gmail conversation, once a draft or email exists
+    mail_draft_id: Mapped[Optional[str]] = mapped_column(String(120))   # a Gmail draft waiting for a person to send it from Gmail
+    mail_draft_purpose: Mapped[Optional[str]] = mapped_column(String(20))  # first | followup | reconnect
 
 
 class Note(Base):
@@ -292,6 +300,10 @@ class DirectionVersion(Base):
     buyer_roles: Mapped[list] = mapped_column(JSON)
     exclusions: Mapped[list] = mapped_column(JSON)
     excluded_domains: Mapped[list] = mapped_column(JSON)
+    # {"min_employees", "max_employees", "min_revenue_musd", "max_revenue_musd"}; any may be missing; empty or null = no size limit
+    company_size: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # problem-based direction: [{id, problem, signals, buyer_roles, solution, passage_id, quote}], from the direction agent
+    problems: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     approved_by: Mapped[str] = mapped_column(String(100))
     approved_on: Mapped[date] = mapped_column(Date)
     basis: Mapped[str] = mapped_column(String(40), default="mock")     # mock until CGS approves a direction
@@ -348,6 +360,48 @@ class Activity(Base):
     actor_type: Mapped[str] = mapped_column(String(1))
     text: Mapped[str] = mapped_column(Text)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class ConnectorSwitch(Base):
+    """A person's switch in the permission table (api/toolkit). agent "*" = the connector for every agent.
+    No row = the default (config/toolkit.json, then the code's ceiling). The ceiling always wins."""
+    __tablename__ = "connector_switches"
+    agent: Mapped[str] = mapped_column(String(60), primary_key=True)
+    connector: Mapped[str] = mapped_column(String(30), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean)
+    changed_by: Mapped[str] = mapped_column(String(100))
+    changed_on: Mapped[date] = mapped_column(Date)
+    reason: Mapped[str] = mapped_column(Text)
+
+
+class ConnectorUse(Base):
+    """One call an agent (or a person's action) made to a connector. outcome: ok | failed | denied | limit."""
+    __tablename__ = "connector_uses"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    on: Mapped[date] = mapped_column(Date, index=True)
+    agent: Mapped[str] = mapped_column(String(60))
+    connector: Mapped[str] = mapped_column(String(30), index=True)
+    action: Mapped[str] = mapped_column(String(40))
+    outcome: Mapped[str] = mapped_column(String(10))
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class PermissionChange(Base):
+    """Append-only history of the permission table. kind switch: enabled None = back to the default.
+    kind limit: a daily limit (in before/after). prev: the setting before, so the change can be undone."""
+    __tablename__ = "permission_changes"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    agent: Mapped[str] = mapped_column(String(60))
+    connector: Mapped[str] = mapped_column(String(30))
+    enabled: Mapped[Optional[bool]] = mapped_column(Boolean)
+    before: Mapped[str] = mapped_column(String(20))
+    after: Mapped[str] = mapped_column(String(20))
+    by: Mapped[str] = mapped_column(String(100))
+    on: Mapped[date] = mapped_column(Date)
+    reason: Mapped[str] = mapped_column(Text)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    kind: Mapped[Optional[str]] = mapped_column(String(10))   # switch (default) | limit
+    prev: Mapped[Optional[str]] = mapped_column(String(20))   # switch: on | off | default; limit: a number | default
 
 
 class Setting(Base):

@@ -2024,10 +2024,10 @@
   },
   {
    "id": "run-0420",
-   "agent": "Evidence agent (A2 + A3)",
+   "agent": "Evidence agent",
    "lead": "Cedar Bay Logistics",
    "model": "demo-text-rules",
-   "prompt": "a2-1.4 / a3-1.2",
+   "prompt": "evidence-demo-1.4",
    "status": "completed",
    "on": "2026-10-22",
    "calls": 2

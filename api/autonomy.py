@@ -28,6 +28,7 @@ from api import outreach_agent as OA
 from api import research_agent as RA
 from api import models as m
 from api import services as S
+from api import toolkit as TK
 from api.llm import LLMError
 
 MONTHS = ("january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december")
@@ -50,14 +51,12 @@ def agent_ctx(app, s) -> S.Ctx:
     from api.actions import demo_today, research_bridge
     return S.Ctx(s=s, actor=AGENTS_ACTOR, today=demo_today(s, app.state.settings), settings=app.state.settings,
                  provider_factory=getattr(app.state, "provider_factory", None), research_factory=lambda: research_bridge(app),
-                 search_factory=getattr(app.state, "search_factory", None))
+                 search_factory=getattr(app.state, "search_factory", None), mail_factory=lambda: getattr(app.state, "mail", None))
 
 
-def web(c: S.Ctx):
-    if c.search_factory:
-        return c.search_factory()
-    from api.search import make_search
-    return make_search(as_of=c.today)
+def web(c: S.Ctx, agent: str = "Research agent"):
+    """The web, as the agent doing this work may reach it (api/toolkit)."""
+    return TK.web_for(agent, c)
 
 
 def company_pages(c: S.Ctx, company: str, domain: str, query: str = "", since: date | None = None) -> list[dict]:
@@ -91,6 +90,8 @@ def patrol(c: S.Ctx) -> list[m.AgentJob]:
     mode = J.setting(s, "manager_mode")
     if mode in ("shadow", "on") and not c.demo:  # the manager needs a real AI model; it is queued first, so it decides before today's rule work runs
         add("manager_review", None, f"Daily review by the manager agent ({mode} mode)")
+    if c.mail_factory and c.mail_factory() is not None and s.scalar(select(m.Outreach.opportunity_id).where(m.Outreach.mail_thread_id.is_not(None)).limit(1)):
+        add("mail_sync", None, "Daily check of the email threads")
     for o in s.scalars(select(m.Opportunity)):
         if o.stage == "contacted":
             r = s.get(m.Outreach, o.id)
@@ -143,7 +144,7 @@ def do_followup_draft(c, job, o):
              "Do not repeat the first email. One new reason to talk, then offer a 20-minute call.")
     fact = (b.facts or [{"id": "f1", "text": o.company.name}])[0]
     trace: list[dict] = []
-    draft, _ = S.run_agent(c, job.agent, o, "a1-followup-demo-1.0",
+    draft, _ = S.run_agent(c, job.agent, o, "outreach-followup-demo-1.0",
                            lambda: {"subject": f"Re: {r.subject or o.title}",
                                     "body": f"Hi {_first(contact['name'])}, I wanted to follow up on my note from {S.fmt(r.sent_on)}. "
                                             f"Since [[{fact['id']}|{fact['text'][:90]}]], would a 20-minute call in the next two weeks be useful? "
@@ -163,7 +164,7 @@ def do_reconnect_draft(c, job, o):
     angle = "The client asked to talk again later. Reconnect by citing the new development; keep it short and offer a short call."
     f = facts[0]
     trace: list[dict] = []
-    draft, _ = S.run_agent(c, job.agent, o, "a1-reconnect-demo-1.0",
+    draft, _ = S.run_agent(c, job.agent, o, "outreach-reconnect-demo-1.0",
                            lambda: {"subject": f"{o.company.name}: {f['text'][:60]}",
                                     "body": f"Hi {_first(contact['name'])}, I saw that [[{f['id']}|{f['text'][:100]}]]. When we spoke you suggested "
                                             f"reconnecting around now. Would a short call be useful? {o.owner or 'CGS Advisors'}, CGS Advisors"},
@@ -193,15 +194,15 @@ def do_research_refresh(c, job, o):
         return [{"text": re.split(r"(?<=\.)\s", p["content"], 1)[0], "quote": re.split(r"(?<=\.)\s", p["content"], 1)[0],
                  "src": p["url"], "date": p["published"] or "undated"} for p in pages[:3]]
 
-    def live(p):
-        from api.llm import Usage
-        from api.mock_research import research
-        from api.research_bridge import card_to_brief
-        card, counts = research(p, pages, o.company.name, o.company.domain)
-        brief, _ = card_to_brief(card, o.owner or "", "", counts)
-        return [{k: f[k] for k in ("text", "quote", "src", "date")} for f in brief["facts"]], Usage(counts.get("tokens_in"), counts.get("tokens_out"))
+    trace: list[dict] = []
 
-    found, _ = S.run_agent(c, job.agent, o, "refresh-demo-1.0", demo, live=live, live_prompt="research-refresh-1.0")
+    def live(p):  # live mode: the research agent's refresh task (api/research_agent.py), within today's AI budget
+        facts, usage, steps = RA.refresh(p, web(c), o.company.name, o.company.domain, since, known, may_call=may_call(c, p))
+        trace.extend(steps)
+        return [{**f, "date": f["date"] or "undated"} for f in facts], usage
+
+    found, _ = S.run_agent(c, job.agent, o, "refresh-demo-1.0", demo, live=live, live_prompt=RA.VERSION, trace=trace,
+                           subject=f"News on {o.company.name} since {since.isoformat()}")
     n = len(o.brief.facts or [])
     facts = [{"id": f"f{n + i + 1}", **f} for i, f in enumerate(found)]
     if not facts:
@@ -214,7 +215,7 @@ def do_research_refresh(c, job, o):
         J.enqueue(c.s, c.today, "reconnect_draft", o.id, "handoff", f"News on a deferred client: {facts[0]['text'][:120]}",
                   {"facts": facts}, requested_by=job.agent, parent=job)
     found_text = f"{len(facts)} new fact{'s' if len(facts) != 1 else ''}"
-    return "done", f"{found_text}; asked A1 for a reconnect draft." if o.stage == "nurture" else f"{found_text}."
+    return "done", f"{found_text}; asked the outreach agent for a reconnect draft." if o.stage == "nurture" else f"{found_text}."
 
 
 _NAME_TITLE = re.compile(r"([A-Z][a-z]+(?: [A-Z][a-z]+)+), ([^,.]+)")
@@ -235,13 +236,15 @@ def do_person_lookup(c, job, o):
 
     trace: list[dict] = []
 
-    def live(p):  # live mode: the tool-using research agent decides where to look (api/research_agent.py)
-        spec = RA.person_agent(c, o.company_id, o.company.name, o.company.domain, role)
-        out = R.run(spec, p, RA.task(o.company.name, o.company.domain, role, asked), may_call=may_call(c, p))
-        trace.extend(out.trace)
-        return (out.result if out.status == "done" else {"found": False, "notes": out.reason}), out.usage
+    def live(p):  # live mode: the research agent's contact task decides where to look (api/research_agent.py)
+        contacts = [{"name": x.name, "title": x.title, "confirmed_by_a_person": bool(x.confirmed_by)}
+                    for x in c.s.scalars(select(m.Contact).where(m.Contact.company_id == o.company_id)) if x.name]
+        res, usage, steps = RA.find_contact(p, web(c), o.company.name, o.company.domain, role, asked, contacts, may_call=may_call(c, p))
+        trace.extend(steps)
+        return res, usage
 
-    res, _ = S.run_agent(c, job.agent, o, "person-demo-1.0", demo, live=live, live_prompt=RA.VERSION, trace=trace)
+    res, _ = S.run_agent(c, job.agent, o, "person-demo-1.0", demo, live=live, live_prompt=RA.VERSION, trace=trace,
+                         subject=f"Find the {role} at {o.company.name}")
     if not res.get("found"):
         checked = f" What the agent checked: {res['notes']}" if res.get("notes") else ""
         J.to_inbox(c.s, c.today, job, "reminder", f"Could not find the {role} at {o.company.name}",
@@ -333,10 +336,21 @@ def do_manager_review(c, job, o):
     return "done", f"{mode.capitalize()} mode: {shown}. {result.get('summary', '')}"[:300]
 
 
+def do_mail_sync(c, job, o):
+    res = S.sync_mail(c)
+    if res.get("off"):
+        return "skipped", "Email is off."
+    n = res["replies"]
+    text = f"Checked {res['checked']} email thread(s): {res['sent']} sent from Gmail recorded, {n} new repl{'y' if n == 1 else 'ies'} in the inbox."
+    if res["errors"]:
+        text += " Could not read: " + "; ".join(res["errors"][:3])
+    return "done", text
+
+
 HANDLERS = {"followup_draft": do_followup_draft, "reconnect_draft": do_reconnect_draft, "research_refresh": do_research_refresh,
             "person_lookup": do_person_lookup, "gap_actions": do_gap_actions, "defer_nurture": do_defer_nurture,
             "ready_reminder": do_ready_reminder, "discovery_round": do_discovery_round, "feedback_review": do_feedback_review,
-            "manager_review": do_manager_review}
+            "manager_review": do_manager_review, "mail_sync": do_mail_sync}
 assert set(HANDLERS) == set(J.KINDS)
 
 
@@ -490,7 +504,7 @@ class Worker:
 
 
 # ---------- a person acts on an inbox item ----------
-CHANGES = ("facts", "contact", "nurture", "draft")  # kinds whose apply changes the opportunity or relies on its state
+CHANGES = ("facts", "contact", "nurture", "draft", "reply")  # kinds whose apply changes the opportunity or relies on its state
 
 
 def check_still_valid(c: S.Ctx, it: m.InboxItem, o: m.Opportunity | None, seen_hash: str | None) -> None:
@@ -511,15 +525,33 @@ def check_still_valid(c: S.Ctx, it: m.InboxItem, o: m.Opportunity | None, seen_h
                                 "Dismiss it and ask for a new draft.", 409, "stale")
 
 
-def apply_item(c: S.Ctx, item_id: str, action: str, seen_hash: str | None = None) -> dict:
-    """action: apply (use what the agent prepared), done (seen, nothing to change) or dismiss (not useful).
-    seen_hash: the payloadHash the person saw; when given, apply refuses anything else."""
+def approve_and_send(c: S.Ctx, it: m.InboxItem, o: m.Opportunity | None, seen_hash: str | None, to: str | None) -> dict:
+    """A person approves an email draft and it goes out at once through the mail connector (Gmail).
+    The approval covers exactly what they saw: the draft (seen_hash = its payloadHash) and the address (to)."""
+    if it.kind != "draft" or o is None:
+        raise S.ActionError("Only an email draft can be approved and sent.", 400, "not_a_draft")
+    if not seen_hash:
+        raise S.ActionError("Approve and send needs the payloadHash you saw.", 400, "no_hash")
+    if not (to or "").strip():
+        raise S.ActionError("Say which address to send to.", 400, "no_address")
+    check_still_valid(c, it, o, seen_hash)
+    p = S.email_preview(c, o.id, to, it.id)
+    sent = S.email_out(c, o.id, p["to"], "send", p["seenHash"], it.id)  # also applies the item
+    return {"status": "applied", "note": f"Approved by {c.actor} and sent to {p['to']} through {S.mailbox(c).name}.", "sent": sent}
+
+
+def apply_item(c: S.Ctx, item_id: str, action: str, seen_hash: str | None = None, to: str | None = None) -> dict:
+    """action: apply (use what the agent prepared), send (an email draft: approve it and send it now to `to`),
+    done (seen, nothing to change) or dismiss (not useful).
+    seen_hash: the payloadHash the person saw; when given, apply refuses anything else (send requires it)."""
     it = c.s.get(m.InboxItem, item_id)
     if not it:
         raise S.ActionError("Inbox item not found.", 404, "not_found")
     if it.status != "new":
         raise S.ActionError(f"This item is already {it.status}.", 409, "wrong_status")
     o = c.s.get(m.Opportunity, it.opportunity_id) if it.opportunity_id else None
+    if action == "send":
+        return approve_and_send(c, it, o, seen_hash, to)
     note = ""
     if action == "apply":
         check_still_valid(c, it, o, seen_hash)
@@ -534,6 +566,9 @@ def apply_item(c: S.Ctx, item_id: str, action: str, seen_hash: str | None = None
         elif it.kind == "nurture" and o:
             S.to_nurture(c, o.id, date.fromisoformat(it.data["review_on"]), "Client deferred; suggested by the action agent")
             note = f"Moved to nurture until {it.data['review_on']}"
+        elif it.kind == "reply" and o:
+            res = S.record_reply(c, o.id, it.data["text"], min(date.fromisoformat(it.data["on"]), c.today))
+            note = f"Email reply recorded; stage set to Active; reply label {res['replyLabel']}"
         elif it.kind == "draft":
             known = {f["id"] for f in (o.brief.facts or [])} if o else set()
             added = [f for f in it.data.get("facts", []) if f["id"] not in known]
@@ -548,7 +583,7 @@ def apply_item(c: S.Ctx, item_id: str, action: str, seen_hash: str | None = None
         it.status = "done" if action == "done" else "dismissed"
         note = "Marked done" if action == "done" else "Dismissed; nothing changed"
     else:
-        raise S.ActionError("Action must be apply, done or dismiss.")
+        raise S.ActionError("Action must be apply, send, done or dismiss.")
     it.decided_by = c.actor
     if o:
         S.touch(c, o)

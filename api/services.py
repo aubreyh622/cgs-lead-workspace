@@ -20,10 +20,52 @@ from api import knowledge
 from api import live_agents as L
 from api.llm import LLMError, make_provider
 from api import models as m
+from api import toolkit as TK
 from api.settings import Settings
 from backend.rules import CONDITIONS, LABELS, REASONS, RULE_VERSION, WEIGHTS, calculate, validate_score
 
-WHITELIST = ("problem", "signals", "buyer_roles", "exclusions", "excluded_domains")
+WHITELIST = ("problem", "signals", "buyer_roles", "exclusions", "excluded_domains", "company_size", "problems")
+SIZE_KEYS = ("min_employees", "max_employees", "min_revenue_musd", "max_revenue_musd")
+
+
+def problem_list(value) -> list[dict]:
+    """Problems for the direction, edited by hand: [{"problem", "signals": [...], "buyer_roles": [...]}]; ids are given here."""
+    if not isinstance(value, list) or not all(isinstance(x, dict) for x in value):
+        raise ActionError('Give a list of problems, each {"problem": "...", "signals": [...], "buyer_roles": [...]}.', 400, "invalid_value")
+    out = []
+    for i, x in enumerate(value):
+        text = str(x.get("problem", "")).strip()
+        signals = [str(s).strip() for s in x.get("signals") or [] if str(s).strip()]
+        roles = [str(s).strip() for s in x.get("buyer_roles") or [] if str(s).strip()]
+        if len(text) < 10 or not signals:
+            raise ActionError(f"Problem {i + 1} needs a problem text and at least one signal.", 400, "invalid_value")
+        out.append({"id": f"p{i + 1}", "problem": text, "signals": signals, "buyer_roles": roles,
+                    **{k: x[k] for k in ("solution", "passage_id", "quote") if x.get(k)}})
+    return out
+
+
+def size_range(value) -> dict:
+    """A company size range from a proposal: {"max_employees": 5000, ...} (revenue in millions of US dollars). {} = no limit."""
+    import json as _json
+    if isinstance(value, str):
+        try:
+            value = _json.loads(value) if value.strip() else {}
+        except ValueError:
+            raise ActionError('Give the size range as JSON, for example {"min_employees": 100, "max_employees": 5000}.', 400, "invalid_value")
+    if not isinstance(value, dict) or set(value) - set(SIZE_KEYS):
+        raise ActionError(f"The size range may only have {SIZE_KEYS}.", 400, "invalid_value")
+    out = {}
+    for k in SIZE_KEYS:
+        v = value.get(k)
+        if v in (None, ""):
+            continue
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0:
+            raise ActionError(f"{k} must be a number of 0 or more.", 400, "invalid_value")
+        out[k] = int(v) if "employees" in k else float(v)
+    for lo, hi in (("min_employees", "max_employees"), ("min_revenue_musd", "max_revenue_musd")):
+        if lo in out and hi in out and out[lo] > out[hi]:
+            raise ActionError(f"{lo} is larger than {hi}.", 400, "invalid_value")
+    return out
 SCOPES = ("opportunity", "theme", "consultant", "cgs")
 REJECT_REASONS = ("Outside our target client profile", "No clear business problem", "Contact lacks decision authority",
                   "Existing relationship or already in progress", "Evidence too thin or unreliable", "Other")
@@ -52,6 +94,7 @@ class Ctx:
     provider_factory: Callable[[], Any] | None = None  # tests inject a fake AI company here
     research_factory: Callable[[], Any] | None = None  # Steps 2-3 live research (Aubrey's pipeline)
     search_factory: Callable[[], Any] | None = None    # web search for Step 1 discovery
+    mail_factory: Callable[[], Any] | None = None      # the mailbox (api/toolkit/mail.py); None = mail is off
 
     @property
     def demo(self) -> bool:
@@ -176,7 +219,7 @@ def run_agent(c: Ctx, agent: str, o: m.Opportunity | None, prompt: str, fn, call
         c.s.commit()  # keep the failure record even though the request fails
         code = "agent_unavailable" if isinstance(e, A.AgentUnavailable) else f"ai_{e.kind}"
         raise ActionError(str(e), 503, code)
-    # the real number of AI requests (discovery makes two; A4 with no open gaps makes none)
+    # the real number of AI requests (discovery makes two; the next-step agent with no open gaps makes none)
     rid = record_run(c, agent, o, prompt, getattr(p, "calls", 1), subject=subject, model=p.label, usage=usage)
     if trace:
         c.s.get(m.AgentRun, rid).trace = trace
@@ -230,9 +273,10 @@ def merged_direction(old: m.DirectionVersion | None, mine: m.DirectionVersion, n
     data, kept = {}, []
     for f in WHITELIST:
         base, mine_v, new_v = getattr(old or new, f), getattr(mine, f), getattr(new, f)
-        if f == "problem":
+        if f in ("problem", "company_size"):  # one value, not a list: keep the person's change if they made one
             data[f] = mine_v if mine_v != base else new_v
         else:
+            base, mine_v, new_v = base or [], mine_v or [], new_v or []  # versions made before a list field existed hold null
             removed = [x for x in base if x not in mine_v]
             added = [x for x in mine_v if x not in base]
             data[f] = [x for x in new_v if x not in removed] + [x for x in added if x not in new_v]
@@ -314,18 +358,21 @@ def run_research(c: Ctx, o: m.Opportunity) -> None:
             if not o.company.domain:
                 from api import discovery_agent as D
                 try:
-                    from api.search import make_search
-                    found = D.resolve_domain(c.search_factory() if c.search_factory else make_search(as_of=c.today), o.company.name)
+                    found = D.resolve_domain(TK.web_for("Research agent", c), o.company.name)
                 except LLMError:
                     found = ""
                 if not found:
                     raise LLMError("The research agent needs the company website (domain), and a search did not find it. Add it, then retry.", "config")
                 o.company.domain = found
                 log(c, o.id, "a", f"Research agent found the company website: {found}. Check it is the right company.")
+            TK.require("Research agent", "web", c.s)  # whichever engine runs the research, the permission table decides
             bridge = c.research_factory() if c.research_factory else None
             if bridge is None:
                 raise A.AgentUnavailable("Research agent: not available in this server.")
-            task.external_run_id = bridge.start(o.company.name, o.company.domain, c.actor, **({"as_of": c.today} if getattr(bridge, "dated", False) else {}))
+            task.external_run_id = bridge.start(o.company.name, o.company.domain, c.actor, **({"as_of": c.today} if getattr(bridge, "dated", False) else {}),
+                                                **({"focus": task.returned_with} if getattr(bridge, "focus", False) and task.returned_with else {}),
+                                                **({"size": current_direction(c, c.actor).company_size or {},
+                                                    "problem": o.target_problem or ""} if getattr(bridge, "criteria", False) else {}))
             task.status, task.error = "running", None
             log(c, o.id, "a", "Research agent started (Gemini + web search, up to about 8 minutes)" +
                 (f". Reviewer question noted: {task.returned_with}" if task.returned_with else ""))
@@ -379,6 +426,7 @@ def pick_candidate(c: Ctx, cand_id: str) -> list[str]:
                             title=f"{cand.signal}: planning support", team="", person=cand.person, role=cand.title, source_type="ai",
                             source_note=f"AI recommendation, round {cand.round}, direction {cand.direction_version}",
                             brief=A.candidate_brief(cand, c.actor, c.today))
+        o.target_problem = cand.problem
         run_research(c, o)
         created.append(o.id)
     return created
@@ -394,9 +442,9 @@ def recommend(c: Ctx, intent: str, budget=None) -> dict:
     known = {D._norm(n) for n in c.s.scalars(select(m.Company.name))} | {D._norm(n) for n in c.s.scalars(select(m.Candidate.company))}
 
     def live(p):
-        from api.search import make_search, search_config
+        from api.search import search_config
         from api.settings import ROOT
-        search = c.search_factory() if c.search_factory else make_search(as_of=c.today)
+        search = TK.web_for("Discovery agent", c)
         result, usage, steps = D.discover_with_agent(p, search, direction, intent, known, c.today,
                                                      debug_file=ROOT / "runtime" / "discovery-last-round.json", config=search_config(),
                                                      may_call=budget(p) if budget else None)
@@ -418,7 +466,8 @@ def recommend(c: Ctx, intent: str, budget=None) -> dict:
         c.s.add(m.Candidate(id=f"r{rnd}-{i + 1}", round=rnd, company=x["company"], domain=x.get("domain", ""), person=x.get("person", ""),
                             title=x.get("title", ""), why_person=x.get("why_person", "Matches a buyer role in the research direction" if x.get("person") else "No named person in the source"),
                             why=x["why"], signal=x["signal"], signal_date=x["signal_date"], flags=x.get("flags", []), status="new",
-                            direction_version=d.version, source_url=x.get("source_url"), evidence_quote=x.get("quote")))
+                            direction_version=d.version, source_url=x.get("source_url"), evidence_quote=x.get("quote"),
+                            problem_id=x.get("problem_id"), problem=x.get("problem")))
     return {"round": rnd, "candidates": len(found), "checks": info}
 
 
@@ -463,6 +512,8 @@ def sync_research(c: Ctx) -> list[dict]:
         except Exception as e:  # one unreachable run must not stop the others; it is checked again next time
             out.append({"opportunityId": o.id, "status": "running", "error": f"Could not check the research run ({type(e).__name__}: {e})"})
             continue
+        if hasattr(bridge, "uses"):  # the research thread's connector calls join this request's transaction
+            TK.save_uses(c.s, bridge.uses(task.external_run_id))
         task.log = (task.log or [])[-20:] + [{"m": e} for e in st.get("events", []) if {"m": e} not in (task.log or [])]
         u = st.get("usage") or {}
         o.brief.usage = {"searches": u.get("searches", 0), "pages": u.get("extractions", 0), "calls": u.get("model_calls", 0)}
@@ -484,15 +535,19 @@ def sync_research(c: Ctx) -> list[dict]:
                 o.contact.name, o.contact.title = person["name"], person["title"]
             task.status, task.progress, o.stage = "done", 5, "review"
             o.revision += 1
-            record_run(c, "Research agent", o, getattr(bridge, "prompt", "research-v2 (Aubrey)"), u.get("model_calls", 0), model=getattr(bridge, "label", "gemini+tavily"),
-                       usage=type("U", (), {"tokens_in": u.get("tokens_in"), "tokens_out": u.get("tokens_out")})())
+            rid = record_run(c, "Research agent", o, getattr(bridge, "prompt", "research-v2 (Aubrey)"), u.get("model_calls", 0), model=getattr(bridge, "label", "gemini+tavily"),
+                             usage=type("U", (), {"tokens_in": u.get("tokens_in"), "tokens_out": u.get("tokens_out")})())
+            if hasattr(bridge, "trace"):  # the tool-using research agent: keep every step with the run
+                c.s.get(m.AgentRun, rid).trace = bridge.trace(task.external_run_id) or None
             log(c, o.id, "a", f"Research agent finished the brief: {len(brief['facts'])} quoted sources" + (f", {len(brief['flags'])} flags" if brief["flags"] else ""))
             out.append({"opportunityId": o.id, "status": "review"})
         else:
             reason = st.get("error") or ("Paused at a research limit." if st["status"] == "paused" else "No reviewable brief was produced.")
             task.status, task.error = ("paused" if st["status"] == "paused" else "failed"), reason
             task.pause_reason = "budget" if st["status"] == "paused" else None
-            record_run(c, "Research agent", o, getattr(bridge, "prompt", "research-v2 (Aubrey)"), u.get("model_calls", 0), "failed", reason, model=getattr(bridge, "label", "gemini+tavily"))
+            rid = record_run(c, "Research agent", o, getattr(bridge, "prompt", "research-v2 (Aubrey)"), u.get("model_calls", 0), "failed", reason, model=getattr(bridge, "label", "gemini+tavily"))
+            if hasattr(bridge, "trace"):
+                c.s.get(m.AgentRun, rid).trace = bridge.trace(task.external_run_id) or None
             log(c, o.id, "a", f"Research ended without a brief: {reason}")
             out.append({"opportunityId": o.id, "status": task.status, "error": reason})
     return out
@@ -645,7 +700,7 @@ def generate_draft(c: Ctx, opp_id: str, angle: str | None, tone: str) -> dict:
         return d, usage
 
     from api.outreach_agent import VERSION as OUTREACH_AGENT_VERSION
-    draft, _ = run_agent(c, "A1 Preparation and outreach", o, "a1-1.0",
+    draft, _ = run_agent(c, "Outreach agent", o, "outreach-demo-1.0",
                          lambda: A.demo_draft(star, contact["name"], o.company.name, o.owner or c.actor, b.facts, tone, angle),
                          live=live, live_prompt=OUTREACH_AGENT_VERSION, trace=trace)
     new_facts = draft.pop("new_facts", [])
@@ -695,6 +750,302 @@ def mark_sent(c: Ctx, opp_id: str, via: str, on: date | None, follow_days: int) 
     log(c, o.id, "h", f"{via} sent by {c.actor}. The workspace did not send it.")
 
 
+# ---------- Step 5: email through the mail connector (api/toolkit/mail.py) ----------
+EMAIL_RE = re.compile(r"^[^@\s<>,;]+@[^@\s<>,;]+\.[A-Za-z]{2,}$")
+
+
+def mailbox(c: Ctx, who: str = "Workspace (person)"):
+    box = TK.metered(c.mail_factory() if c.mail_factory else None, who, "mail", c)
+    if box is None:
+        raise ActionError("Email is off. Set MAIL_PROVIDER=gmail (live mode) or mock in .env, then restart.", 409, "mail_off")
+    return box
+
+
+def plain_email(body: str) -> str:
+    """The text the client receives: citation markers [[f2|phrase]] become the phrase alone."""
+    return L._CITE.sub(lambda x: x.group(2), body)
+
+
+def mail_hash(to: str, subject: str, body: str) -> str:
+    import hashlib
+    import json
+    return hashlib.sha256(json.dumps([to.strip().lower(), subject, body]).encode()).hexdigest()[:16]
+
+
+def follow_days_setting(c: Ctx) -> int:
+    row = c.s.get(m.Setting, "follow_days")
+    return int(row.value) if row else 7
+
+
+def _mail_source(c: Ctx, o: m.Opportunity, item_id: str | None):
+    """(purpose, subject, body, inbox item): the first email from the saved draft, or a follow-up/reconnect draft from the inbox."""
+    if item_id:
+        it = c.s.get(m.InboxItem, item_id)
+        if not it or it.opportunity_id != o.id or it.kind != "draft":
+            raise ActionError("That inbox item is not a draft for this opportunity.", 404, "not_found")
+        if it.status not in ("new", "applied"):
+            raise ActionError(f"That draft was {it.status}.", 409, "wrong_status")
+        return it.data.get("purpose", "followup"), it.data.get("subject", ""), it.data.get("body", ""), it
+    r = c.s.get(m.Outreach, o.id)
+    if o.stage != "identified":
+        raise ActionError("The first email was already sent. Send a follow-up from its inbox draft instead.", 409, "wrong_stage")
+    if not r or not (r.subject or "").strip() or not (r.body or "").strip():
+        raise ActionError("Write or generate the draft first.", 409, "no_draft")
+    return "first", r.subject, r.body, None
+
+
+def email_preview(c: Ctx, opp_id: str, to: str | None = None, item_id: str | None = None) -> dict:
+    """Exactly what would go out, and the fingerprint a person confirms (seenHash)."""
+    o = opp(c, opp_id, "identified", "contacted", "nurture")
+    purpose, subject, body, _ = _mail_source(c, o, item_id)
+    r = c.s.get(m.Outreach, o.id)
+    to = (to or (r.to_email if r else None) or (o.contact.email if o.contact else None) or "").strip()
+    lib = knowledge.library().by_id
+    synthetic = sorted({x.group(1) for x in L._CITE.finditer(body) if x.group(1) in lib and lib[x.group(1)].synthetic})
+    text = plain_email(body)
+    return {"purpose": purpose, "to": to, "subject": subject, "body": text, "inThread": bool(r and r.mail_thread_id and purpose != "first"),
+            "seenHash": mail_hash(to, subject, text),
+            "blocked": (f"The draft cites a SYNTHETIC demo document ({', '.join(synthetic)}). Replace that sentence first." if synthetic else None)}
+
+
+def record_mail_sent(c: Ctx, o: m.Opportunity, purpose: str, on: date | None = None, how: str = "") -> None:
+    r = outreach_row(c, o)
+    on = on or c.today
+    fd = follow_days_setting(c)
+    if purpose == "first":
+        r.status, r.sent_on, r.sent_via = "sent", on, "Gmail"
+        o.stage, o.next_action, o.next_due = "contacted", "Follow up if no reply", on + timedelta(days=fd)
+    elif purpose == "followup":
+        r.status, r.sent_on = "followup", on
+        o.next_action, o.next_due = "Follow up if no reply", on + timedelta(days=fd)
+    touch(c, o)
+    log(c, o.id, "h", f"{purpose.capitalize()} email sent through Gmail{how} to {r.to_email}.")
+
+
+def email_out(c: Ctx, opp_id: str, to: str, mode: str, seen_hash: str, item_id: str | None = None) -> dict:
+    """A person's click: put the email in their Gmail drafts (mode draft) or send it now (mode send).
+    seen_hash must match email_preview, so exactly what the person looked at goes out."""
+    from api.toolkit.mail import MailError
+    if mode not in ("draft", "send"):
+        raise ActionError("Mode must be draft or send.")
+    box = mailbox(c)
+    p = email_preview(c, opp_id, to, item_id)
+    if p["blocked"]:
+        raise ActionError(p["blocked"], 409, "synthetic")
+    if not EMAIL_RE.match(p["to"]):
+        raise ActionError("Give the client's email address.", 400, "no_address")
+    if seen_hash != p["seenHash"]:
+        raise ActionError("The email changed after you looked at it. Look at it again, then confirm.", 409, "changed")
+    o = c.s.get(m.Opportunity, opp_id)
+    r = outreach_row(c, o)
+    _, _, _, it = _mail_source(c, o, item_id)
+    if it is not None and it.status == "new":  # an inbox draft must still be valid before anything goes out
+        from api import autonomy as AU
+        AU.check_still_valid(c, it, o, it.payload_hash)
+    try:
+        if r.mail_draft_id and box.draft_exists(r.mail_draft_id):
+            raise ActionError("A Gmail draft for this opportunity is waiting in Gmail. Send or delete it there first.", 409, "draft_waiting")
+        thread = r.mail_thread_id if p["purpose"] != "first" else ""
+        earlier = box.thread(thread) if thread else []
+        reply_to = earlier[-1]["rfc_id"] if earlier else ""
+        if mode == "draft":
+            res = box.create_draft(p["to"], p["subject"], p["body"], thread, reply_to)
+        else:
+            res = box.send(p["to"], p["subject"], p["body"], thread, reply_to)
+    except MailError as e:
+        raise ActionError(str(e), 502, "mail_failed") from None
+    r.to_email, r.mail_thread_id = p["to"], res.get("thread_id") or r.mail_thread_id
+    if o.contact and not o.contact.email:
+        o.contact.email = p["to"]
+    if it is not None and it.status == "new":
+        AU.apply_item(c, it.id, "apply", it.payload_hash)
+    if mode == "draft":
+        r.mail_draft_id, r.mail_draft_purpose = res["draft_id"], p["purpose"]
+        touch(c, o)
+        log(c, o.id, "h", f"{c.actor} put the {p['purpose']} email in Gmail drafts for {p['to']}. Nothing was sent; "
+                          "the workspace records it once it is sent from Gmail.")
+        return {"mode": "draft", "to": p["to"], "draftId": res["draft_id"], "threadId": r.mail_thread_id}
+    record_mail_sent(c, o, p["purpose"], how=f" by {c.actor}")
+    return {"mode": "send", "to": p["to"], "messageId": res["message_id"], "threadId": r.mail_thread_id}
+
+
+def sync_mail(c: Ctx) -> dict:
+    """Rules, no AI: for every email thread, record drafts that were sent from Gmail and put new client replies in the
+    owner's inbox. A reply is recorded only when a person applies it (an out-of-office message must not make a lead Active)."""
+    from api.toolkit.mail import MailError
+    box = TK.metered(c.mail_factory() if c.mail_factory else None, "Mail rules", "mail", c)
+    out = {"checked": 0, "sent": 0, "replies": 0, "errors": []}
+    if box is None:
+        return {**out, "off": True}
+    for r in list(c.s.scalars(select(m.Outreach).where(m.Outreach.mail_thread_id.is_not(None)))):
+        o = c.s.get(m.Opportunity, r.opportunity_id)
+        if not o or o.stage not in ("identified", "contacted", "nurture"):
+            continue
+        out["checked"] += 1
+        try:
+            msgs = box.thread(r.mail_thread_id)
+            if r.mail_draft_id and not box.draft_exists(r.mail_draft_id):
+                purpose, r.mail_draft_id = r.mail_draft_purpose or "first", None
+                mine = [x for x in msgs if x["ours"]]
+                if mine and (purpose != "first" or o.stage == "identified"):
+                    record_mail_sent(c, o, purpose, on=min(date.fromisoformat(mine[-1]["date"]), c.today), how=" (seen in Gmail's Sent folder)")
+                    out["sent"] += 1
+                else:
+                    log(c, o.id, "a", "The Gmail draft was deleted without being sent.")
+            seen = {i.data.get("message_id") for i in c.s.scalars(select(m.InboxItem).where(
+                m.InboxItem.opportunity_id == o.id, m.InboxItem.kind == "reply"))}
+            for x in msgs:
+                if x["ours"] or x["id"] in seen or not x["text"].strip():
+                    continue
+                it = J.to_inbox(c.s, c.today, None, "reply", f"Email reply from {x['from']} ({o.company.name})", x["text"][:4000],
+                                {"message_id": x["id"], "from": x["from"], "on": x["date"], "text": x["text"][:4000]}, opp=o, agent="Mail rules")
+                it.expires_on = None  # a client's reply stays until a person deals with it
+                out["replies"] += 1
+        except (MailError, TK.LimitReached) as e:
+            out["errors"].append(f"{o.company.name}: {e}")
+    return out
+
+
+# ---------- connector permissions (api/toolkit): which agent may use which outside system ----------
+def may_manage_permissions(c: Ctx) -> bool:
+    return not c.settings.admins or c.actor in c.settings.admins
+
+
+def set_permission(c: Ctx, agent: str, connector: str, enabled: bool | None, reason: str) -> dict:
+    """A person switches a connector on or off for one agent (agent "*" = for every agent), or back to the default
+    (enabled None). The code's ceiling always wins: what it forbids cannot be switched on. Every change is kept."""
+    if not may_manage_permissions(c):
+        raise ActionError(f"Only {', '.join(c.settings.admins)} can change agent permissions (CGS_ADMINS in .env).", 403, "wrong_role")
+    reason = need_text(reason, "Reason")
+    if len(reason) < 5:
+        raise ActionError("Say why, in a few words.", 400, "no_reason")
+    if connector not in TK.CONNECTORS:
+        raise ActionError(f"Unknown connector: {connector}. Known: {', '.join(TK.CONNECTORS)}.", 404, "not_found")
+    if agent != "*" and agent not in TK.CEILING:
+        raise ActionError(f"Unknown agent: {agent}.", 404, "not_found")
+
+    def now_state() -> str:
+        if agent == "*":
+            return "on" if TK.connector_detail(connector, c.s)["on"] else "off"
+        return TK.state(agent, connector, c.s)
+
+    if agent == "*":
+        if not TK.CONNECTORS[connector][2]:
+            raise ActionError(f"The {connector} connector is not built yet.", 409, "not_built")
+    else:
+        d = TK.detail(agent, connector, c.s)
+        if not d["editable"]:
+            why = "the code does not allow it" if d["state"] == "forbidden" else "that connector is not built yet"
+            raise ActionError(f"{agent} cannot be given the {connector} connector: {why}.", 409, d["state"].replace(" ", "_"))
+    before = now_state()
+    row = c.s.get(m.ConnectorSwitch, (agent, connector))
+    prev = "default" if row is None else ("on" if row.enabled else "off")
+    if enabled is None:
+        if row is not None:
+            c.s.delete(row)
+    elif row is None:
+        c.s.add(m.ConnectorSwitch(agent=agent, connector=connector, enabled=enabled, changed_by=c.actor, changed_on=c.today, reason=reason))
+    else:
+        row.enabled, row.changed_by, row.changed_on, row.reason = enabled, c.actor, c.today, reason
+    c.s.flush()
+    after = now_state()
+    who = "every agent" if agent == "*" else agent
+    what = "back to the default" if enabled is None else ("on" if enabled else "off")
+    c.s.add(m.PermissionChange(agent=agent, connector=connector, enabled=enabled, before=before, after=after, by=c.actor, on=c.today,
+                               reason=reason, kind="switch", prev=prev))
+    c.s.add(m.Activity(opportunity_id=None, on=c.today, actor_type="h",
+                       text=f"{c.actor} switched the {connector} connector {what} for {who} ({before} -> {after}): {reason}"))
+    warnings = []
+    if connector == "mail" and after == "on" and not TK.client_data_allowed():
+        warnings.append("The email tools also need CLIENT_DATA_TO_AI=allowed in .env before an agent can read client email.")
+    if agent != "*" and after == "connector off":
+        warnings.append(f"The {connector} connector is off for every agent; this switch applies once it is turned back on.")
+    return {"agent": agent, "connector": connector, "before": before, "after": after, "warnings": warnings}
+
+
+def _limit_label(n) -> str:
+    return f"{n} per day" if n else "no limit"
+
+
+def set_limit(c: Ctx, connector: str, per_day: int | None, reason: str) -> dict:
+    """A person sets a connector's daily limit: a number, 0 for no limit, or None for the config file's default."""
+    if not may_manage_permissions(c):
+        raise ActionError(f"Only {', '.join(c.settings.admins)} can change agent permissions (CGS_ADMINS in .env).", 403, "wrong_role")
+    reason = need_text(reason, "Reason")
+    if len(reason) < 5:
+        raise ActionError("Say why, in a few words.", 400, "no_reason")
+    if connector not in TK.CONNECTORS or not TK.CONNECTORS[connector][2]:
+        raise ActionError(f"Unknown or not built connector: {connector}.", 404, "not_found")
+    if per_day is not None and (per_day < 0 or per_day > 100000):
+        raise ActionError("A daily limit is a whole number from 0 (no limit) to 100000.", 400, "bad_limit")
+    row = c.s.get(m.Setting, "connector_limits")
+    current = dict((row.value if row else None) or {})
+    prev = str(current[connector]) if connector in current else "default"
+    before = _limit_label(TK.limits(c.s)[connector]["perDay"])
+    if per_day is None:
+        current.pop(connector, None)
+    else:
+        current[connector] = per_day
+    if row is None:
+        c.s.add(m.Setting(key="connector_limits", value=current))
+    else:
+        row.value = current
+    c.s.flush()
+    after = _limit_label(TK.limits(c.s)[connector]["perDay"])
+    c.s.add(m.PermissionChange(agent="*", connector=connector, enabled=None, before=before, after=after, by=c.actor, on=c.today,
+                               reason=reason, kind="limit", prev=prev))
+    c.s.add(m.Activity(opportunity_id=None, on=c.today, actor_type="h",
+                       text=f"{c.actor} set the {connector} connector's daily limit ({before} -> {after}): {reason}"))
+    return {"connector": connector, "before": before, "after": after, "usedToday": TK.used_today(c.s, connector, c.today)}
+
+
+def permission_history(c: Ctx, limit: int = 100) -> list[dict]:
+    rows = c.s.scalars(select(m.PermissionChange).order_by(m.PermissionChange.id.desc()).limit(max(1, min(limit, 500))))
+    return [{"id": x.id, "kind": x.kind or "switch", "agent": x.agent, "connector": x.connector,
+             "set": (x.after if x.kind == "limit" else "default" if x.enabled is None else ("on" if x.enabled else "off")),
+             "before": x.before, "after": x.after, "by": x.by, "on": x.on.isoformat(), "reason": x.reason, "undoable": x.prev is not None}
+            for x in rows]
+
+
+def undo_permission_change(c: Ctx, change_id: int, reason: str) -> dict:
+    """Put a setting back as it was before one change. Only the latest change to that setting can be undone, so the
+    history always reads in order; the undo is itself a new change in the history."""
+    ch = c.s.get(m.PermissionChange, change_id)
+    if ch is None:
+        raise ActionError("Change not found.", 404, "not_found")
+    kind = ch.kind or "switch"
+    later = c.s.scalar(select(m.PermissionChange.id).where(
+        m.PermissionChange.agent == ch.agent, m.PermissionChange.connector == ch.connector, m.PermissionChange.id > ch.id,
+        (m.PermissionChange.kind == kind) if kind != "switch" else (m.PermissionChange.kind.is_(None) | (m.PermissionChange.kind == "switch")))
+        .order_by(m.PermissionChange.id.desc()).limit(1))
+    if later is not None:
+        raise ActionError(f"A later change to this setting exists (#{later}). Undo that one first.", 409, "not_latest")
+    if ch.prev is None:
+        raise ActionError("This change cannot be undone automatically. Set it by hand.", 409, "no_prev")
+    why = f"Undo of change #{ch.id}: {need_text(reason, 'Reason')}"
+    if kind == "limit":
+        return set_limit(c, ch.connector, None if ch.prev == "default" else int(ch.prev), why)
+    return set_permission(c, ch.agent, ch.connector, {"on": True, "off": False, "default": None}[ch.prev], why)
+
+
+def connector_usage(c: Ctx, days: int = 7) -> dict:
+    """Calls per day, agent and connector (ok, failed, denied, limit), with each connector's limit and today's use."""
+    from sqlalchemy import func as f
+    days = max(1, min(days, 90))
+    since = c.today - timedelta(days=days - 1)
+    U = m.ConnectorUse
+    rows = c.s.execute(select(U.on, U.agent, U.connector, U.outcome, f.count()).where(U.on >= since)
+                       .group_by(U.on, U.agent, U.connector, U.outcome)).all()
+    agg: dict[tuple, dict] = {}
+    for on, agent, conn, outcome, n in rows:
+        agg.setdefault((on, agent, conn), {"ok": 0, "failed": 0, "denied": 0, "limit": 0})[outcome] = n
+    lim = TK.limits(c.s)
+    return {"today": c.today.isoformat(), "days": days,
+            "limits": [{"connector": k, **lim[k], "usedToday": TK.used_today(c.s, k, c.today)} for k, v in TK.CONNECTORS.items() if v[2]],
+            "rows": [{"on": on.isoformat(), "agent": agent, "connector": conn, **v}
+                     for (on, agent, conn), v in sorted(agg.items(), key=lambda x: (x[0][0], x[0][1], x[0][2]), reverse=True)]}
+
+
 def followup_sent(c: Ctx, opp_id: str, follow_days: int) -> None:
     o = opp(c, opp_id, "contacted")
     r = outreach_row(c, o)
@@ -712,7 +1063,7 @@ def to_nurture(c: Ctx, opp_id: str, review_on: date | None, reason: str) -> None
 
 
 def record_reply(c: Ctx, opp_id: str, text: str, on: date | None) -> dict:
-    o = opp(c, opp_id, "contacted", "identified")
+    o = opp(c, opp_id, "contacted", "identified", "nurture")  # nurture: the client answered a reconnect email
     text = need_text(text, "Reply text")
     r = outreach_row(c, o)
     r.status, r.reply_on, r.reply_text = "replied", on or c.today, text
@@ -722,7 +1073,7 @@ def record_reply(c: Ctx, opp_id: str, text: str, on: date | None) -> dict:
     touch(c, o)
     log(c, o.id, "h", f"Reply recorded by {c.actor}; stage set to Active")
     try:
-        label, _ = run_agent(c, "A2 Evidence and engagement", o, "a2-1.4", lambda: A.label_reply(text),
+        label, _ = run_agent(c, "Reply classifier", o, "reply-demo-1.4", lambda: A.label_reply(text),
                              live=lambda p: L.label_reply(p, text), live_prompt=L.LABEL_PROMPT_VERSION)
     except ActionError as e:
         o.reply_label = "pending"
@@ -731,7 +1082,7 @@ def record_reply(c: Ctx, opp_id: str, text: str, on: date | None) -> dict:
     o.reply_label = label
     log(c, o.id, "a", f"Evidence agent labeled the reply: {label}")
     if label == "defer":
-        J.enqueue(c.s, c.today, "defer_nurture", o.id, "event", "The client's reply says not now, but later", requested_by="A2 Evidence and engagement")
+        J.enqueue(c.s, c.today, "defer_nurture", o.id, "event", "The client's reply says not now, but later", requested_by="Reply classifier")
     return {"replyLabel": label}
 
 
@@ -762,7 +1113,7 @@ def add_note(c: Ctx, opp_id: str, type_: str, on: date | None, text: str, analyz
 
     from api.evidence_agent import VERSION as EVIDENCE_AGENT_VERSION
     (found, dropped_by_check), run = run_agent(
-        c, "A2 + A3 Evidence and qualification", o, "a2-1.4 / a3-1.2", lambda: (A.extract_evidence(note.text, star), {}), calls=2,
+        c, "Evidence agent", o, "evidence-demo-1.4", lambda: (A.extract_evidence(note.text, star), {}), calls=2,
         live=live, live_prompt=EVIDENCE_AGENT_VERSION, trace=trace)
     note_text = {note.id: note.text}
     if c.demo:
@@ -792,7 +1143,7 @@ def add_note(c: Ctx, opp_id: str, type_: str, on: date | None, text: str, analyz
         if role_known(c, o.company_id, ask["role"]):
             continue
         job = J.enqueue(c.s, c.today, "person_lookup", o.id, "handoff", f"Find the {ask['role']} at {o.company.name}, who must approve or decide",
-                        {"role": ask["role"], "quote": ask["quote"]}, requested_by="A2 + A3 Evidence and qualification")
+                        {"role": ask["role"], "quote": ask["quote"]}, requested_by="Evidence agent")
         if job:
             handoffs.append(ask["role"])
     return {"noteId": note.id, "proposals": kept, "droppedForInvalidQuote": dropped, "droppedOther": others, "handoffs": handoffs}
@@ -928,29 +1279,29 @@ def update_need(c: Ctx, opp_id: str, fields: dict) -> None:
 
 # ---------- Step 7: actions, tasks, packs ----------
 def suggest_actions(c: Ctx, opp_id: str, why: str = "", budget=None) -> int:
-    """Step 7: up to 3 next actions. Demo: one per gap from a fixed list. Live: the tool-using A4 agent (api/actions_agent.py).
+    """Step 7: up to 3 next actions. Demo: one per gap from a fixed list. Live: the next-step agent (api/next_step_agent.py).
     why: what prompted the request (a stall, a returned pack). budget(provider) -> may_call, for work the agents start on their own."""
-    from api import actions_agent as AA
+    from api import next_step_agent as NS
     from api import agent_runtime as R
     o = opp(c, opp_id, *QUAL_STAGES)
     rules = calculate(rules_input(o))
     gaps = rules["gaps"]
     taken = {t.title for t in c.s.scalars(select(m.Task).where(m.Task.opportunity_id == o.id))}
-    approver_q = AA.approver_question(c, o)
+    approver_q = NS.approver_question(c, o)
     trace: list = []
 
     def live(p):
         if not gaps and not approver_q:
             return [], None  # nothing to close: no AI request
-        spec, record = AA.actions_agent(c, o, rules, approver_q, why)
-        out = R.run(spec, p, AA.task(o), **({"may_call": budget(p)} if budget else {}))
+        spec, record = NS.next_step_agent(c, o, rules, approver_q, why)
+        out = R.run(spec, p, NS.task(o), **({"may_call": budget(p)} if budget else {}))
         trace.extend(out.trace)
         if not record["kept"]:
             raise LLMError(f"The action agent suggested nothing that passes the checks ({out.reason or out.status}).", "invalid_output")
         return record["kept"], out.usage
 
-    items, _ = run_agent(c, "A4 Action and reporting", o, "a4-1.0", lambda: A.next_actions(gaps, taken),
-                         subject=o.company.name, live=live, live_prompt=AA.VERSION, trace=trace)
+    items, _ = run_agent(c, "Next-step agent", o, "next-step-demo-1.0", lambda: A.next_actions(gaps, taken),
+                         subject=o.company.name, live=live, live_prompt=NS.VERSION, trace=trace)
     for x in c.s.scalars(select(m.Suggestion).where(m.Suggestion.opportunity_id == o.id, m.Suggestion.status == "open")):
         x.status = "dismissed"
     for it in items:
@@ -1132,17 +1483,51 @@ def manual_direction_proposal(c: Ctx, field: str, scope: str, value, rationale: 
         if not isinstance(value, str):
             raise ActionError("The problem is one piece of text, not a list.", 400, "invalid_value")
         after = need_text(value, "The problem")
+    elif field == "company_size":
+        after = size_range(value)
+    elif field == "problems":
+        after = problem_list(value)
     elif isinstance(value, list):
         after = [str(x).strip() for x in value if str(x).strip()]
     else:
         after = [x.strip() for x in str(value).split(",") if x.strip()]
-    if after == getattr(base, field):
+    if after == (getattr(base, field) or ({} if field == "company_size" else [] if field == "problems" else None)):
         raise ActionError("Nothing changed. Edit the value first.")
     p = m.DirectionProposal(id=new_id("dp"), type="direction", field=field, scope=scope, origin="manual", title=f"Change {field.replace('_', ' ')}",
                             rationale=need_text(rationale, "A reason"), before=getattr(base, field), after=after, feedback_ids=[],
                             base_version=base.version, proposed_by=c.actor, status="pending", created_on=c.today)
     c.s.add(p)
     return p.id
+
+
+def propose_problems(c: Ctx, scope: str = "theme") -> dict:
+    """The direction agent reads the CGS library and proposes the problems discovery should watch for. A person approves."""
+    from api import agent_runtime as R
+    from api import direction_agent as DA
+    if scope not in ("theme", "consultant"):
+        raise ActionError("Scope must be theme (shared) or consultant (personal).")
+    if c.s.scalars(select(m.DirectionProposal).where(m.DirectionProposal.status == "pending", m.DirectionProposal.field == "problems")).first():
+        raise ActionError("A proposal for the problems is already waiting. Approve or reject it first.", 409, "pending_proposal")
+    base = current_direction(c, c.actor if scope == "consultant" else None)
+    direction = {f: getattr(base, f) for f in WHITELIST}
+    trace: list = []
+
+    def live(p):
+        spec, record = DA.direction_agent(direction, c)
+        out = R.run(spec, p, DA.task())
+        trace.extend(out.trace)
+        if out.status != "done":
+            raise LLMError(f"The direction agent did not finish ({out.reason}).", "invalid_output")
+        return (record["problems"], out.result.get("summary", "")), out.usage
+
+    (problems, summary), _ = run_agent(c, "Direction agent", None, "direction-demo-1.0", lambda: (DA.demo_problems(c), "Demo problems from the demo library."),
+                                       subject=f"Direction {base.version}", live=live, live_prompt=DA.VERSION, trace=trace)
+    p = m.DirectionProposal(id=new_id("dp"), type="direction", field="problems", scope=scope, origin="ai",
+                            title="Problems to watch for, from the CGS library", rationale=summary or "Derived from the CGS library.",
+                            before=base.problems or [], after=problems, feedback_ids=[], base_version=base.version,
+                            proposed_by=c.actor, status="pending", created_on=c.today)
+    c.s.add(p)
+    return {"proposalId": p.id, "problems": problems, "summary": summary}
 
 
 def analyze_feedback(c: Ctx, scope: str) -> dict:

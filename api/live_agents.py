@@ -1,4 +1,4 @@
-"""Real AI agents (live mode). Step 5: A2 evidence and engagement + A3 qualification advisory.
+"""Real AI agents (live mode). Step 5: the evidence agent and the reply classifier.
 
 The model only proposes. Code checks every proposal before a person sees it:
   - every quote must appear word for word in the notes (no invented or altered quotes)
@@ -15,8 +15,8 @@ from api.demo_agents import quote_in_text
 from api.llm import LLMError, Provider, Usage
 from backend.rules import ANCHORS, CONDITION_QUESTIONS, CONDITIONS, LABELS, REASONS, WEIGHTS
 
-EVIDENCE_PROMPT_VERSION = "a2a3-live-1.5"
-LABEL_PROMPT_VERSION = "a2-label-live-1.0"
+EVIDENCE_PROMPT_VERSION = "evidence-live-1.5"
+LABEL_PROMPT_VERSION = "reply-label-live-1.0"
 EVIDENCE_TYPES = ("client_statement", "internal_note", "approved_research", "inference")
 MAX_PROPOSALS = 12
 SCORE_VALUES = {"0", "1", "2", "2.5", "3", "4", "5"}
@@ -192,8 +192,8 @@ def label_reply(provider: Provider, text: str) -> tuple[str, Usage]:
     return data["label"], usage
 
 
-# ---------- A1: outreach draft (Step 5) ----------
-OUTREACH_PROMPT_VERSION = "a1-live-1.1"
+# ---------- Outreach agent: draft (Step 5) ----------
+OUTREACH_PROMPT_VERSION = "outreach-live-1.1"
 OUTREACH_SYSTEM = """You draft a first outreach message for a consultant at CGS Advisors to send from their own email.
 Rules:
 - Use only the facts provided. The hypothesis is a possibility, not a fact: phrase it as a question or an observation.
@@ -239,8 +239,8 @@ def write_outreach(provider: Provider, brief: dict, contact: dict, sender: str, 
     return {"subject": data["subject"].strip(), "body": data["body"].strip()}, usage
 
 
-# ---------- A4: next actions (Step 7) ----------
-ACTIONS_PROMPT_VERSION = "a4-live-1.0"
+# ---------- Next-step agent: next actions (Step 7) ----------
+ACTIONS_PROMPT_VERSION = "next-step-live-1.0"
 ACTIONS_SYSTEM = """You suggest up to three next actions for a consultant to close the most important open qualification gaps.
 Rules:
 - Each action addresses one open gap (use its gap_key) and is a concrete thing to do or ask in the next conversation.
@@ -270,7 +270,7 @@ def next_actions(provider: Provider, gaps: list[dict], notes: list[str], existin
 
 
 # ---------- feedback agent (learning loop) ----------
-FEEDBACK_PROMPT_VERSION = "manager-live-1.0"
+FEEDBACK_PROMPT_VERSION = "feedback-live-1.0"
 FEEDBACK_SYSTEM = """You review why consultants accepted, returned or rejected research candidates, and decide whether the research direction should change.
 Rules:
 - Propose at most one change, and only when at least three records give the same underlying reason. Otherwise propose nothing.
@@ -314,8 +314,8 @@ def analyze_feedback(provider: Provider, records: list, direction: dict) -> tupl
                                              "rationale": data.get("rationale", "").strip(), "after": after, "feedback_ids": support}}, usage
 
 
-# ---------- Research agent: find one person by role (handoff from the evidence agent) ----------
-PERSON_PROMPT_VERSION = "research-person-1.0"
+# ---------- Research agent, one-request contact lookup (not used by the workspace any more): find one person by role (handoff from the evidence agent) ----------
+PERSON_PROMPT_VERSION = "research-contact-live-1.0"
 PERSON_SYSTEM = """You look for one person at one company in the pages you are given: the person who holds a given role.
 Answer only from the pages. If no page names someone in that role, set found to false. Do not guess, and do not pick
 someone in a different role. Quote the sentence that names the person, copied word for word from the page.

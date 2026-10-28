@@ -57,6 +57,13 @@ How to work:
   nobody answered, news that matters to a deferred client.
 - Delegate only with a concrete reason taken from the board or the opportunity. Do not repeat work an agent did recently.
 - Every delegation costs AI calls. At most {max_delegations} per review; fewer is better.
+- Who tells the owner what: the next-step agent (gap_actions) turns open qualification gaps into concrete next actions,
+  and the reminder rules send Ready reminders and nurture suggestions. Never write a note that lists next actions for gaps:
+  delegate gap_actions with your reason instead (if it is already on the board, your reason is added to it).
+  Code refuses a note for an opportunity the next-step agent is already working on today.
+- Your notes are for what neither covers and only a person can act on: work waiting on the owner (a draft or suggestion
+  nobody reviewed, a pack that is out of date), a client message nobody acted on, an opportunity stuck so long it needs a
+  decision (keep going, nurture or close).
 - When only a person can act (call the client, decide, record a reply), use note_for_owner instead of delegating.
   Tell the owner only what they would not see on their own, and not again until something has changed (owner_last_told_by_you),
   or until {STALLED_DAYS} days have passed and the opportunity is still stuck: then remind them once more.
@@ -171,7 +178,12 @@ def manager_agent(c, mode: str) -> tuple[R.AgentSpec, dict]:
         payload = {"role": role} if kind == "person_lookup" else {}
         done_today = c.s.scalars(select(m.AgentJob).where(m.AgentJob.kind == kind, m.AgentJob.opportunity_id == o.id,
                                                           m.AgentJob.created_on == today, m.AgentJob.status != "failed")).first()
-        if J.open_job(c.s, kind, o.id) or done_today:
+        waiting = J.open_job(c.s, kind, o.id)
+        if waiting or done_today:
+            if mode == "on" and kind == "gap_actions" and waiting and waiting.status == "queued" and reason not in (waiting.reason or ""):
+                waiting.reason = f"{waiting.reason}. The manager adds: {reason}"[:1000]  # the next-step agent sees why both asked
+                decide(kind, o, reason, "already_queued", "Already on the board; the manager's reason was added to it.")
+                return {"outcome": "already_queued", "note": "Already on the board; your reason was added, so the next-step agent sees it."}
             decide(kind, o, reason, "already_queued", "The same work is already on the board.")
             return {"outcome": "already_queued", "note": "The same work is already on the board; nothing added."}
         if mode == "shadow":
@@ -186,6 +198,13 @@ def manager_agent(c, mode: str) -> tuple[R.AgentSpec, dict]:
         text = str(args.get("text", "")).strip()
         if not o or len(text) < 10:
             raise R.ToolError("Give an opportunity id from board and what the owner should know or do.")
+        if c.s.scalars(select(m.AgentJob).where(  # one voice per opportunity per day: the next-step agent already writes to this owner
+                m.AgentJob.kind == "gap_actions", m.AgentJob.opportunity_id == o.id, m.AgentJob.created_on == today,
+                m.AgentJob.status.in_(("queued", "running", "done")))).first():
+            why = "The next-step agent is sending this owner next actions for it today."
+            decide("note", o, text[:600], "refused", why)
+            raise R.ToolError(f"{why} Do not add a separate note. If it should consider something, delegate gap_actions with "
+                              "that reason: it is added to the work already on the board.")
         last = c.s.scalar(select(m.ManagerDecision.on).where(m.ManagerDecision.kind == "note", m.ManagerDecision.opportunity_id == o.id,
                                                              m.ManagerDecision.outcome != "refused")
                           .order_by(m.ManagerDecision.on.desc()).limit(1))
@@ -248,5 +267,5 @@ def compare(s, day: date) -> dict:
             "agree": [row(k, o, mine[(k, o)].reason) for (k, o) in mine if (k, o) in rules],
             "managerOnly": [row(k, o, mine[(k, o)].reason, repeatsRecentWork=bool(done_recently(k, o))) for (k, o) in mine if (k, o) not in rules],
             "rulesOnly": [row(k, o, rules[(k, o)].reason) for (k, o) in rules if (k, o) not in mine],
-            "notes": [row("note", d.opportunity_id, d.reason) for d in decisions if d.kind == "note"],
+            "notes": [row("note", d.opportunity_id, d.reason) for d in decisions if d.kind == "note" and d.outcome != "refused"],
             "refused": [row(d.kind, d.opportunity_id, d.reason, refusal=d.detail) for d in decisions if d.outcome == "refused"]}

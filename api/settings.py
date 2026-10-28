@@ -36,13 +36,22 @@ class Settings:
     ai_model: str = ""           # empty = the provider's default model
     users: tuple[str, ...] = ("Alex Morgan", "Sarah Patel", "Daniel Brooks", "Quinn Harper")  # no login yet; pick a name
     directors: tuple[str, ...] = ()  # who may act as Director of Operations at Step 8; empty = anyone (until CGS names them)
+    admins: tuple[str, ...] = ()     # who may change the agents' connector permissions; empty = any workspace user
     agent_worker: bool = False   # True = agents patrol and work in the background (the server turns it on; tests leave it off)
+    mail_provider: str = ""  # off | mock | gmail; empty = mock in demo mode, off in live mode (api/toolkit/mail.py)
+    research_engine: str = "agent"  # Steps 2-3: agent (api/research_agent.py) | pipeline (Aubrey's pipeline, or one request on the synthetic web)
 
     def __post_init__(self):
         if self.app_mode not in APP_MODES:
             raise ValueError(f"APP_MODE must be one of {APP_MODES}, not {self.app_mode!r}.")
         if self.crm_mode not in CRM_MODES:
             raise ValueError(f"CRM_MODE must be one of {CRM_MODES}, not {self.crm_mode!r}.")
+        if self.research_engine not in ("agent", "pipeline"):
+            raise ValueError(f"RESEARCH_ENGINE must be agent or pipeline, not {self.research_engine!r}.")
+        if self.mail_provider not in ("", "off", "mock", "gmail"):
+            raise ValueError(f"MAIL_PROVIDER must be off, mock or gmail, not {self.mail_provider!r}.")
+        if self.mail_provider == "gmail" and self.app_mode == "demo":
+            raise ValueError("MAIL_PROVIDER=gmail needs APP_MODE=live: demo data must not reach a real mailbox.")
         if not self.database_url:
             object.__setattr__(self, "database_url", f"sqlite:///{Path(self.db_path).as_posix()}")
 
@@ -59,6 +68,9 @@ def load_settings(env_file: Path | None = ROOT / ".env") -> Settings:
         ai_provider=os.environ.get("AI_PROVIDER", "gemini").strip().lower(),
         ai_model=os.environ.get("AI_MODEL", "").strip(),
         agent_worker=os.environ.get("AGENT_WORKER", "on").strip().lower() in ("on", "1", "true", "yes"),
+        research_engine=os.environ.get("RESEARCH_ENGINE", "agent").strip().lower() or "agent",
+        mail_provider=os.environ.get("MAIL_PROVIDER", "").strip().lower(),
         **({"users": tuple(u.strip() for u in os.environ["CGS_USERS"].split(",") if u.strip())} if os.environ.get("CGS_USERS") else {}),
         directors=tuple(u.strip() for u in os.environ.get("CGS_DIRECTORS", "").split(",") if u.strip()),
+        admins=tuple(u.strip() for u in os.environ.get("CGS_ADMINS", "").split(",") if u.strip()),
     )

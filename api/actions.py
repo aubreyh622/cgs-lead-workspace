@@ -40,7 +40,8 @@ def ctx(request: Request, x_user: str | None = Header(None, description="The per
     session = db.sessions()
     c = S.Ctx(s=session, actor=x_user or "", today=demo_today(session, request.app.state.settings), settings=request.app.state.settings,
               provider_factory=getattr(request.app.state, "provider_factory", None),
-              research_factory=lambda: research_bridge(request.app), search_factory=getattr(request.app.state, "search_factory", None))
+              research_factory=lambda: research_bridge(request.app), search_factory=getattr(request.app.state, "search_factory", None),
+              mail_factory=lambda: getattr(request.app.state, "mail", None))
     users = S.owners_list(c)
     if not x_user or x_user not in users:
         session.close()
@@ -69,7 +70,16 @@ def research_bridge(app):
     """One research bridge per server, created when live research is first needed."""
     if getattr(app.state, "research_bridge", None) is None:
         from api.search import search_config
-        if search_config()["provider"] == "mock":
+        st = app.state.settings
+        if st.research_engine == "agent":  # the tool-using research agent, on whichever web config/search.json names
+            from api.research_agent import AgentResearchBridge
+            from api.llm import make_provider
+            from api.search import make_search
+            factory = getattr(app.state, "provider_factory", None) or (lambda: make_provider(st.ai_provider, st.ai_model))
+            search = getattr(app.state, "search_factory", None)
+            app.state.research_bridge = AgentResearchBridge(factory, (lambda as_of: search()) if search else (lambda as_of: make_search(as_of=as_of)),
+                                                            background=st.agent_worker, session_factory=app.state.db.session)
+        elif search_config()["provider"] == "mock":
             from api.llm import make_provider
             from api.mock_research import MockResearchBridge
             st = app.state.settings
@@ -263,6 +273,90 @@ def sent(opp_id: str, body: Sent, c: S.Ctx = Actor):
     return {"ok": True}
 
 
+class EmailOut(BaseModel):
+    to: str
+    mode: Literal["draft", "send"]
+    seenHash: str
+    itemId: str | None = None
+
+
+@router.get("/opportunities/{opp_id}/outreach/email", tags=["step 5"],
+            summary="Preview exactly what would go out by email (first email from the saved draft, or a follow-up/reconnect inbox draft)")
+def email_preview(opp_id: str, to: str | None = None, itemId: str | None = None, c: S.Ctx = Actor):
+    return S.email_preview(c, opp_id, to, itemId)
+
+
+@router.post("/opportunities/{opp_id}/outreach/email", tags=["step 5"],
+             summary="A person puts the email in their Gmail drafts (mode draft) or sends it now (mode send); seenHash comes from the preview")
+def email_out(opp_id: str, body: EmailOut, c: S.Ctx = Actor):
+    return S.email_out(c, opp_id, body.to, body.mode, body.seenHash, body.itemId)
+
+
+@router.post("/mail/sync", tags=["step 5"], summary="Check the email threads now: replies go to the inbox, drafts sent from Gmail are recorded")
+def mail_sync(c: S.Ctx = Actor):
+    return S.sync_mail(c)
+
+
+@router.get("/toolkit", tags=["agents"], summary="Connectors, the permission table (which agent may use which connector) and the mailbox")
+def toolkit(request: Request, c: S.Ctx = Actor):
+    from api import toolkit as TK
+    box = getattr(request.app.state, "mail", None)
+    return {**TK.catalog(c.s), "mail": {"provider": box.name if box else "off", "ready": bool(box and box.ready())}}
+
+
+class PermissionIn(BaseModel):
+    enabled: bool | None = Field(..., description="true = on, false = off, null = back to the default")
+    reason: str
+
+
+@router.get("/toolkit/permissions", tags=["agents"],
+            summary="The permission table for a management screen: every agent x connector, its state, where it comes from, who changed it")
+def permissions(c: S.Ctx = Actor):
+    from api import toolkit as TK
+    return {**TK.table(c.s), "limits": TK.limits(c.s), "canChange": S.may_manage_permissions(c), "admins": list(c.settings.admins)}
+
+
+@router.put("/toolkit/permissions/{agent}/{connector}", tags=["agents"],
+            summary="Switch a connector on or off for one agent, or back to the default. What the code forbids cannot be switched on")
+def set_permission(agent: str, connector: str, body: PermissionIn, c: S.Ctx = Actor):
+    return S.set_permission(c, agent, connector, body.enabled, body.reason)
+
+
+@router.put("/toolkit/connectors/{connector}", tags=["agents"], summary="Switch a connector on or off for every agent (or back to the default)")
+def set_connector(connector: str, body: PermissionIn, c: S.Ctx = Actor):
+    return S.set_permission(c, "*", connector, body.enabled, body.reason)
+
+
+@router.get("/toolkit/permissions/history", tags=["agents"], summary="Every change to the permission table and limits, newest first")
+def permission_history(limit: int = 100, c: S.Ctx = Actor):
+    return S.permission_history(c, limit)
+
+
+class ReasonIn(BaseModel):
+    reason: str
+
+
+@router.post("/toolkit/permissions/history/{change_id}/undo", tags=["agents"],
+             summary="Put a setting back as it was before this change (only the latest change to that setting)")
+def undo_permission(change_id: int, body: ReasonIn, c: S.Ctx = Actor):
+    return S.undo_permission_change(c, change_id, body.reason)
+
+
+class LimitIn(BaseModel):
+    perDay: int | None = Field(..., description="Calls per day; 0 = no limit; null = back to the config file's default")
+    reason: str
+
+
+@router.put("/toolkit/limits/{connector}", tags=["agents"], summary="Set a connector's daily limit (all agents and people together)")
+def set_limit(connector: str, body: LimitIn, c: S.Ctx = Actor):
+    return S.set_limit(c, connector, body.perDay, body.reason)
+
+
+@router.get("/toolkit/usage", tags=["agents"], summary="Connector calls per day, agent and connector, with limits and today's use")
+def usage(days: int = 7, c: S.Ctx = Actor):
+    return S.connector_usage(c, days)
+
+
 @router.post("/opportunities/{opp_id}/outreach/followup", tags=["step 5"], summary="Record a follow-up")
 def followup(opp_id: str, c: S.Ctx = Actor):
     S.followup_sent(c, opp_id, follow_days(c))
@@ -395,13 +489,24 @@ def handover(pack_id: str, body: HandoverAnswer, c: S.Ctx = Actor):
 class DirectionIn(BaseModel):
     field: str = Field(examples=["buyer_roles"])
     scope: Literal["theme", "consultant"] = "theme"
-    value: str | list[str]
+    value: str | list | dict = Field(description='A list (for problems, a list of {problem, signals, buyer_roles}), a text, or for company_size {"min_employees": 100, "max_employees": 5000, '
+                                                   '"min_revenue_musd": 20, "max_revenue_musd": 1000} (any may be left out)')
     rationale: str
 
 
 @router.post("/direction/proposals", tags=["learning loop"], summary="Propose a direction change by hand (whitelisted fields only)")
 def propose(body: DirectionIn, c: S.Ctx = Actor):
     return {"id": S.manual_direction_proposal(c, body.field, body.scope, body.value, body.rationale)}
+
+
+class ProblemsIn(BaseModel):
+    scope: Literal["theme", "consultant"] = "theme"
+
+
+@router.post("/direction/problems", tags=["learning loop"],
+             summary="Ask the direction agent to turn the CGS library into problems to watch for (a proposal a person approves)")
+def problems(body: ProblemsIn, c: S.Ctx = Actor):
+    return S.propose_problems(c, body.scope)
 
 
 @router.post("/direction/analyze", tags=["learning loop"], summary="Ask the feedback agent to review eligible feedback")

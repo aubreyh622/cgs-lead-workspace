@@ -1,5 +1,5 @@
 {
- "about": "Exam for the A2+A3 evidence agent. Synthetic notes with expected answers. 'expect' lists what a careful consultant would confirm, with an allowed range for scores. 'forbid' lists over-claims: proposing them is a serious error under the 'when unsure, say less' rule. Missing an expected item is acceptable but counted. The exam gives the agent the same CGS library passages it would see in the workspace.",
+ "about": "Exam for the evidence agent. Synthetic notes with expected answers. 'expect' lists what a careful consultant would confirm, with an allowed range for scores. 'forbid' lists over-claims: proposing them is a serious error under the 'when unsure, say less' rule. Missing an expected item is acceptable but counted. The exam gives the agent the same CGS library passages it would see in the workspace.",
  "cases": [
   {
    "id": "corvane-call",

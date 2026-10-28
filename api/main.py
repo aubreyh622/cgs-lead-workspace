@@ -152,6 +152,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from api.agent_routes import router as agents_router
     app.include_router(agents_router)
     app.state.worker = None  # main() starts the background agents; importing this module never does
+    from api.toolkit.mail import make_mail
+    from api import toolkit
+    toolkit.check_config()  # config/toolkit.json must stay inside what the code allows each agent
+    app.state.mail = make_mail(settings.mail_provider, settings.app_mode)  # tests may replace it with a MockMail
+
+    @app.exception_handler(toolkit.LimitReached)
+    async def limit_reached(_: Request, exc: toolkit.LimitReached):
+        return JSONResponse({"error": str(exc), "code": "limit_reached"}, status_code=429)
+
+    @app.exception_handler(toolkit.Denied)
+    async def denied(_: Request, exc: toolkit.Denied):
+        return JSONResponse({"error": str(exc), "code": "not_permitted"}, status_code=403)
 
     @app.exception_handler(ActionError)
     async def action_error(_: Request, exc: ActionError):

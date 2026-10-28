@@ -17,15 +17,16 @@ from api import models as m
 
 # kind -> (agent, uses AI, what the agent does)
 KINDS = {
-    "followup_draft": ("A1 Preparation and outreach", True, "Writes a follow-up draft when a sent email has no reply"),
-    "reconnect_draft": ("A1 Preparation and outreach", True, "Writes a reconnect draft that cites the company's latest news"),
+    "followup_draft": ("Outreach agent", True, "Writes a follow-up draft when a sent email has no reply"),
+    "reconnect_draft": ("Outreach agent", True, "Writes a reconnect draft that cites the company's latest news"),
     "research_refresh": ("Research agent", True, "Checks a company again for news since the last brief"),
     "person_lookup": ("Research agent", True, "Looks for a person another agent needs (for example the CFO who approves)"),
-    "gap_actions": ("A4 Action and reporting", True, "Suggests the next actions for an opportunity that has stalled or was returned"),
-    "defer_nurture": ("A4 Action and reporting", False, "Suggests moving a deferred opportunity to nurture on the month the client named"),
-    "ready_reminder": ("A4 Action and reporting", False, "Reminds the owner that the rules say Ready and the pack is not submitted"),
+    "gap_actions": ("Next-step agent", True, "Suggests the next actions for an opportunity that has stalled or was returned"),
+    "defer_nurture": ("Reminder rules", False, "Suggests moving a deferred opportunity to nurture on the month the client named"),
+    "ready_reminder": ("Reminder rules", False, "Reminds the owner that the rules say Ready and the pack is not submitted"),
     "discovery_round": ("Discovery agent", True, "Finds new candidate companies once a week"),
     "feedback_review": ("Feedback agent", True, "Reviews recent decisions once a week and may propose a direction change"),
+    "mail_sync": ("Mail rules", False, "Checks the email threads for client replies and for drafts a person sent from Gmail"),
     "manager_review": ("Manager agent", True, "Looks over every open opportunity once a day and decides which agent should do what"),
 }
 TRIGGERS = ("event", "patrol", "handoff", "person", "manager")

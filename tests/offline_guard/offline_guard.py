@@ -8,7 +8,8 @@ def install():
     if getattr(socket, '_cgs_offline_guard', False):
         return
     os.environ['PYTHON_DOTENV_DISABLED'] = '1'
-    for key in ('GEMINI_API_KEY', 'TAVILY_API_KEY', 'GEMINI_MODEL', 'OPENAI_API_KEY', 'OPENAI_MODEL', 'ANTHROPIC_API_KEY'):
+    for key in ('GEMINI_API_KEY', 'TAVILY_API_KEY', 'GEMINI_MODEL', 'OPENAI_API_KEY', 'OPENAI_MODEL', 'ANTHROPIC_API_KEY',
+                'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GMAIL_REFRESH_TOKEN', 'MAIL_PROVIDER', 'CLIENT_DATA_TO_AI'):
         os.environ.pop(key, None)
     try:
         import dotenv

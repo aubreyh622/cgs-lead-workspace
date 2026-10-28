@@ -21,6 +21,7 @@ import re
 from api.settings import ROOT
 
 DEMO = Path(__file__).parent / "seed" / "cgs_library_demo.json"
+DEMO_SOLUTIONS = Path(__file__).parent / "seed" / "cgs_solutions_demo.md"  # SYNTHETIC stand-in for CGS's solutions document
 STOP = set("a an and are as at be by for from has have in is it its of on or that the their this to was we were which with will our your".split())
 
 
@@ -57,12 +58,16 @@ class Library:
             for f in sorted(list(folder.glob("*.md")) + list(folder.glob("*.txt"))):
                 if f.name.startswith("_"):
                     continue  # instructions, not library content
+                if "solution" in f.stem.lower() and f.suffix == ".md":
+                    out += solutions(f, synthetic=False)  # CGS's solutions document: one solution per "## " section
+                    continue
                 paras = [p.strip() for p in re.split(r"\n\s*\n", f.read_text(encoding="utf-8")) if len(p.strip()) > 40]
                 title = next((ln.lstrip("# ").strip() for ln in f.read_text(encoding="utf-8").splitlines() if ln.strip()), f.stem)
                 out += [Passage(f"{f.stem}#p{i + 1}", f.stem, title, "document", p, False) for i, p in enumerate(paras)]
         if demo:
             for d in json.loads(DEMO.read_text(encoding="utf-8"))["documents"]:
                 out += [Passage(f"{d['id']}#p{i + 1}", d["id"], d["title"], d["type"], t, True) for i, t in enumerate(d["passages"])]
+            out += solutions(DEMO_SOLUTIONS, synthetic=True)
         return cls(out)
 
     def search(self, query: str, k: int = 3, types: tuple[str, ...] | None = None) -> list[dict]:
@@ -77,6 +82,20 @@ class Library:
                 scored.append((s, p))
         scored.sort(key=lambda x: -x[0])
         return [{"id": p.id, "title": p.title, "type": p.type, "text": p.text, "synthetic": p.synthetic, "score": round(s, 2)} for s, p in scored[:k]]
+
+
+def solutions(path: Path, synthetic: bool) -> list[Passage]:
+    """A solutions document: each '## ' section is one solution (type 'solution'), each paragraph under it one passage."""
+    out = []
+    if not path.exists():
+        return out
+    for section in re.split(r"^## ", path.read_text(encoding="utf-8"), flags=re.M)[1:]:
+        title, _, body = section.partition("\n")
+        doc = "sol-" + "-".join(re.findall(r"[a-z0-9]+", title.lower()))[:60]
+        paras = [x.strip() for x in re.split(r"\n\s*\n", body) if len(x.strip()) > 40]
+        out += [Passage(f"{doc}#p{i + 1}", doc, ("[Demo] " if synthetic else "") + "Solution: " + title.strip(), "solution", x, synthetic)
+                for i, x in enumerate(paras)]
+    return out
 
 
 _cache: dict[str, Library] = {}

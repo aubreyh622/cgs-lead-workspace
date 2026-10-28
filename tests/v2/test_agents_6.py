@@ -1,4 +1,4 @@
-"""Step 6a/6b checks: the AI exam grader, outreach drafts (A1), next actions (A4), the feedback agent and the progress monitor."""
+"""Step 6a/6b checks: the AI exam grader, outreach drafts, next actions, the feedback agent and the progress monitor."""
 import json
 
 import pytest
@@ -76,7 +76,7 @@ def test_exam_runs_against_a_provider():
     assert out["results"][2]["grade"]["over"] == []
 
 
-# ---------- A1 ----------
+# ---------- outreach agent ----------
 def test_draft_checks():
     ids, facts = {"f1", "f2"}, "Corvane completed its acquisition of Arden Controls."
     check_draft("Hello", "Hi Elena, [[f1|after the Arden acquisition]], open to a call? Alex, CGS Advisors", ids, facts)
@@ -105,7 +105,7 @@ def test_demo_and_live_drafts_through_the_api(tmp_path):
     assert r.status_code == 503 and r.json()["code"] == "ai_invalid_output" and "does not cite any fact" in r.json()["error"]
 
 
-# ---------- A4 ----------
+# ---------- next-step agent ----------
 def test_live_next_actions_keep_only_open_gaps(tmp_path):
     fake = FakeAI(turn(("situation", {})),
                   turn(("suggest", {"gap_key": "A", "title": "Ask who signs off above Oliver", "reason": "Authority pending", "question": "Who approves?"}),

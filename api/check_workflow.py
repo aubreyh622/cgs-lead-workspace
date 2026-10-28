@@ -144,7 +144,7 @@ def main(argv: list[str] | None = None, prepare=None) -> int:
          json={"decision": "accept", "rating": 4, "owner": "Alex Morgan", "next_action": "Send tailored outreach", "duplicates_checked": True, "minutes": 5})
 
     say("Step 5  Outreach")
-    d = call("A1 writes the outreach draft", "post", f"/api/opportunities/{oid}/outreach/generate", json={"tone": "standard"})
+    d = call("Outreach agent writes the draft", "post", f"/api/opportunities/{oid}/outreach/generate", json={"tone": "standard"})
     if d:
         say("         Subject: " + d["subject"])
         for line in d["body"].splitlines()[:6]:
@@ -159,11 +159,11 @@ def main(argv: list[str] | None = None, prepare=None) -> int:
         say(f"         {domain} has no simulated client conversation; using a neutral reply.")
         sim = {"reply": "Thanks for reaching out. Happy to have a short call next week.", "notes": "Short intro call. The client listened and asked for a follow-up note."}
     say("Step 6  Engage")
-    r = call("Client reply recorded; A2 labels it", "post", f"/api/opportunities/{oid}/outreach/reply", json={"text": sim["reply"]})
+    r = call("Client reply recorded; the reply classifier labels it", "post", f"/api/opportunities/{oid}/outreach/reply", json={"text": sim["reply"]})
     label = r["replyLabel"] if r else "pending"
     if r:
         say(f"         Reply label: {label}  (stage is now Active)")
-    n = call("Conversation notes added; A2 + A3 propose evidence", "post", f"/api/opportunities/{oid}/notes", json={"text": sim["notes"]})
+    n = call("Conversation notes added; the evidence agent proposes evidence", "post", f"/api/opportunities/{oid}/notes", json={"text": sim["notes"]})
     if n:
         say(f"         {n['proposals']} proposals; dropped by checks: quotes {n['droppedForInvalidQuote']}, other {n.get('droppedOther') or 'none'}")
     o = api.get(f"/api/opportunities/{oid}").json()
@@ -213,7 +213,7 @@ def main(argv: list[str] | None = None, prepare=None) -> int:
                 call("Director of Operations approves", "post", f"/api/packs/{pk['id']}/decision", actor="Person",
                      json={"decision": "approve", "role": "Director of Operations"})
         else:
-            call("A4 suggests next actions for the open gaps", "post", f"/api/opportunities/{oid}/suggestions")
+            call("Next-step agent suggests actions for the open gaps", "post", f"/api/opportunities/{oid}/suggestions")
             sug = api.get(f"/api/opportunities/{oid}").json()["suggestions"]
             for x in sug:
                 say(f"         - {x['title']}")

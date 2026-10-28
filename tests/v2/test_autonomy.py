@@ -162,7 +162,7 @@ def orchard_evidence(notes):
     return {"proposals": [], "people_to_find": [{"role": "CEO", "quote": q}, {"role": "Board", "quote": "not in the notes at all"}]}
 
 
-def test_evidence_agent_asks_research_agent_to_find_the_approver(live):
+def test_evidence_agent_asks_the_research_agent_to_find_the_approver(live):
     ai = SchemaAI(label="need", evidence=orchard_evidence)
     app, api = live(ai)
     oid = lead(api, "Orchard Lane Foods", ai)
@@ -175,10 +175,10 @@ def test_evidence_agent_asks_research_agent_to_find_the_approver(live):
     item = next(i for i in inbox(api, "contact") if i["opportunityId"] == oid)
     assert item["data"]["name"] == "Kate Morrison" and "leadership" in item["data"]["url"]
     # the research agent chose its own steps, and every step is on record
-    run = next(r for r in api.get("/api/agent-runs").json() if r["agent"] == "Research agent" and r["steps"])
+    run = next(r for r in api.get("/api/agent-runs").json() if r["agent"] == "Research agent" and r["subject"].startswith("Find the") and r["steps"])
     trace = api.get(f"/api/agent-runs/{run['id']}").json()["trace"]
     assert [t.get("tool") for t in trace if t["type"] == "tool"] == ["company_pages", "read_page"] and trace[-1]["accepted"] is True
-    assert run["calls"] == 3 and run["prompt"] == "research-person-agent-1.0"
+    assert run["calls"] == 3 and run["prompt"] == "research-agent-1.1"
     api.post(f"/api/inbox/{item['id']}", headers=ME, json={"action": "apply"})
     # the CEO is now known, so the same note does not send the research agent again
     r = api.post(f"/api/opportunities/{oid}/notes", headers=ME, json={"text": sim["notes"]}).json()

@@ -1,4 +1,4 @@
-"""Step 5 checks: the switchable AI plug and the first real agents (A2 + A3), using a fake AI company.
+"""Step 5 checks: the switchable AI plug and the first real agents (evidence agent, reply classifier), using a fake AI company.
 
 No test calls a real AI service. The fake returns the same shapes Gemini and OpenAI return.
 """

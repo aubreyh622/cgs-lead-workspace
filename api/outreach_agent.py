@@ -1,4 +1,4 @@
-"""A1 outreach agent, tool-using version (live mode): first emails, follow-ups and reconnect messages.
+"""Outreach agent, tool-using version (live mode): first emails, follow-ups and reconnect messages.
 
 It reads the brief and what was already sent or said, may look for news newer than the brief, may pick one relevant CGS
 service or case, and then submits a draft. Code checks the draft before anyone sees it: every fact it relies on is cited,
@@ -16,11 +16,13 @@ from api import agent_runtime as R
 from api import knowledge
 from api import live_agents as L
 from api import models as m
-from api.agent_tools import Pages, web_tools
+from api import toolkit
+from api.agent_tools import Pages
 from api.demo_agents import quote_in_text
 from api.llm import LLMError, Usage
 
-VERSION = "a1-agent-1.0"
+VERSION = "outreach-agent-1.0"
+AGENT = "Outreach agent"
 MAX_NEW_FACTS = 3
 SUPPORT = 0.75  # share of a cited phrase's words that must appear in its source (and every number must)
 
@@ -31,6 +33,7 @@ How to work with your tools:
 - You may look for something newer than the brief with company_pages or search_web. To cite a new development, read the page
   with read_page and add the sentence with add_fact (word for word). It gets a fact id you can cite.
 - You may look up one relevant CGS service or case with search_library and cite it by its passage id.
+- If you have mail_thread, read it for a follow-up: answer what the client said and do not repeat what CGS already wrote.
 - Keep each cited phrase close to the source's own words.
 - Submit with submit_draft. It is checked; if it is rejected, fix what the message says and submit again."""
 
@@ -94,8 +97,10 @@ def outreach_agent(c, o: m.Opportunity, *, purpose: str, angle: str | None, tone
         record["new_facts"].append(fact)
         return {"id": fact["id"], "note": f"Cite it as [[{fact['id']}|a phrase from the sentence]]."}
 
+    lib = toolkit.library_for(AGENT, c) if toolkit.allowed(AGENT, "library", c.s) else None
+
     def search_library(args):
-        found = knowledge.library().search(str(args.get("query", "")), k=3, types=("case", "service", "document"))
+        found = lib.search(str(args.get("query", "")), k=3, types=("case", "service", "document"))
         for p in found:
             shown_library[p["id"]] = p
         return {"passages": [{"id": p["id"], "title": p["title"], "type": p["type"], "text": p["text"],
@@ -118,13 +123,14 @@ def outreach_agent(c, o: m.Opportunity, *, purpose: str, angle: str | None, tone
         R.Tool("brief", "The purpose, tone, sender, contact, the facts you may cite (with ids), the hypothesis and CGS relevance.",
                R.params({}), brief),
         R.Tool("history", "What was already sent, the client's reply and recent conversation notes.", R.params({}), history),
-        *web_tools(c, pages, o.company.name, o.company.domain),
-        R.Tool("add_fact", "Add one sentence from a page you read as a new citable fact (word for word).",
-               R.params({"url": s, "quote": s}), add_fact),
-        R.Tool("search_library", "Search the CGS library for a relevant service or case you may cite by passage id.",
-               R.params({"query": s}), search_library),
+        *toolkit.grant(AGENT, toolkit.Run(c, company=o.company.name, domain=o.company.domain, opp=o, company_id=o.company_id, pages=pages),
+                       ["company_pages", "search_web", "read_page", "mail_thread"]),
+        *([R.Tool("add_fact", "Add one sentence from a page you read as a new citable fact (word for word).",
+                  R.params({"url": s, "quote": s}), add_fact)] if toolkit.allowed(AGENT, "web", c.s) else []),
+        *([R.Tool("search_library", "Search the CGS library for a relevant service or case you may cite by passage id.",
+                  R.params({"query": s}), search_library)] if lib else []),
     ]
-    spec = R.AgentSpec(name="A1 Preparation and outreach", version=VERSION, system=SYSTEM, tools=tools,
+    spec = R.AgentSpec(name="Outreach agent", version=VERSION, system=SYSTEM, tools=tools,
                        finish=R.Tool("submit_draft", "Submit the draft (plain text, citation markers included). It is checked.",
                                      R.params({"subject": s, "body": s}), submit_draft),
                        max_steps=8, max_tool_calls=12)

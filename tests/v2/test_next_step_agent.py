@@ -1,11 +1,11 @@
-"""Multi-agent step 5: the tool-using A4 next-actions agent (Step 7). Tools are called directly, or a fake AI plays the agent."""
+"""Multi-agent step 5: the tool-using next-step agent (Step 7). Tools are called directly, or a fake AI plays the agent."""
 from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from api import actions_agent as AA
+from api import next_step_agent as NS
 from api import agent_runtime as R
 from api import autonomy as AU
 from api import models as m
@@ -42,7 +42,7 @@ def app(tmp_path, monkeypatch):
 def agent(app, s, opp_id, why=""):
     c = AU.agent_ctx(app, s)
     o = s.get(m.Opportunity, opp_id)
-    spec, record = AA.actions_agent(c, o, calculate(S.rules_input(o)), AA.approver_question(c, o), why)
+    spec, record = NS.next_step_agent(c, o, calculate(S.rules_input(o)), NS.approver_question(c, o), why)
     return {t.name: t.run for t in spec.tools + [spec.finish]}, record
 
 
@@ -104,8 +104,8 @@ def test_live_suggestions_run_the_agent_and_save_its_steps(app):
     assert api.post("/api/opportunities/meridian/suggestions", headers=ME).json()["suggestions"] == 2
     o = api.get("/api/opportunities/meridian").json()
     assert len(o["suggestions"]) == 2 and all(x["title"].startswith("Ask about") and x["question"] for x in o["suggestions"])
-    run = next(r for r in api.get("/api/agent-runs").json() if r["agent"] == "A4 Action and reporting")
-    assert run["prompt"] == "a4-agent-1.0" and run["calls"] == app.state.ai.turns == 3
+    run = next(r for r in api.get("/api/agent-runs").json() if r["agent"] == "Next-step agent")
+    assert run["prompt"] == "next-step-agent-1.0" and run["calls"] == app.state.ai.turns == 3
     assert [s["type"] for s in api.get(f"/api/agent-runs/{run['id']}").json()["trace"]][-1] == "finish"
 
 

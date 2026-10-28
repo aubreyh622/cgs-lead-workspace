@@ -2,6 +2,7 @@
 A fake AI plays the manager, so these run offline."""
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from api import autonomy as AU
 from api.llm import make_provider
@@ -136,9 +137,44 @@ def test_new_agent_findings_count_as_a_change_for_notes(app):
         c = AU.agent_ctx(app, s)
         s.add(m.ManagerDecision(on=c.today - timedelta(days=1), mode="on", kind="note", opportunity_id="meridian",
                                 reason="Earlier note", outcome="sent"))  # the owner was told yesterday, before the lookup ran
+        for j in s.scalars(select(m.AgentJob).where(m.AgentJob.kind == "gap_actions", m.AgentJob.opportunity_id == "meridian")):
+            j.created_on = c.today - timedelta(days=3)  # keep today's next-step work out of this check (tested separately)
         s.flush()
         spec, _ = MA.manager_agent(c, "on")
         note = next(t for t in spec.tools if t.name == "note_for_owner")
         assert note.run({"opportunity_id": "meridian", "text": "The research agent finished looking for the CFO; see its result."})["outcome"]
         with pytest.raises(Exception, match="nothing has changed"):  # Northstar: told today, nothing new since
             note.run({"opportunity_id": "northstar", "text": "Still out of date, please resubmit the pack soon."})
+
+
+def test_one_voice_per_opportunity_the_next_step_agent_and_the_manager_do_not_both_write():
+    """Meridian has stalled, so the rules give it to the next-step agent today. The manager may not write a separate note,
+    and its reason for wanting next actions is added to the work already on the board."""
+    def plan2(board):
+        return [("note_for_owner", {"opportunity_id": "meridian", "text": "Confirm who approves; the decision group task is overdue."}),
+                ("delegate", {"kind": "gap_actions", "opportunity_id": "meridian",
+                              "reason": "The overdue decision-group task: ask Emma Chen who signs off."})]
+
+    seen = []
+
+    def ai(url, headers, payload, **kw):
+        names = {d["name"] for d in payload["tools"][0]["functionDeclarations"]}
+        if "suggest" in names:  # the next-step agent: note why it was asked
+            from agent_fakes import results
+            done = results(payload)
+            if done:
+                seen.append(done[0][1]["why_you_were_asked"])
+        return play(payload, manager=plan2)
+
+    import tempfile
+    from pathlib import Path
+    db = Path(tempfile.mkdtemp()) / "one.sqlite3"
+    create_app(Settings(app_mode="demo", db_path=db)).state.db.engine.dispose()
+    app = create_app(Settings(app_mode="live", db_path=db))
+    app.state.provider_factory = lambda: make_provider("gemini", "m", key="k", transport=ai)
+    api, ran = review(app, "on")
+    decisions = {(d["kind"], d["opportunityId"]): d for d in api.get("/api/manager/decisions").json()}
+    assert decisions[("note", "meridian")]["outcome"] == "refused" and "next-step agent" in decisions[("note", "meridian")]["detail"]
+    assert decisions[("gap_actions", "meridian")]["outcome"] == "already_queued"
+    assert not [i for i in api.get("/api/inbox?status=all").json() if i["kind"] == "advice" and i["opportunityId"] == "meridian"]
+    assert any("The manager adds: The overdue decision-group task" in w for w in seen)  # one run, both reasons

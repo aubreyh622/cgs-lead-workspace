@@ -1,4 +1,4 @@
-"""The AI exam: grade the evidence agent (A2 + A3) against notes with known answers.
+"""The AI exam: grade the evidence agent against notes with known answers.
 
 Double-click "AI Exam.cmd", or run:  python -m api.ai_exam [model ...]
 With no model names it uses AI_MODEL from .env. Give several names to compare models side by side, e.g.

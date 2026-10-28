@@ -1,4 +1,4 @@
-"""A4 next-actions agent, tool-using version (live mode, Step 7).
+"""Next-step agent, tool-using version (live mode, Step 7): suggests the next actions for an opportunity.
 
 It looks at the situation (open gaps from the rules engine, open tasks, how long nothing has moved, and the approver's
 question when a pack came back), reads the conversation notes and the known contacts when they help, may look up the
@@ -14,17 +14,17 @@ import re
 from sqlalchemy import select
 
 from api import agent_runtime as R
-from api import knowledge
+from api import toolkit
 from api import models as m
 from api.agent_tools import contact_tools
 from api.demo_agents import quote_in_text
 
-VERSION = "a4-agent-1.0"
+VERSION = "next-step-agent-1.0"
 MAX_SUGGESTIONS = 3
 APPROVER = "approver"  # the gap key for the approver's question on a returned pack
 NICE_TO_HAVE = ("H", "revenue")  # gaps the rules engine lists but that do not stop Ready
 
-SYSTEM = """You are A4, the action agent of CGS Advisors, a consulting firm. An opportunity has stalled, or the approver returned
+SYSTEM = """You are the next-step agent of CGS Advisors, a consulting firm. An opportunity has stalled, or the approver returned
 its qualification pack. Suggest up to three next actions that move it toward a qualification decision.
 
 How to work:
@@ -64,7 +64,7 @@ def approver_question(c, o: m.Opportunity) -> str:
     return d.note if d else ""
 
 
-def actions_agent(c, o: m.Opportunity, rules: dict, approver_q: str = "", why: str = "") -> tuple[R.AgentSpec, dict]:
+def next_step_agent(c, o: m.Opportunity, rules: dict, approver_q: str = "", why: str = "") -> tuple[R.AgentSpec, dict]:
     """rules: calculate(rules_input(o)). Returns (spec, record); record["kept"] holds the suggestions that passed."""
     gaps = {g["key"]: g for g in rules["gaps"]}
     if approver_q:
@@ -96,8 +96,10 @@ def actions_agent(c, o: m.Opportunity, rules: dict, approver_q: str = "", why: s
             return {"notes": [], "note": "No conversation notes yet."}
         return {"notes": [{"id": n.id, "on": n.on.isoformat(), "type": n.type, "text": n.text[:3000]} for n in notes_rows]}
 
+    lib = toolkit.library_for("Next-step agent", c) if toolkit.allowed("Next-step agent", "library", c.s) else None
+
     def search_library(args):
-        found = knowledge.library().search(str(args.get("query", "")), k=3)
+        found = lib.search(str(args.get("query", "")), k=3)
         return {"passages": [{"id": p["id"], "title": p["title"], "text": p["text"]} for p in found]}
 
     def suggest(args):
@@ -139,7 +141,8 @@ def actions_agent(c, o: m.Opportunity, rules: dict, approver_q: str = "", why: s
                R.params({}), situation),
         R.Tool("notes", "The latest conversation notes for this opportunity (up to five, newest first).", R.params({}), notes),
         *contact_tools(c, o.company_id),
-        R.Tool("search_library", "Search the CGS library (services, cases) for the service-fit gap.", R.params({"query": s}), search_library),
+        *([R.Tool("search_library", "Search the CGS library (services, cases) for the service-fit gap.", R.params({"query": s}), search_library)]
+          if lib else []),
         R.Tool("suggest", "Suggest one next action for one open gap. Checked at once; a rejection says why.",
                R.params({"gap_key": s, "title": {"type": "string", "description": "What to do, in a few words"},
                          "reason": {"type": "string", "description": "Why this gap matters now"},
@@ -148,7 +151,7 @@ def actions_agent(c, o: m.Opportunity, rules: dict, approver_q: str = "", why: s
                          "note_id": {"type": "string", "description": "The note the quote comes from"}},
                         ["gap_key", "title", "reason", "question"]), suggest),
     ]
-    spec = R.AgentSpec(name="A4 Action and reporting", version=VERSION, system=SYSTEM, tools=tools,
+    spec = R.AgentSpec(name="Next-step agent", version=VERSION, system=SYSTEM, tools=tools,
                        finish=R.Tool("finish", "Done. One sentence on what you suggested.", R.params({"summary": s}), finish),
                        max_steps=8, max_tool_calls=16)
     return spec, record

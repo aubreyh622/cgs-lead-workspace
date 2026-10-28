@@ -100,9 +100,9 @@ def workflow(settings) -> bool:
     api = TestClient(create_app(Settings(app_mode="live", db_path=db, ai_provider=settings.ai_provider, ai_model=settings.ai_model)))
     me = {"X-User": "Alex Morgan"}
     steps = [
-        ("A2 labels a reply (Bluegate)", lambda: api.post("/api/opportunities/bluegate/outreach/reply", json={"text": "Thanks Alex, happy to talk. Does Tuesday work?"}, headers=me),
+        ("Reply classifier labels a reply (Bluegate)", lambda: api.post("/api/opportunities/bluegate/outreach/reply", json={"text": "Thanks Alex, happy to talk. Does Tuesday work?"}, headers=me),
          lambda j: f"label '{j.get('replyLabel')}'"),
-        ("A2+A3 read call notes", lambda: api.post("/api/opportunities/bluegate/notes", json={"text": BLUEGATE_NOTE}, headers=me),
+        ("Evidence agent reads call notes", lambda: api.post("/api/opportunities/bluegate/notes", json={"text": BLUEGATE_NOTE}, headers=me),
          lambda j: f"{j.get('proposals')} proposals, {j.get('droppedForInvalidQuote')} dropped for bad quotes"),
     ]
     ok = True
@@ -118,8 +118,8 @@ def workflow(settings) -> bool:
         a = api.get("/api/opportunities/bluegate").json()["assessment"]
         say(f"      {'Person accepts all; rules engine':<34} Q {a['ql']:g}-{a['qu']:g}, coverage {a['coverage']}%, {a['readiness']}")
     for name, call, show in [
-        ("A4 suggests next actions", lambda: api.post("/api/opportunities/bluegate/suggestions", headers=me), lambda j: f"{j.get('suggestions')} suggestions"),
-        ("A1 drafts outreach (Halvorsen)", lambda: api.post("/api/opportunities/halvorsen/outreach/generate", json={"tone": "brief"}, headers=me),
+        ("Next-step agent suggests next actions", lambda: api.post("/api/opportunities/bluegate/suggestions", headers=me), lambda j: f"{j.get('suggestions')} suggestions"),
+        ("Outreach agent drafts outreach (Halvorsen)", lambda: api.post("/api/opportunities/halvorsen/outreach/generate", json={"tone": "brief"}, headers=me),
          lambda j: f"subject '{j.get('subject', '')[:50]}'"),
         ("Feedback agent reviews feedback", lambda: api.post("/api/direction/analyze", headers=me), lambda j: (j.get("summary") or "")[:70]),
     ]:

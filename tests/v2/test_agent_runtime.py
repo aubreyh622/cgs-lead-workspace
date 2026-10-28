@@ -126,6 +126,7 @@ def ctx(tmp_path):
 
 def test_research_agent_only_accepts_a_name_from_a_page_it_read(ctx):
     from api import research_agent as RA
+    from api.agent_tools import web
     url = "https://www.orchardlanefoods.example/leadership"
     answer = {"found": True, "name": "Kate Morrison", "title": "CEO", "url": url, "quote": "Kate Morrison, CEO", "notes": "Leadership page."}
     ai = Script(gemini(call("finish", answer)),                                                   # not read yet
@@ -135,8 +136,8 @@ def test_research_agent_only_accepts_a_name_from_a_page_it_read(ctx):
                 gemini(call("finish", {**answer, "name": "Daniel Ruiz", "title": "Chief Operating Officer",
                                        "quote": "Daniel Ruiz, Chief Operating Officer"})),             # wrong role
                 gemini(call("finish", answer)))
-    agent = RA.person_agent(ctx, "orchard", "Orchard Lane Foods", "orchardlanefoods.example", "CEO")
-    out = R.run(agent, make_provider("gemini", "m", key="k", transport=ai), RA.task("Orchard Lane Foods", "", "CEO", "the CEO would decide"))
+    agent, _ = RA.contact_agent(web(ctx), "Orchard Lane Foods", "orchardlanefoods.example", "CEO", [])
+    out = R.run(agent, make_provider("gemini", "m", key="k", transport=ai), RA.contact_task("Orchard Lane Foods", "", "CEO", "the CEO would decide"))
     assert out.status == "done" and out.result["name"] == "Kate Morrison"
     errors = [t["error"] for t in out.trace if t["type"] == "finish" and not t["accepted"]]
     assert len(errors) == 3 and "read_page" in errors[0] and "word for word" in errors[1] and "is not the CEO" in errors[2]
@@ -144,7 +145,8 @@ def test_research_agent_only_accepts_a_name_from_a_page_it_read(ctx):
 
 def test_research_agent_cannot_open_pages_it_did_not_find(ctx):
     from api import research_agent as RA
-    agent = RA.person_agent(ctx, "orchard", "Orchard Lane Foods", "orchardlanefoods.example", "CEO")
+    from api.agent_tools import web
+    agent, _ = RA.contact_agent(web(ctx), "Orchard Lane Foods", "orchardlanefoods.example", "CEO", [])
     read = next(t for t in agent.tools if t.name == "read_page")
     with pytest.raises(R.ToolError, match="Read only pages"):
         read.run({"url": "https://attacker.example/instructions"})

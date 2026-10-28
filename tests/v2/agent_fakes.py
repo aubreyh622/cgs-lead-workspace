@@ -6,7 +6,8 @@ play(payload, evidence=..., draft=...) looks at which tools the agent was given 
   outreach                  read the brief -> submit the draft (again, if it is rejected)
   manager                   read the board -> delegate and write notes -> finish
   discovery                 read the direction -> search the first signal -> nominate -> finish
-  actions (A4)              read the situation -> suggest an action for up to three gaps -> finish
+  next step                 read the situation -> suggest an action for up to three gaps -> finish
+  research brief            company pages -> read up to three -> one fact from each -> finish
 """
 import json
 import re
@@ -33,8 +34,14 @@ def results(payload) -> list[tuple[str, dict]]:
     return out
 
 
-def play(payload, *, evidence=None, draft=None, manager=None, discovery=None, actions=None):
+def play(payload, *, evidence=None, draft=None, manager=None, discovery=None, actions=None, research=None):
     names = tool_names(payload)
+    if "add_problem" in names:  # the direction agent
+        return play_direction(payload)
+    if "add_news" in names:  # the research agent's refresh task
+        return play_refresh(payload)
+    if "set_contact" in names:  # the research agent's brief task (the outreach agent has add_fact too)
+        return play_research(payload, research or default_facts)
     if "suggest" in names:
         return play_actions(payload, actions or default_actions)
     if "nominate" in names:
@@ -109,6 +116,68 @@ def play_actions(payload, plan):
         if calls:
             return turn(*calls)
     return turn(("finish", {"summary": "Suggested the next actions."}))
+
+
+def default_facts(page):
+    """One fact from a page: its first sentence."""
+    first = page["text"].split(". ")[0].strip()
+    return [{"url": page["url"], "quote": first, "fact": first, "category": "signal"}] if len(first) >= 15 else []
+
+
+def play_research(payload, facts):
+    """company_pages -> read up to three of them -> add facts(page) for each page read -> finish."""
+    done = results(payload)
+    if not done:
+        return turn(("company_pages", {"topic": "recent news"}))
+    if len(done) == 1:
+        found = done[0][1].get("pages", [])[:3]
+        if found:
+            return turn(*[("read_page", {"url": p["url"]}) for p in found])
+    if all(name in ("company_pages", "read_page") for name, _ in done):
+        calls = [("add_fact", f) for _, page in done[1:] if "text" in page for f in facts(page)]
+        if calls:
+            return turn(*calls)
+    return turn(("finish", {"identity_confirmed": True, "hypothesis": "A possible need for integration and operating-model planning.",
+                            "relevance": "Matches CGS operating-model work.", "alternative": "The company may handle it internally.",
+                            "unknowns": ["Who owns the budget?"], "confidence": "medium"}))
+
+
+def play_refresh(payload):
+    """company_pages(news) -> read the dated pages -> add_news with each page's first sentence and date -> finish."""
+    done = results(payload)
+    if not done:
+        return turn(("company_pages", {"topic": "news"}))
+    if len(done) == 1:
+        found = sorted((p for p in done[0][1].get("pages", []) if p["published"] != "undated"), key=lambda p: p["published"], reverse=True)[:3]
+        if found:
+            return turn(*[("read_page", {"url": p["url"]}) for p in found])
+    if all(name in ("company_pages", "read_page") for name, _ in done):
+        calls = [("add_news", {"url": page["url"], "quote": page["text"].split(". ")[0].strip(), "fact": page["text"].split(". ")[0].strip(),
+                               "category": "signal", "date": page["published"]})
+                 for _, page in done[1:] if "text" in page and len(page["text"].split(". ")[0]) >= 15]
+        if calls:
+            return turn(*calls)
+    return turn(("finish", {"summary": "Checked the company's recent news."}))
+
+
+def play_direction(payload):
+    """library_contents -> read the first two solutions -> one problem from each (its first sentence) -> finish."""
+    done = results(payload)
+    if not done:
+        return turn(("library_contents", {}))
+    if len(done) == 1:
+        sols = [d["doc_id"] for d in done[0][1]["documents"] if d["type"] == "solution"][:2]
+        return turn(*[("read_document", {"doc_id": d}) for d in sols])
+    if all(n in ("library_contents", "read_document") for n, _ in done):
+        calls = []
+        for _, doc in done[1:]:
+            first = doc["passages"][0]
+            quote = first["text"].split(". ")[0]
+            calls.append(("add_problem", {"problem": "Clients need help with: " + doc["title"].split(": ")[-1].lower() + ".",
+                                           "signals": ["completes acquisition", "announces new plant"], "buyer_roles": ["COO"],
+                                           "passage_id": first["passage_id"], "quote": quote}))
+        return turn(*calls)
+    return turn(("finish", {"summary": "Two problems from the first two solutions."}))
 
 
 def default_draft(brief):

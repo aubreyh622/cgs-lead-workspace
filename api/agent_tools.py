@@ -49,8 +49,9 @@ def _host(url: str) -> str:
     return (urlsplit(url).hostname or "").removeprefix("www.")
 
 
-def web_tools(c, pages: Pages, company: str, domain: str) -> list[Tool]:
-    w = web(c)
+def web_tools(c, pages: Pages, company: str, domain: str, w=None) -> list[Tool]:
+    """w: the web client, as the toolkit's gate handed it out (metered); without it the context's search is used."""
+    w = w if w is not None else web(c)
 
     def company_pages(args):
         topic = str(args.get("topic", "")).strip()
@@ -71,11 +72,16 @@ def web_tools(c, pages: Pages, company: str, domain: str) -> list[Tool]:
     def read_page(args):
         url = str(args.get("url", "")).strip()
         page = pages.found.get(url)
-        if page is None:
-            if not (domain and _host(url).endswith(domain)) or not hasattr(w, "read"):
-                raise ToolError("Read only pages returned by company_pages or search_web, or pages on the company's own website.")
-            page = w.read(url)
-            if not page:
+        if page is None and not (domain and _host(url).endswith(domain) and hasattr(w, "read")):
+            raise ToolError("Read only pages returned by company_pages or search_web, or pages on the company's own website.")
+        if hasattr(w, "read") and not (page or {}).get("full_text"):
+            # a search result holds only a snippet on the real web: fetch the whole page once
+            full = w.read(url)
+            if full and len(full.get("content") or "") >= len((page or {}).get("content") or ""):
+                page = {**(page or {}), "url": url, "content": full["content"], "full_text": True,
+                        "title": (page or {}).get("title") or full.get("title", ""),
+                        "published": (page or {}).get("published") or full.get("published", "")}
+            if page is None:
                 raise ToolError("That page could not be read.")
             pages.found[url] = page
         pages.read.add(url)

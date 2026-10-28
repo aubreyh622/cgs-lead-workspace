@@ -42,8 +42,8 @@ def detail(s: Session, o: m.Opportunity) -> dict:
     out.update({
         "source": {"type": o.source_type, "note": o.source_note}, "directionVersion": o.direction_version,
         "replyLabel": o.reply_label, "snoozedUntil": iso(o.snoozed_until), "revision": o.revision,
-        "scores": o.scores, "conditions": o.conditions, "blocker": o.blocker, "need": o.need,
-        "contact": {**out["contact"], "confirmedBy": o.contact.confirmed_by if o.contact else None,
+        "scores": o.scores, "conditions": o.conditions, "blocker": o.blocker, "need": o.need, "targetProblem": o.target_problem,
+        "contact": {**out["contact"], "email": o.contact.email if o.contact else None, "confirmedBy": o.contact.confirmed_by if o.contact else None,
                     "confirmedOn": iso(o.contact.confirmed_on) if o.contact else None},
         "company": {"id": o.company.id, "name": o.company.name, "domain": o.company.domain, "industry": o.company.industry, "hq": o.company.hq},
         "brief": None if not b else {"facts": b.facts, "hypothesis": b.hypothesis, "relevance": b.relevance, "alternative": b.alternative,
@@ -66,7 +66,8 @@ def detail(s: Session, o: m.Opportunity) -> dict:
     out_reach = s.get(m.Outreach, o.id)
     out["outreach"] = {"status": "none"} if not out_reach else {
         "status": out_reach.status, "subject": out_reach.subject, "body": out_reach.body, "sentOn": iso(out_reach.sent_on),
-        "via": out_reach.sent_via, "replyOn": iso(out_reach.reply_on), "replyText": out_reach.reply_text}
+        "via": out_reach.sent_via, "replyOn": iso(out_reach.reply_on), "replyText": out_reach.reply_text,
+        "toEmail": out_reach.to_email, "emailThread": bool(out_reach.mail_thread_id), "gmailDraftWaiting": bool(out_reach.mail_draft_id)}
     task = s.scalars(select(m.ResearchTask).where(m.ResearchTask.opportunity_id == o.id).order_by(m.ResearchTask.started_at.desc())).first()
     out["research"] = None if not task else {"status": task.status, "progress": task.progress, "pauseReason": task.pause_reason,
                                              "error": task.error, "log": task.log}
@@ -76,4 +77,4 @@ def detail(s: Session, o: m.Opportunity) -> dict:
 def direction(v: m.DirectionVersion) -> dict:
     return {"version": v.version, "scope": v.scope, "owner": v.owner, "problem": v.problem, "signals": v.signals,
             "buyer_roles": v.buyer_roles, "exclusions": v.exclusions, "excluded_domains": v.excluded_domains,
-            "approvedBy": v.approved_by, "approvedOn": iso(v.approved_on), "basis": v.basis, "change": v.change}
+            "company_size": v.company_size or {}, "problems": v.problems or [], "approvedBy": v.approved_by, "approvedOn": iso(v.approved_on), "basis": v.basis, "change": v.change}

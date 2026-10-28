@@ -1,4 +1,4 @@
-"""A2 + A3 evidence and qualification agent, tool-using version (live mode).
+"""Evidence agent, tool-using version (live mode): reads conversation notes and proposes qualification evidence.
 
 It reads the new conversation notes and, when useful, the earlier ones; looks at what is already confirmed and which
 gaps the rules engine still shows; may look up the CGS library for the service-fit condition; and records each proposal
@@ -13,12 +13,12 @@ from __future__ import annotations
 from sqlalchemy import select
 
 from api import agent_runtime as R
-from api import knowledge
+from api import toolkit
 from api import live_agents as L
 from api import models as m
 from backend.rules import calculate
 
-VERSION = "a2a3-agent-1.0"
+VERSION = "evidence-agent-1.0"
 REASONS = {"invalid": "The kind, key, value or evidence type is not valid under the rubric.",
            "quote_not_found": "The quote is not in those notes word for word. Copy the sentence exactly as written.",
            "inference_condition": "An inference can never mark a condition as met. Use a client statement or leave it out.",
@@ -57,8 +57,10 @@ def evidence_agent(c, o: m.Opportunity, note: m.Note, asks: list[dict]) -> tuple
                 "waiting_for_review": [{"kind": p.kind, "key": p.key, "value": p.value} for p in pending],
                 "readiness": r["readiness"], "open_gaps": [{"key": g["key"], "label": g["label"], "question": g["question"]} for g in r["gaps"]]}
 
+    lib = toolkit.library_for("Evidence agent", c) if toolkit.allowed("Evidence agent", "library", c.s) else None
+
     def search_library(args):
-        found = knowledge.library().search(str(args.get("query", "")), k=3)
+        found = lib.search(str(args.get("query", "")), k=3)
         for p in found:
             shown_library[p["id"]] = p
         return {"passages": [{"id": p["id"], "title": p["title"], "type": p["type"], "text": p["text"],
@@ -103,8 +105,8 @@ def evidence_agent(c, o: m.Opportunity, note: m.Note, asks: list[dict]) -> tuple
     tools = [
         R.Tool("notes", "The new conversation notes and up to five earlier notes for this opportunity.", R.params({}), notes),
         R.Tool("assessment", "What is already confirmed, what waits for review, and the gaps the rules engine still shows.", R.params({}), assessment),
-        R.Tool("search_library", "Search the CGS library (services, cases, documents) for the service-fit condition.",
-               R.params({"query": s}), search_library),
+        *([R.Tool("search_library", "Search the CGS library (services, cases, documents) for the service-fit condition.",
+                  R.params({"query": s}), search_library)] if lib else []),
         R.Tool("propose", "Record one proposal for a person to review. Checked at once; a rejection says why.",
                R.params({"kind": {"type": "string", "enum": ["score", "cond", "blocker"]},
                          "key": {"type": "string", "enum": list(L.WEIGHTS) + list(L.CONDITIONS) + list(L.REASONS)},
@@ -118,7 +120,7 @@ def evidence_agent(c, o: m.Opportunity, note: m.Note, asks: list[dict]) -> tuple
                R.params({"role": {"type": "string", "description": "The job title only, for example CEO or CFO. Why they matter goes in the quote."},
                          "quote": {"type": "string", "description": "The sentence from the notes, word for word"}}), ask_research),
     ]
-    spec = R.AgentSpec(name="A2 + A3 Evidence and qualification", version=VERSION, system=SYSTEM, tools=tools,
+    spec = R.AgentSpec(name="Evidence agent", version=VERSION, system=SYSTEM, tools=tools,
                        finish=R.Tool("finish", "You are done. One-sentence summary of what you proposed and what is still unknown.",
                                      R.params({"summary": s}), finish),
                        max_steps=10, max_tool_calls=L.MAX_PROPOSALS + 10)

@@ -1,0 +1,20 @@
+{
+  "_about": "Which outside systems (connectors) the agents may use. connectors: false turns one off for every agent. agents: the exact list of connectors one agent has; an agent not listed keeps its defaults. The code sets the limit (api/toolkit CEILING): a connector the code forbids for an agent cannot be given here, and the workspace stops with an error if you try. GET /api/toolkit shows the result. Agents only read; sending email and writing to the CRM happen only after a person clicks.",
+  "_examples": {
+    "turn the research agent's web access off": "\"Research agent\": []",
+    "let the outreach agent read email threads (also needs CLIENT_DATA_TO_AI=allowed)": "\"Outreach agent\": [\"web\", \"library\", \"mail\"]"
+  },
+  "connectors": {
+    "web": true,
+    "library": true,
+    "mail": true,
+    "drive": false,
+    "crm": false
+  },
+  "limits": {
+    "_about": "Calls per day for each connector, all agents and people together. null = no limit. People can change it in the workspace (PUT /api/toolkit/limits/{connector}).",
+    "web": 150,
+    "mail": 100
+  },
+  "agents": {}
+}

@@ -70,12 +70,12 @@ def test_synthetic_research_checks_quotes_and_names():
     assert card["research"]["people"] == [] and counts["person_not_on_page"] == 1
 
 
-def test_live_mode_on_the_synthetic_internet(tmp_path, monkeypatch):
+def test_live_mode_on_the_synthetic_internet_with_the_one_request_pipeline(tmp_path, monkeypatch):
     monkeypatch.delenv("WEB_MODE", raising=False)
     answer = {"identity_confirmed": True, "facts": [{"page_index": 2, "quote": "has appointed Priya Desai as its first Chief Digital Officer", "fact": "First CDO.", "category": "signal"}],
               "person_name": "", "person_role": "", "person_page_index": -1, "hypothesis": "h", "relevance": "r", "alternative": "a", "unknowns": [], "confidence": "low"}
     create_app(Settings(app_mode="demo", db_path=tmp_path / "m.sqlite3")).state.db.engine.dispose()
-    app = create_app(Settings(app_mode="live", db_path=tmp_path / "m.sqlite3"))
+    app = create_app(Settings(app_mode="live", db_path=tmp_path / "m.sqlite3", research_engine="pipeline"))
     app.state.provider_factory = lambda: make_provider("gemini", "m", key="k", transport=FakeAI(answer))
     api = TestClient(app)
     oid = api.post("/api/opportunities", json={"company": "Northwind Fluid Systems"}, headers=ME).json()["id"]

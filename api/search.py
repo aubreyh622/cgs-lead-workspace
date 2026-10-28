@@ -12,7 +12,8 @@ WEB_MODE in .env overrides the provider. See docs/SEARCH_INTEGRATION.md.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
+from email.utils import parsedate_to_datetime
 import json
 import os
 from pathlib import Path
@@ -39,6 +40,21 @@ def search_config() -> dict:
     return cfg
 
 
+def iso_date(raw: str | None) -> str:
+    """A published date as YYYY-MM-DD, or "" when it cannot be read. Tavily's news dates look like 'Tue, 27 Oct 2026 10:00:00 GMT'."""
+    raw = (raw or "").strip()
+    if not raw:
+        return ""
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).date().isoformat()
+    except ValueError:
+        pass
+    try:
+        return parsedate_to_datetime(raw).date().isoformat()
+    except (TypeError, ValueError, IndexError):
+        return ""
+
+
 class TavilySearch:
     """Real web search. One basic search costs 1 Tavily credit."""
     name = "tavily"
@@ -51,7 +67,7 @@ class TavilySearch:
 
     def search(self, query: str, start_date: date | None = None, news: bool = False) -> list[dict]:
         body = {"query": query, "search_depth": "basic", "max_results": self.results, "include_answer": False,
-                "include_raw_content": False, "auto_parameters": False, "include_usage": True}
+                "include_raw_content": False, "auto_parameters": False, "include_usage": True, "include_published_date": True}
         if news:
             body["topic"] = "news"
         if start_date:
@@ -63,7 +79,7 @@ class TavilySearch:
         except httpx.HTTPError as e:
             raise LLMError(f"Could not reach the search service ({type(e).__name__}).", "temporary") from None
         return [{"title": r.get("title", ""), "url": r.get("url", ""), "content": (r.get("content") or "")[:1500],
-                 "published": (r.get("published_date") or "")[:10]} for r in (data.get("results") or [])[:self.results] if r.get("url")]
+                 "published": iso_date(r.get("published_date"))} for r in (data.get("results") or [])[:self.results] if r.get("url")]
 
     def read(self, url: str) -> dict | None:
         """The full text of one page (Tavily extract; one credit per five pages)."""
