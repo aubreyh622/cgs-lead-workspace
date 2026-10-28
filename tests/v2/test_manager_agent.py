@@ -112,3 +112,33 @@ def test_the_manager_decides_before_the_rules_work_and_does_not_repeat_notes(app
     AU.run_pending(app)
     third = [d["outcome"] for d in api.get("/api/manager/decisions").json() if d["kind"] == "note" and d["opportunityId"] == "northstar"]
     assert third[0] == "recorded"
+
+
+def test_on_mode_never_redoes_work_finished_in_the_last_two_weeks(app):
+    """Found in the on-mode dry run: the manager asked for a second Bluegate follow-up a week after the first."""
+    api, _ = review(app, "on")
+    api.post("/api/demo/advance-days?days=7", headers=ME)
+    api.post("/api/agents/patrol", headers=ME)
+    AU.run_pending(app)
+    board = api.get("/api/agents/jobs", params={"limit": 500}).json()
+    assert len([j for j in board if j["kind"] == "followup_draft" and j["opportunityId"] == "bluegate"]) == 1
+    second = [d for d in api.get("/api/manager/decisions").json() if d["kind"] == "followup_draft" and d["opportunityId"] == "bluegate"]
+    assert second[0]["outcome"] == "refused" and "already done" in second[0]["detail"]
+
+
+def test_new_agent_findings_count_as_a_change_for_notes(app):
+    """Found in the on-mode run with Claude: a note about the research agent's new result was refused as 'nothing changed'."""
+    from datetime import timedelta
+    from api import manager_agent as MA
+    from api import models as m
+    api, _ = review(app, "on")  # today: a note about Northstar, and the research agent looks for Meridian's CFO
+    with app.state.db.session() as s:
+        c = AU.agent_ctx(app, s)
+        s.add(m.ManagerDecision(on=c.today - timedelta(days=1), mode="on", kind="note", opportunity_id="meridian",
+                                reason="Earlier note", outcome="sent"))  # the owner was told yesterday, before the lookup ran
+        s.flush()
+        spec, _ = MA.manager_agent(c, "on")
+        note = next(t for t in spec.tools if t.name == "note_for_owner")
+        assert note.run({"opportunity_id": "meridian", "text": "The research agent finished looking for the CFO; see its result."})["outcome"]
+        with pytest.raises(Exception, match="nothing has changed"):  # Northstar: told today, nothing new since
+            note.run({"opportunity_id": "northstar", "text": "Still out of date, please resubmit the pack soon."})

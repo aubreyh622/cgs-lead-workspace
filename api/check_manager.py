@@ -1,14 +1,17 @@
-"""Manager agent shadow check on the full demo sample (14 synthetic opportunities), with the real AI.
+"""Manager agent check on the full demo sample (14 synthetic opportunities), with the real AI.
 
-Run:  python -m api.check_manager            (MANAGER_MODE is set to shadow for this run only)
+Run:  python -m api.check_manager      (uses MANAGER_MODE from .env when it is shadow or on; otherwise shadow)
 The demo records are loaded into a live-mode workspace on the synthetic internet. The script then jumps through several
 dates. On each date the daily patrol runs: the rules queue their work, the manager agent reviews the board and decides,
 and all queued agent work is carried out, so the workspace changes the way it would in use. Nobody applies inbox items.
-The manager's decisions are recorded and compared with the rules' work that day; nothing it decides is carried out.
-Results: runtime/manager-shadow-result.txt and runtime/manager-shadow-result.json
+shadow: the manager's decisions are recorded and compared with the rules' work that day; nothing it decides is carried out.
+on:     the same comparison, and its delegations run and its notes reach the owners' inboxes. The summary checks that no
+        work was queued twice on one day, and counts what reached the inboxes.
+Results: runtime/manager-<mode>-result.txt and .json
 """
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime
 import json
 import os
@@ -30,7 +33,7 @@ def say(text: str = "") -> None:
     LINES.append(text)
 
 
-def main(prepare=None, days=DAYS) -> int:
+def main(prepare=None, days=DAYS, mode: str | None = None) -> int:
     """prepare(app) lets the tests plug in a fake AI; normal runs leave it out."""
     os.environ["WEB_MODE"] = "mock"
     LINES.clear()
@@ -39,18 +42,23 @@ def main(prepare=None, days=DAYS) -> int:
     from api.main import create_app
 
     s = load_settings()
-    db = Path(tempfile.mkdtemp()) / "manager-shadow.sqlite3"
+    env_mode = os.environ.get("MANAGER_MODE", "").strip().lower()
+    mode = mode or (env_mode if env_mode in ("shadow", "on") else "shadow")
+    db = Path(tempfile.mkdtemp()) / f"manager-{mode}.sqlite3"
     create_app(Settings(app_mode="demo", db_path=db)).state.db.engine.dispose()  # the 14 synthetic demo opportunities
     app = create_app(Settings(app_mode="live", db_path=db, ai_provider=s.ai_provider, ai_model=s.ai_model))
     if prepare:
         prepare(app)
     api = TestClient(app)
     me = {"X-User": "Quinn Harper"}
-    api.patch("/api/agents", headers=me, json={"manager_mode": "shadow", "paused": False})
+    api.patch("/api/agents", headers=me, json={"manager_mode": mode, "paused": False})
     start = api.get("/api/agents").json()["today"]
-    say(f"Manager agent shadow check  {datetime.now():%Y-%m-%d %H:%M}")
+    say(f"Manager agent {mode} check  {datetime.now():%Y-%m-%d %H:%M}")
     say(f"AI: {s.ai_provider} {s.ai_model or '(default model)'}   Data: the 14 synthetic demo opportunities, starting {start}")
     say(f"Dates: {', '.join(f'+{d}' for d in days)} days. Nobody applies inbox items in between.\n")
+
+    def company(opp_id):
+        return api.get(f"/api/opportunities/{opp_id}").json()["company"]["name"] if opp_id else "(all)"
 
     totals = {k: 0 for _, k in ROWS}
     repeats, results, failed, moved = 0, [], 0, 0
@@ -74,6 +82,9 @@ def main(prepare=None, days=DAYS) -> int:
                 say(f"    {label:<14} {x['kind']:<16} {x['company']:<26} {x['why'][:120]}{extra}")
                 repeats += bool(x.get("repeatsRecentWork"))
             totals[key] += len(cmp.get(key, []))
+        for r in ran:  # on mode: the work the manager handed out, carried out by the agents
+            if r["trigger"] == "manager":
+                say(f"    ran (manager) {r['kind']:<16} {company(r['opportunityId']):<26} {r['status']}: {r['result'][:100]}")
         results.append(cmp)
         say()
 
@@ -90,7 +101,17 @@ def main(prepare=None, days=DAYS) -> int:
     say(f"  Notes to owners: {totals['notes']} (about {len(distinct['notes'])} opportunities). Refused by code: {totals['refused']}. "
         f"Failed agent jobs: {failed}.")
     say(f"  Distinct over the whole run: both {len(distinct['agree'])}, manager only {len(distinct['managerOnly'])}, "
-        f"rules only {len(distinct['rulesOnly'])}. In shadow mode the manager's work is never carried out, so it may decide it again.")
+        f"rules only {len(distinct['rulesOnly'])}."
+        + (" In shadow mode the manager's work is never carried out, so it may decide it again." if mode == "shadow" else ""))
+    board = api.get("/api/agents/jobs", params={"limit": 1000}).json()
+    twice = [k for k, n in Counter((j["kind"], j["opportunityId"], j["on"]) for j in board if j["kind"] != "manager_review").items() if n > 1]
+    inbox = api.get("/api/inbox", params={"status": "all"}).json()
+    advice = [i for i in inbox if i["kind"] == "advice"]
+    if mode == "on":
+        mine = [j for j in board if j["trigger"] == "manager"]
+        say(f"  On mode: the manager queued {len(mine)} jobs ({', '.join(f'{n} {k}' for k, n in Counter(j['status'] for j in mine).items()) or 'none'}); "
+            f"{len(advice)} notes reached the owners' inboxes, out of {len(inbox)} inbox items in all.")
+    say(f"  Same work queued twice on one day: {len(twice)}" + (f" {twice}" if twice else ""))
     quiet = sorted({x["company"] for cmp in results for x in cmp.get("rulesOnly", [])}
                    - {x["company"] for cmp in results for k in ("agree", "managerOnly", "notes") for x in cmp.get(k, [])})
     say(f"  Opportunities the rules acted on that the manager never decided anything about: {', '.join(quiet) or 'none'}.")
@@ -98,12 +119,12 @@ def main(prepare=None, days=DAYS) -> int:
         f"{sum(r['tokensOut'] or 0 for r in detail):,} out, over {len(detail)} reviews.")
     out = ROOT / "runtime"
     out.mkdir(parents=True, exist_ok=True)
-    (out / "manager-shadow-result.txt").write_text("\n".join(LINES), encoding="utf-8")
-    (out / "manager-shadow-result.json").write_text(json.dumps({"days": results, "totals": totals, "repeats": repeats,
+    (out / f"manager-{mode}-result.txt").write_text("\n".join(LINES), encoding="utf-8")
+    (out / f"manager-{mode}-result.json").write_text(json.dumps({"days": results, "totals": totals, "repeats": repeats,
                                                                "reviews": [{"id": r["id"], "trace": r["trace"]} for r in detail]},
                                                               indent=2, ensure_ascii=False, default=str), encoding="utf-8")
-    print(f"\nSaved to {out / 'manager-shadow-result.txt'} (and .json with every step of each review)")
-    return 0 if len(detail) == len(days) and not failed else 1
+    print(f"\nSaved to {out / f'manager-{mode}-result.txt'} (and .json with every step of each review)")
+    return 0 if len(detail) == len(days) and not failed and not twice else 1
 
 
 if __name__ == "__main__":

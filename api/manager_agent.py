@@ -156,10 +156,14 @@ def manager_agent(c, mode: str) -> tuple[R.AgentSpec, dict]:
             refusal = f"The workspace already has a named {role} at {o.company.name}."
         elif kind == "ready_reminder" and (calculate(rules_input(o))["readiness"] != "Ready" or open_pack(c, o)):
             refusal = "The rules do not say Ready, or a pack is already submitted."
-        elif kind == "followup_draft":
-            r = c.s.get(m.Outreach, o.id)
-            if not r or not r.sent_on or r.reply_on:
-                refusal = "A follow-up needs a sent email without a reply."
+        elif kind == "followup_draft" and (not (r := c.s.get(m.Outreach, o.id)) or not r.sent_on or r.reply_on):
+            refusal = "A follow-up needs a sent email without a reply."
+        elif (recent := c.s.scalars(select(m.AgentJob).where(  # the same work, finished before today: do not redo it yet
+                m.AgentJob.kind == kind, m.AgentJob.opportunity_id == o.id, m.AgentJob.status == "done",
+                m.AgentJob.created_on >= today - timedelta(days=RECENT_DAYS), m.AgentJob.created_on < today)
+                .order_by(m.AgentJob.created_on.desc())).first()):
+            refusal = (f"{kind} was already done for {o.company.name} on {recent.created_on.isoformat()} "
+                       f"(within {RECENT_DAYS} days). Do not repeat it; tell the owner if a person needs to act.")
         if refusal:
             decide(kind, o, reason, "refused", refusal)
             raise R.ToolError(refusal)
@@ -185,7 +189,10 @@ def manager_agent(c, mode: str) -> tuple[R.AgentSpec, dict]:
         last = c.s.scalar(select(m.ManagerDecision.on).where(m.ManagerDecision.kind == "note", m.ManagerDecision.opportunity_id == o.id,
                                                              m.ManagerDecision.outcome != "refused")
                           .order_by(m.ManagerDecision.on.desc()).limit(1))
-        unchanged = last and not (o.last_progress and o.last_progress > last) and (today - last).days < NOTE_DAYS
+        agent_news = last and c.s.scalars(select(m.AgentJob).where(  # an agent finished work for it after the last note
+            m.AgentJob.opportunity_id == o.id, m.AgentJob.status == "done", m.AgentJob.created_on > last,
+            m.AgentJob.kind != "manager_review")).first()
+        unchanged = last and not (o.last_progress and o.last_progress > last) and not agent_news and (today - last).days < NOTE_DAYS
         if unchanged or any(d["kind"] == "note" and d["opportunity_id"] == o.id for d in record["decisions"]):
             decide("note", o, text[:600], "refused", f"The owner was told on {last or today} and nothing has changed since.")
             raise R.ToolError(f"You told the owner about {o.company.name} on {last or today} and nothing has changed since. "
