@@ -142,6 +142,7 @@ class Candidate(Base):
     direction_version: Mapped[str] = mapped_column(String(40), default="")
     demo_star: Mapped[bool] = mapped_column(Boolean, default=False)
     source_url: Mapped[Optional[str]] = mapped_column(Text)  # the search result a live nomination came from
+    evidence_quote: Mapped[Optional[str]] = mapped_column(Text)  # the sentence in that source that shows the signal
 
 
 class Outreach(Base):

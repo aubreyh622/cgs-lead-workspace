@@ -4,6 +4,9 @@ play(payload, evidence=..., draft=...) looks at which tools the agent was given 
   research (person lookup)  company pages -> read the leadership page -> answer
   evidence                  read the notes -> propose each item (and ask the research agent) -> finish
   outreach                  read the brief -> submit the draft (again, if it is rejected)
+  manager                   read the board -> delegate and write notes -> finish
+  discovery                 read the direction -> search the first signal -> nominate -> finish
+  actions (A4)              read the situation -> suggest an action for up to three gaps -> finish
 """
 import json
 import re
@@ -30,8 +33,12 @@ def results(payload) -> list[tuple[str, dict]]:
     return out
 
 
-def play(payload, *, evidence=None, draft=None, manager=None):
+def play(payload, *, evidence=None, draft=None, manager=None, discovery=None, actions=None):
     names = tool_names(payload)
+    if "suggest" in names:
+        return play_actions(payload, actions or default_actions)
+    if "nominate" in names:
+        return play_discovery(payload, discovery or (lambda direction, found: []))
     if "delegate" in names:
         return play_manager(payload, manager or (lambda board: []))
     if "propose" in names:
@@ -70,6 +77,38 @@ def play_manager(payload, plan):
         if calls:
             return turn(*calls)
     return turn(("finish", {"summary": "Reviewed the board."}))
+
+
+def play_discovery(payload, pick):
+    """direction -> search_news (custom query or first signal) -> nominate what pick(direction, results) returns -> finish."""
+    done = results(payload)
+    if not done:
+        return turn(("direction", {}))
+    if len(done) == 1:
+        d = done[0][1]
+        return turn(("search_news", {"query": (d.get("run_these_searches_first") or [f"manufacturer {d['signals'][0].lower()}"])[0]}))
+    if len(done) == 2:
+        calls = [("nominate", n) for n in pick(done[0][1], done[1][1]["results"])]
+        if calls:
+            return turn(*calls)
+    return turn(("finish", {"summary": "Searched once and nominated what matched."}))
+
+
+def default_actions(situation):
+    return [{"gap_key": g["gap_key"], "title": f"Ask about {g['label'].lower()}", "reason": g["label"], "question": g["question"]}
+            for g in situation["open_gaps"][:3]]
+
+
+def play_actions(payload, plan):
+    """situation -> suggest what plan(situation) returns -> finish (suggest again first if every suggestion was rejected)."""
+    done = results(payload)
+    if not done:
+        return turn(("situation", {}))
+    if len(done) == 1:
+        calls = [("suggest", a) for a in plan(done[0][1])]
+        if calls:
+            return turn(*calls)
+    return turn(("finish", {"summary": "Suggested the next actions."}))
 
 
 def default_draft(brief):

@@ -254,7 +254,7 @@ def do_person_lookup(c, job, o):
 def do_gap_actions(c, job, o):
     if o.stage not in S.QUAL_STAGES:
         return "skipped", f"Stage is {o.stage}."
-    n = S.suggest_actions(c, o.id)
+    n = S.suggest_actions(c, o.id, why=job.reason, budget=lambda p: may_call(c, p))
     if not n:
         if job.trigger == "event":  # a returned pack: the approver's question is the gap even when the rules show none
             J.to_inbox(c.s, c.today, job, "actions", f"Pack returned for {o.company.name}: answer the approver", job.reason,
@@ -289,7 +289,7 @@ def do_ready_reminder(c, job, o):
 
 
 def do_discovery_round(c, job, o):
-    res = S.recommend(c, "Weekly round by the discovery agent")
+    res = S.recommend(c, "Weekly round by the discovery agent", budget=lambda p: may_call(c, p))
     J.set_setting(c.s, "last_discovery", c.today.isoformat())
     if not res["candidates"]:
         return "done", f"Round {res['round']}: no new candidates this week."

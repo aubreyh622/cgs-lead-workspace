@@ -384,8 +384,10 @@ def pick_candidate(c: Ctx, cand_id: str) -> list[str]:
     return created
 
 
-def recommend(c: Ctx, intent: str) -> dict:
-    """Step 1: a new round of up to 10 candidates. Demo: prepared list. Live: web search + AI nominations, checked by code."""
+def recommend(c: Ctx, intent: str, budget=None) -> dict:
+    """Step 1: a new round of up to 10 candidates. Demo: prepared list.
+    Live: the tool-using discovery agent searches, reads and nominates; code checks every nomination (api/discovery_agent.py).
+    budget(provider) -> may_call: the agents' daily AI budget, for rounds the agents start on their own."""
     from api import discovery_agent as D
     d = current_direction(c, c.actor)
     direction = {f: getattr(d, f) for f in WHITELIST}
@@ -395,11 +397,15 @@ def recommend(c: Ctx, intent: str) -> dict:
         from api.search import make_search, search_config
         from api.settings import ROOT
         search = c.search_factory() if c.search_factory else make_search(as_of=c.today)
-        return D.discover(p, search, direction, intent, known, c.today, debug_file=ROOT / "runtime" / "discovery-last-round.json",
-                          config=search_config())
+        result, usage, steps = D.discover_with_agent(p, search, direction, intent, known, c.today,
+                                                     debug_file=ROOT / "runtime" / "discovery-last-round.json", config=search_config(),
+                                                     may_call=budget(p) if budget else None)
+        trace.extend(steps)
+        return result, usage
 
+    trace: list = []
     (found, info), _ = run_agent(c, "Discovery agent", None, "discovery-demo-1.0", lambda: (A.demo_round(direction, known), {}),
-                                 subject=f"Direction {d.version}", live=live, live_prompt=D.DISCOVERY_PROMPT_VERSION)
+                                 subject=f"Direction {d.version}", live=live, live_prompt=D.AGENT_VERSION, trace=trace)
     row = c.s.get(m.Setting, "round")
     rnd = (row.value if row else 0) + 1
     while c.s.get(m.Candidate, f"r{rnd}-1"):  # another round was saved while this one searched
@@ -412,7 +418,7 @@ def recommend(c: Ctx, intent: str) -> dict:
         c.s.add(m.Candidate(id=f"r{rnd}-{i + 1}", round=rnd, company=x["company"], domain=x.get("domain", ""), person=x.get("person", ""),
                             title=x.get("title", ""), why_person=x.get("why_person", "Matches a buyer role in the research direction" if x.get("person") else "No named person in the source"),
                             why=x["why"], signal=x["signal"], signal_date=x["signal_date"], flags=x.get("flags", []), status="new",
-                            direction_version=d.version, source_url=x.get("source_url")))
+                            direction_version=d.version, source_url=x.get("source_url"), evidence_quote=x.get("quote")))
     return {"round": rnd, "candidates": len(found), "checks": info}
 
 
@@ -921,13 +927,30 @@ def update_need(c: Ctx, opp_id: str, fields: dict) -> None:
 
 
 # ---------- Step 7: actions, tasks, packs ----------
-def suggest_actions(c: Ctx, opp_id: str) -> int:
+def suggest_actions(c: Ctx, opp_id: str, why: str = "", budget=None) -> int:
+    """Step 7: up to 3 next actions. Demo: one per gap from a fixed list. Live: the tool-using A4 agent (api/actions_agent.py).
+    why: what prompted the request (a stall, a returned pack). budget(provider) -> may_call, for work the agents start on their own."""
+    from api import actions_agent as AA
+    from api import agent_runtime as R
     o = opp(c, opp_id, *QUAL_STAGES)
-    gaps = calculate(rules_input(o))["gaps"]
+    rules = calculate(rules_input(o))
+    gaps = rules["gaps"]
     taken = {t.title for t in c.s.scalars(select(m.Task).where(m.Task.opportunity_id == o.id))}
-    notes = [n.text for n in c.s.scalars(select(m.Note).where(m.Note.opportunity_id == o.id).order_by(m.Note.on))]
+    approver_q = AA.approver_question(c, o)
+    trace: list = []
+
+    def live(p):
+        if not gaps and not approver_q:
+            return [], None  # nothing to close: no AI request
+        spec, record = AA.actions_agent(c, o, rules, approver_q, why)
+        out = R.run(spec, p, AA.task(o), **({"may_call": budget(p)} if budget else {}))
+        trace.extend(out.trace)
+        if not record["kept"]:
+            raise LLMError(f"The action agent suggested nothing that passes the checks ({out.reason or out.status}).", "invalid_output")
+        return record["kept"], out.usage
+
     items, _ = run_agent(c, "A4 Action and reporting", o, "a4-1.0", lambda: A.next_actions(gaps, taken),
-                         live=lambda p: L.next_actions(p, gaps, notes, taken), live_prompt=L.ACTIONS_PROMPT_VERSION)
+                         subject=o.company.name, live=live, live_prompt=AA.VERSION, trace=trace)
     for x in c.s.scalars(select(m.Suggestion).where(m.Suggestion.opportunity_id == o.id, m.Suggestion.status == "open")):
         x.status = "dismissed"
     for it in items:

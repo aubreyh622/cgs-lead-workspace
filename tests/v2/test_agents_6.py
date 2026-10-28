@@ -107,15 +107,18 @@ def test_demo_and_live_drafts_through_the_api(tmp_path):
 
 # ---------- A4 ----------
 def test_live_next_actions_keep_only_open_gaps(tmp_path):
-    answer = {"actions": [
-        {"gap_key": "A", "title": "Ask who signs off above Oliver", "reason": "Authority pending", "question": "Who approves?"},
-        {"gap_key": "A", "title": "Duplicate gap", "reason": "", "question": ""},
-        {"gap_key": "B", "title": "Confirm the funding path", "reason": "Budget pending", "question": "Is there budget?"},
-    ]}
-    api = live(tmp_path, FakeAI(answer))
+    fake = FakeAI(turn(("situation", {})),
+                  turn(("suggest", {"gap_key": "A", "title": "Ask who signs off above Oliver", "reason": "Authority pending", "question": "Who approves?"}),
+                       ("suggest", {"gap_key": "A", "title": "Duplicate gap", "reason": "", "question": "Same gap again?"}),
+                       ("suggest", {"gap_key": "ZZ", "title": "Not a gap at all", "reason": "", "question": "Anything?"}),
+                       ("suggest", {"gap_key": "B", "title": "Confirm the funding path", "reason": "Budget pending", "question": "Is there budget?"})),
+                  turn(("finish", {"summary": "Two actions."})))
+    api = live(tmp_path, fake)
     assert api.post("/api/opportunities/alder/suggestions", headers=ME).json()["suggestions"] == 2
     titles = [s["title"] for s in api.get("/api/opportunities/alder").json()["suggestions"]]
     assert sorted(titles) == ["Ask who signs off above Oliver", "Confirm the funding path"]
+    told = json.dumps(fake.requests[2]["contents"][-1])
+    assert "One per gap" in told and "is not an open gap" in told  # the rejections went back to the agent
 
 
 # ---------- feedback agent ----------

@@ -150,16 +150,49 @@ def test_nomination_checks():
     assert dropped == {"duplicate": 1, "name_not_in_source": 1, "no_source": 1, "excluded": 1, "already_known": 1}
 
 
+class DiscoveryAI:
+    """Plays the tool-using discovery agent: direction -> one search -> two nominations -> finish."""
+
+    def __init__(self, query, nominations):
+        self.query, self.nominations, self.turns = query, nominations, 0
+
+    def __call__(self, url, headers, payload, **kw):
+        from agent_fakes import results, turn
+        self.turns += 1
+        done = results(payload)
+        if not done:
+            return turn(("direction", {}))
+        if len(done) == 1:
+            assert done[0][1]["consultant_request"] == "Midwest foundries after an acquisition"
+            return turn(("search_news", {"query": self.query}))
+        if len(done) == 2:
+            return turn(*[("nominate", n) for n in self.nominations])
+        return turn(("finish", {"summary": "One search, one company."}))
+
+
+def agent_nom(company, quote, domain="", person="", title="", url="https://news.example/ardent"):
+    return {"company": company, "url": url, "why": "Acquired a foundry.", "signal": "Acquisition", "quote": quote,
+            "domain": domain, "person_name": person, "person_title": title}
+
+
 def test_live_recommend_round(tmp_path):
-    ai = FakeAI({"queries": ["foundry completes acquisition Midwest", "manufacturer appoints CIO", "AI pilot plants", "plant expansion 2026"]},
-                {"candidates": [nom(0, "Ardent Castings", "ardentcastings.com", "Maria Lopez", "CIO"), nom(0, "Phantom Corp")]})
+    ai = DiscoveryAI("foundry completes acquisition Midwest",
+                     [agent_nom("Ardent Castings", "Ardent Castings (ardentcastings.com) said CIO Maria Lopez will lead the integration.",
+                                "ardentcastings.com", "Maria Lopez", "CIO"),
+                      agent_nom("Phantom Corp", "Phantom Corp will lead the integration.")])
     search = FakeSearch(RESULTS)
     api = live(tmp_path, ai=ai, search=search)
     r = api.post("/api/candidates/recommend", json={"intent": "Midwest foundries after an acquisition"}, headers=ME).json()
-    assert r["round"] == 4 and r["candidates"] == 1 and search.queries[0] == "foundry completes acquisition Midwest"
+    assert r["round"] == 4 and r["candidates"] == 1 and search.queries == ["foundry completes acquisition Midwest"]
     assert r["checks"]["ai_nominations"] == 2 and r["checks"]["dropped_name_not_in_source"] == 1
+    assert r["checks"]["queries"] == "chosen by the agent" and r["checks"]["searches"] == 1
     c = api.get("/api/candidates", params={"status": "new"}).json()
-    assert any(x["company"] == "Ardent Castings" and x["person"] == "Maria Lopez" for x in c)
+    ardent = next(x for x in c if x["company"] == "Ardent Castings")
+    assert ardent["person"] == "Maria Lopez" and ardent["sourceUrl"] == "https://news.example/ardent" and "Maria Lopez" in ardent["quote"]
+    run = api.get("/api/agent-runs").json()[0]
+    assert run["agent"] == "Discovery agent" and run["prompt"] == "discovery-agent-1.0" and run["calls"] == ai.turns == 4
+    steps = api.get(f"/api/agent-runs/{run['id']}").json()["trace"]
+    assert any(s.get("tool") == "nominate" and "Write the company exactly" in str(s) for s in steps)  # Phantom Corp's rejection
 
 
 def test_demo_recommend_round_respects_exclusions(tmp_path):

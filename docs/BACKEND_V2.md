@@ -101,7 +101,7 @@ Agents work like employees: they notice work, do it, and hand the result to a pe
 
 ## Discovery, research and the CGS library (step 6c–6d)
 
-- **Discovery agent** (`api/discovery_agent.py`, `POST /api/candidates/recommend`). Runs 4 Tavily searches built from the research direction, then asks the AI to nominate up to 10 companies. Code then keeps only nominations that:
+- **Discovery agent** (`api/discovery_agent.py`, `POST /api/candidates/recommend`). In live mode this is the tool-using agent (see “Discovery agent” below). The older fixed pipeline, `discover()`, is kept for direct use: 4 Tavily searches built from the research direction, then one AI request nominates up to 10 companies. Either way, code keeps only nominations that:
   - point to a search result that was actually returned,
   - name a company that appears in that result,
   - use a person's name only when it appears word for word in that result; otherwise the contact is “contact to confirm”,
@@ -215,3 +215,47 @@ judgment.
   both, manager only (flagged when it repeats recent work), rules only, notes to owners, and what the code refused.
 - Switch modes with `MANAGER_MODE` in `.env` or `PATCH /api/agents {"manager_mode": "shadow"}`.
 - `Check Agents.cmd` prints the comparison after each patrol when the manager is not off.
+
+## Discovery agent (multi-agent step 4)
+
+`discover_with_agent()` in `api/discovery_agent.py`, prompt version `discovery-agent-1.0`. Step 1 in live mode and the
+weekly `discovery_round` job both use it. The agent picks its own searches instead of running a fixed list.
+
+| Tool | What it does |
+|---|---|
+| `direction` | The research direction, the consultant's request, today's date, and any `custom_queries` from `config/search.json` |
+| `search_news` | One news search (recency and news-only from `config/search.json`); returns titles, dates and 300-character previews. At most 6 per round |
+| `read_page` | The full text of a result that a search returned, nothing else. At most 6 per round |
+| `check_company` | Whether the workspace already has the company, or the direction excludes its website |
+| `nominate` | One company. Checked at once; a rejection goes back to the agent with the reason |
+| `finish` | Ends the round |
+
+- `nominate` applies the same checks as before (source returned by a search, company named in it, not excluded, not known,
+  not a duplicate, a person kept only when the source names them). It also needs the sentence from the source that shows the
+  signal, copied word for word; it is saved as `Candidate.evidence_quote` and shown as `quote` (with `sourceUrl`) in `GET /api/candidates`.
+- Each round is capped at 10 nominations and 16 model turns. The weekly job also stops at the agents' daily AI budget;
+  what was checked before the stop is kept.
+- Every step is saved with the run (`GET /api/agent-runs/{id}`), and the last round is written to `runtime/discovery-last-round.json`.
+
+## A4 next-actions agent (multi-agent step 5)
+
+`api/actions_agent.py`, prompt version `a4-agent-1.0`. Used in live mode by `POST /api/opportunities/{id}/suggestions` and by
+the `gap_actions` job (a stalled opportunity, or a pack the approver returned). Demo mode keeps the fixed list in
+`api/demo_agents.py`; the older one-request version (`live_agents.next_actions`) is no longer called.
+
+| Tool | What it does |
+|---|---|
+| `situation` | Open gaps from the rules engine, open and done tasks, days without progress, why it was asked, and the approver's question when the latest pack was returned |
+| `notes` | The latest five conversation notes |
+| `known_contacts` | The people already on record at the company |
+| `search_library` | The CGS library, for the service-fit gap |
+| `suggest` | One next action for one gap. Checked at once; a rejection goes back with the reason |
+| `finish` | Ends the run; refused until there is at least one suggestion, and until the approver's question is answered |
+
+- Code checks every suggestion: the gap must be open (or `approver`), one per gap, at most three; a title and a question for
+  the next conversation; no near-copy of an open task; no fees, percentages, discounts or guarantees; an optional quote must
+  be in the given note word for word. When the approver returned the pack, the first suggestion must answer their question.
+- No open gaps and no approver question: no AI request at all. A run that ends with nothing valid fails visibly (`ai_invalid_output`)
+  and the open suggestions stay as they were.
+- The `gap_actions` job passes its reason and the agents' daily AI budget. Every step is saved with the run (`GET /api/agent-runs/{id}`).
+

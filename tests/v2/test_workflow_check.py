@@ -36,7 +36,8 @@ class StoryAI:
     def __call__(self, url, headers, payload, **kw):
         if "tools" in payload:  # the tool-using agents (evidence, outreach, person lookup)
             names = tool_names(payload)
-            self.agents.append("evidence" if "propose" in names else "outreach" if "submit_draft" in names else "person")
+            self.agents.append("actions" if "suggest" in names else "discovery" if "nominate" in names else "evidence" if "propose" in names
+                               else "outreach" if "submit_draft" in names else "person")
             return play(payload, evidence=lambda notes: {"proposals": self.proposals(notes), "people_to_find": []}, draft=story_draft)
         props = set(payload["generationConfig"]["responseJsonSchema"]["properties"])
         user = payload["contents"][0]["parts"][0]["text"]

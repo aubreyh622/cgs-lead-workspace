@@ -13,7 +13,7 @@ READINESS = {"ready": "Ready", "more": "More evidence needed", "notready": "Not 
 
 
 def test_backend_matches_prototype_for_every_sample():
-    expected = dict(json.loads((Path(__file__).parent / "fixtures/prototype_rules_results.json").read_text()))
+    expected = dict(json.loads((Path(__file__).parent / "fixtures/prototype_rules_results.json").read_text(encoding="utf-8")))
     leads = {l["id"]: l for l in json.loads(SEED.read_text(encoding="utf-8"))["leads"]}
     assert len(expected) == 14
     for oid, fe in expected.items():

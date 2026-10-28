@@ -25,7 +25,8 @@ class SchemaAI:
     def __call__(self, url, headers, payload, **kw):
         if "tools" in payload:  # a tool-using agent's turn (api/agent_runtime.py), played by tests/v2/agent_fakes.py
             names = tool_names(payload)
-            self.calls.append("evidence" if "propose" in names else "draft" if "submit_draft" in names else "person")
+            self.calls.append("actions" if "suggest" in names else "discovery" if "nominate" in names else "evidence" if "propose" in names
+                              else "draft" if "submit_draft" in names else "person")
             return play(payload, evidence=self.evidence)
         props = set(payload["generationConfig"]["responseJsonSchema"]["properties"])
         user = json.loads(payload["contents"][0]["parts"][0]["text"])
@@ -391,7 +392,7 @@ def test_research_sync_survives_a_bad_run_and_runs_in_the_background(tmp_path):
 def test_budget_counts_every_ai_request(live):
     ai = SchemaAI()
     app, api = live(ai)
-    api.post("/api/candidates/recommend", headers=ME, json={})  # discovery: one call for queries, one to nominate
+    api.post("/api/candidates/recommend", headers=ME, json={})  # the discovery agent: direction, one search, finish
     run = api.get("/api/agent-runs").json()[0]
-    assert ai.calls == ["queries", "discovery"]
-    assert run["agent"] == "Discovery agent" and run["calls"] == 2  # was always recorded as 1
+    assert ai.calls == ["discovery"] * 3
+    assert run["agent"] == "Discovery agent" and run["calls"] == 3  # every model turn counts
