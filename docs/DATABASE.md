@@ -1,6 +1,6 @@
 # The workspace database, in plain language
 
-The database is the workspace's ledger. It is one file, `runtime/workspace-v2.sqlite3`, made of 22 tables. Each table holds one kind of record, the way an Excel workbook has one sheet per topic.
+The database is the workspace's ledger. It is one file, `runtime/workspace-v2.sqlite3`, made of 28 tables. Each table holds one kind of record, the way an Excel workbook has one sheet per topic.
 
 Code reaches the file through SQLAlchemy, a translator layer. To move to a shared PostgreSQL database later (for several people at once), set `DATABASE_URL`. The code stays the same.
 
@@ -19,7 +19,7 @@ Code reaches the file through SQLAlchemy, a translator layer. To move to a share
 | `notes` | an email or meeting notes, in the original words | 6 | person |
 | `proposals` | an AI suggestion (a score, condition or blocker) with its quote | 6 | Evidence agent |
 | `evidence` | what a person confirmed, and how (accepted, edited, manual review) | 6–7 | person only |
-| `suggestions` | an AI-suggested next action, not yet agreed | 7 | Next-step agent |
+| `suggestions` | an AI-suggested next action, not yet agreed | 7 | Next-step agent, or the manager's triage |
 | `tasks` | an agreed action with an owner and a date | 6–7 | person only |
 | `packs` | a frozen qualification pack sent for Step 8 approval | 7–8 | person |
 | `feedback` | why someone skipped, accepted, returned or rejected something | 1, 4 | person |
@@ -27,6 +27,9 @@ Code reaches the file through SQLAlchemy, a translator layer. To move to a share
 | `direction_proposals` | a suggested change to the direction, waiting for approval | learning loop | AI or person proposes |
 | `agent_runs` | one AI call: agent, model, prompt version, success or failure | all | system |
 | `agent_jobs` | one piece of agent work on the task board: which agent, why (event, patrol or handoff), who asked, status and result | all | agents |
+| `manager_decisions` | one decision of the manager agent (shadow mode too): what kind of work, for which opportunity, why, the outcome; `scope` says whether the daily review or a triage made it | all | Manager agent |
+| `agent_lessons` | a lesson for one agent (L1, L2 ...): the text, the finding it rests on and its numbers, proposed, approved, rejected or retired (by whom, when, why), and how often it was in a prompt | learning loop | Manager agent or person proposes; person approves |
+| `opportunity_memory` | the manager's notebook for one opportunity: a summary, and the promises each side made (who, what, due date, the quote and its note, open, done or dropped) | 6–8 | Manager agent; a person can close a promise |
 | `inbox_items` | what an agent prepared for a person (draft, facts, contact, suggestion, reminder) and what the person did with it | all | agents, people |
 | `activity` | one line of history for an opportunity | all | system |
 | `settings` | workspace settings, such as the demo date | — | system |

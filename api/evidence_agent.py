@@ -120,7 +120,8 @@ def evidence_agent(c, o: m.Opportunity, note: m.Note, asks: list[dict]) -> tuple
                R.params({"role": {"type": "string", "description": "The job title only, for example CEO or CFO. Why they matter goes in the quote."},
                          "quote": {"type": "string", "description": "The sentence from the notes, word for word"}}), ask_research),
     ]
-    spec = R.AgentSpec(name="Evidence agent", version=VERSION, system=SYSTEM, tools=tools,
+    from api.lessons import block
+    spec = R.AgentSpec(name="Evidence agent", version=VERSION, system=SYSTEM + block(c.s, "Evidence agent", c.today), tools=tools,
                        finish=R.Tool("finish", "You are done. One-sentence summary of what you proposed and what is still unknown.",
                                      R.params({"summary": s}), finish),
                        max_steps=10, max_tool_calls=L.MAX_PROPOSALS + 10)

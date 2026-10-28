@@ -93,14 +93,21 @@ def inbox(request: Request, owner: str | None = None, status: str = "new"):
 
 
 @router.get("/manager/decisions", summary="The manager agent's decisions, newest first (shadow mode included)")
-def manager_decisions(request: Request, day: str | None = None, limit: int = Query(100, le=500)):
+def manager_decisions(request: Request, day: str | None = None, scope: Literal["review", "triage"] | None = None,
+                      opportunity: str | None = None, limit: int = Query(100, le=500)):
     from datetime import date as _date
     with request.app.state.db.session() as s:
         q = select(m.ManagerDecision).order_by(m.ManagerDecision.id.desc()).limit(limit)
         if day:
             q = q.where(m.ManagerDecision.on == _date.fromisoformat(day))
-        return [{"on": d.on.isoformat(), "mode": d.mode, "kind": d.kind, "opportunityId": d.opportunity_id, "reason": d.reason,
-                 "outcome": d.outcome, "detail": d.detail, "runId": d.run_id} for d in s.scalars(q)]
+        if scope == "triage":
+            q = q.where(m.ManagerDecision.scope == "triage")
+        elif scope == "review":
+            q = q.where(or_(m.ManagerDecision.scope == "review", m.ManagerDecision.scope.is_(None)))
+        if opportunity:
+            q = q.where(m.ManagerDecision.opportunity_id == opportunity)
+        return [{"on": d.on.isoformat(), "mode": d.mode, "scope": d.scope or "review", "kind": d.kind, "opportunityId": d.opportunity_id,
+                 "reason": d.reason, "outcome": d.outcome, "detail": d.detail, "runId": d.run_id} for d in s.scalars(q)]
 
 
 @router.get("/manager/compare", summary="Shadow comparison: the manager's decisions next to the rules' work on one day")
@@ -111,10 +118,131 @@ def manager_compare(request: Request, day: str | None = None):
         if day:
             when = _date.fromisoformat(day)
         else:
-            when = s.scalar(select(m.ManagerDecision.on).order_by(m.ManagerDecision.on.desc()).limit(1))
+            when = s.scalar(select(m.ManagerDecision.on).where(or_(m.ManagerDecision.scope == "review", m.ManagerDecision.scope.is_(None)))
+                            .order_by(m.ManagerDecision.on.desc()).limit(1))
             if when is None:
                 return {"day": None, "note": "The manager agent has not made any decisions yet."}
         return MA.compare(s, when)
+
+
+@router.get("/manager/scorecard", summary="How people received the agents' work: per kind of work and owner, evidence calibration, reliability")
+def manager_scorecard(request: Request, days: int = Query(60, ge=1, le=365), owner: str | None = None):
+    from api import scorecard as SC
+    with request.app.state.db.session() as s:
+        return SC.build(s, demo_today(s, request.app.state.settings), days, owner)
+
+
+@router.get("/lessons", summary="Lessons for the agents: proposed, approved, rejected and retired, with their effect since approval")
+def lessons(request: Request, status: str | None = None, agent: str | None = None):
+    from api import lessons as LS
+    with request.app.state.db.session() as s:
+        today = demo_today(s, request.app.state.settings)
+        q = select(m.AgentLesson).order_by(m.AgentLesson.id.desc())
+        if status:
+            q = q.where(m.AgentLesson.status == status)
+        if agent:
+            q = q.where(m.AgentLesson.agent == agent)
+        return [LS.view(s, x, today) for x in s.scalars(q)]
+
+
+@router.get("/lessons/findings", summary="What stands out in the scorecard: what the weekly lessons review would read")
+def lesson_findings(request: Request):
+    from api import lessons as LS
+    with request.app.state.db.session() as s:
+        return LS.findings(s, demo_today(s, request.app.state.settings))
+
+
+class LessonIn(BaseModel):
+    agent: str = Field(..., description="Evidence agent, Outreach agent, Next-step agent or Manager agent")
+    text: str = Field(..., description="One or two sentences to the agent: in which situation, what to do")
+    why: str = Field(..., description="What was seen that the lesson answers")
+
+
+@router.post("/lessons", summary="A person proposes a lesson for an agent (it still needs approval)")
+def propose_lesson(body: LessonIn, c: S.Ctx = Actor):
+    from api import lessons as LS
+    try:
+        lesson = LS.propose(c.s, c.today, body.agent, body.text, "person", body.why, c.actor)
+    except LS.Invalid as e:
+        raise S.ActionError(str(e))
+    S.log(c, None, "h", f"{c.actor} proposed lesson {LS.label(lesson)} for the {lesson.agent.lower()}")
+    return LS.view(c.s, lesson, c.today)
+
+
+class LessonDecision(BaseModel):
+    decision: Literal["approve", "reject"]
+    reason: str = Field("", description="Required to reject; the manager reads it before it proposes again")
+
+
+def _may_decide_lessons(c: S.Ctx) -> None:
+    if not S.may_manage_permissions(c):
+        raise S.ActionError("Only the workspace admins (CGS_ADMINS) may approve, reject or retire lessons.", 403, "forbidden")
+
+
+@router.post("/lessons/{lesson_id}/decision", summary="Approve a lesson (it joins the agent's prompt) or reject it")
+def decide_lesson(lesson_id: int, body: LessonDecision, c: S.Ctx = Actor):
+    from api import lessons as LS
+    _may_decide_lessons(c)
+    try:
+        lesson = LS.decide(c.s, c.today, lesson_id, body.decision, body.reason, c.actor)
+    except LS.Invalid as e:
+        raise S.ActionError(str(e))
+    S.log(c, None, "h", f"{c.actor} {lesson.status} lesson {LS.label(lesson)} for the {lesson.agent.lower()}"
+                       + (f": {lesson.decision_reason}" if lesson.decision_reason else ""))
+    return LS.view(c.s, lesson, c.today)
+
+
+class LessonRetire(BaseModel):
+    reason: str
+
+
+@router.post("/lessons/{lesson_id}/retire", summary="Take an approved lesson out of the agent's prompt")
+def retire_lesson(lesson_id: int, body: LessonRetire, c: S.Ctx = Actor):
+    from api import lessons as LS
+    _may_decide_lessons(c)
+    try:
+        lesson = LS.retire(c.s, c.today, lesson_id, body.reason, c.actor)
+    except LS.Invalid as e:
+        raise S.ActionError(str(e))
+    S.log(c, None, "h", f"{c.actor} retired lesson {LS.label(lesson)}: {lesson.retired_reason}")
+    return LS.view(c.s, lesson, c.today)
+
+
+@router.post("/lessons/review", summary="Run the manager's lessons review now instead of waiting for the week (live mode)")
+def review_lessons(request: Request, c: S.Ctx = Actor):
+    if c.demo:
+        raise S.ActionError("The lessons review needs a real AI model (live mode).", 409, "demo_mode")
+    job = J.enqueue(c.s, c.today, "lessons_review", None, "person", f"Asked by {c.actor}", requested_by=c.actor)
+    c.s.commit()
+    if not job:
+        return {"queued": False, "note": "A lessons review is already on the board."}
+    return {"queued": True, "job": AU.job_view(job)}
+
+
+@router.get("/opportunities/{opp_id}/memory", summary="The manager agent's memory of one opportunity: its summary and the promises each side made")
+def memory(opp_id: str, request: Request):
+    from api import memory as MEM
+    with request.app.state.db.session() as s:
+        if not s.get(m.Opportunity, opp_id):
+            raise S.ActionError("Opportunity not found.", 404, "not_found")
+        return MEM.view(MEM.get(s, opp_id), demo_today(s, request.app.state.settings))
+
+
+class CloseCommitment(BaseModel):
+    status: Literal["done", "dropped"] = Field(..., description="done: it happened; dropped: it no longer applies")
+    why: str = Field(..., description="What shows it happened, or why it no longer applies")
+
+
+@router.post("/opportunities/{opp_id}/commitments/{cid}", summary="A person closes a promise in the manager's memory (done or dropped)")
+def close_commitment(opp_id: str, cid: str, body: CloseCommitment, c: S.Ctx = Actor):
+    from api import memory as MEM
+    o = S.opp(c, opp_id)
+    try:
+        item = MEM.close_commitment(c.s, o.id, cid, body.status, body.why, c.today, c.actor)
+    except MEM.Invalid as e:
+        raise S.ActionError(str(e))
+    S.log(c, o.id, "h", f"{c.actor} marked a promise {body.status}: {item['who']} — {item['what']} ({body.why.strip()})")
+    return MEM.view(MEM.get(c.s, o.id), c.today)
 
 
 class ItemAction(BaseModel):

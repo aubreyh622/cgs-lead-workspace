@@ -139,3 +139,15 @@ def test_the_patrol_job_passes_its_reason_and_budget(app):
         status, text = AU.do_gap_actions(c, job, s.get(m.Opportunity, "meridian"))
         s.commit()
     assert status == "done" and text.startswith("1 suggestion") and seen == ["No progress recorded for 15 days"]
+
+
+def test_an_amount_repeated_from_the_approver_or_the_notes_is_not_a_promise():
+    """Found building the manager's triage: the approver asked "Who signs off above $250K?" and every suggestion that asked it
+    back was refused as a price promise, so the next-step agent could never answer the approver."""
+    from api.next_step_agent import promises
+    q = "Who signs off above $250K?"
+    assert not promises(q, (q,))
+    assert not promises("Ask how the CFO reviews spend above $300K", ("the CFO would decide on anything above $300K.",))
+    assert promises("Offer the work for $200K", (q,))           # a new amount is still refused
+    assert promises("Offer a discount on phase one", (q,))
+    assert promises("Promise a 15% saving", ())

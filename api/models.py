@@ -444,8 +444,46 @@ class ManagerDecision(Base):
     kind: Mapped[str] = mapped_column(String(40))                      # a job kind, or "note" for a note to the owner
     opportunity_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
     reason: Mapped[str] = mapped_column(Text, default="")
-    outcome: Mapped[str] = mapped_column(String(20))                   # recorded | queued | already_queued | sent | refused
+    outcome: Mapped[str] = mapped_column(String(20))  # recorded | queued | already_queued | sent | refused | accepted | declined | suggested
     detail: Mapped[str] = mapped_column(Text, default="")
+    scope: Mapped[str] = mapped_column(String(10), default="review")   # review (the daily look at the board) | triage (one opportunity, on an event)
+
+
+class AgentLesson(Base):
+    """A lesson for one agent, learned from how people received its work (api/lessons.py). It reaches that agent's prompt only
+    after a person approves it, and leaves it when a person retires it."""
+    __tablename__ = "agent_lessons"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)   # shown as L<id>
+    agent: Mapped[str] = mapped_column(String(60), index=True)
+    text: Mapped[str] = mapped_column(Text)
+    ref: Mapped[str] = mapped_column(String(120))                      # the finding it rests on: evidence:N, work:followup_draft, manager:refused, person
+    basis: Mapped[dict] = mapped_column(JSON, default=dict)            # the numbers when it was proposed
+    why: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(12), default="proposed", index=True)  # proposed | approved | rejected | retired
+    proposed_by: Mapped[str] = mapped_column(String(100))
+    proposed_on: Mapped[date] = mapped_column(Date)
+    run_id: Mapped[Optional[str]] = mapped_column(String(64))
+    decided_by: Mapped[Optional[str]] = mapped_column(String(100))
+    decided_on: Mapped[Optional[date]] = mapped_column(Date)
+    decision_reason: Mapped[str] = mapped_column(Text, default="")
+    retired_by: Mapped[Optional[str]] = mapped_column(String(100))
+    retired_on: Mapped[Optional[date]] = mapped_column(Date)
+    retired_reason: Mapped[str] = mapped_column(Text, default="")
+    uses: Mapped[int] = mapped_column(Integer, default=0)             # how many agent runs had it in their prompt
+    last_used_on: Mapped[Optional[date]] = mapped_column(Date)
+
+
+class OpportunityMemory(Base):
+    """The manager agent's notebook for one opportunity: a running summary, and what each side promised to do, by when.
+    Every commitment carries the sentence from a note that states it, word for word (checked by code, api/memory.py)."""
+    __tablename__ = "opportunity_memory"
+    opportunity_id: Mapped[str] = mapped_column(ForeignKey("opportunities.id"), primary_key=True)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    # [{id, who, side (client|cgs), what, due (ISO date or null), quote, note_id, status (open|done|dropped),
+    #   added_on, closed_on, closed_by, closed_why, nudged_on}]
+    commitments: Mapped[list] = mapped_column(JSON, default=list)
+    updated_on: Mapped[Optional[date]] = mapped_column(Date)
+    run_id: Mapped[Optional[str]] = mapped_column(String(64))
 
 
 class InboxItem(Base):

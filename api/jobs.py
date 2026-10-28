@@ -28,6 +28,9 @@ KINDS = {
     "feedback_review": ("Feedback agent", True, "Reviews recent decisions once a week and may propose a direction change"),
     "mail_sync": ("Mail rules", False, "Checks the email threads for client replies and for drafts a person sent from Gmail"),
     "manager_review": ("Manager agent", True, "Looks over every open opportunity once a day and decides which agent should do what"),
+    "lessons_review": ("Manager agent", True, "Once a week turns the scorecard's findings into lessons for the agents, which a person approves"),
+    "manager_triage": ("Manager agent", True, "Looks closely at one opportunity when something happens: keeps its notes, decides on "
+                                              "the other agents' requests, plans the next actions and writes one message to the owner"),
 }
 TRIGGERS = ("event", "patrol", "handoff", "person", "manager")
 MAX_DEPTH = 2          # a handoff may lead to one more handoff, no further
@@ -103,6 +106,64 @@ def enqueue(s, today: date, kind: str, opp_id: str | None, trigger: str, reason:
         s.add(m.Activity(opportunity_id=opp_id, on=today, actor_type="a", text=f"{job.agent} has work ({how}): {reason}"))
     s.flush()
     return job
+
+
+def manager_mode(s, live: bool) -> str:
+    """off | shadow | on. The manager needs a real AI model, so it is always off in demo mode."""
+    return setting(s, "manager_mode") if live else "off"
+
+
+def triage(s, today: date, opp_id: str, event: str, reason: str, trigger: str = "event", requested_by: str = "",
+           request: dict | None = None) -> m.AgentJob | None:
+    """Ask the manager to look at one opportunity. Everything that happens to it the same day goes into one triage:
+    a second event adds its reason (and its request, if another agent asked for help) to the triage still waiting."""
+    waiting = open_job(s, "manager_triage", opp_id)
+    entry = {"event": event, "reason": reason}
+    if waiting and waiting.status == "queued":
+        p = dict(waiting.payload or {})
+        p["events"] = list(p.get("events", [])) + [entry]
+        if request:
+            p["requests"] = list(p.get("requests", [])) + [request]
+        waiting.payload = p
+        if reason not in (waiting.reason or ""):
+            waiting.reason = f"{waiting.reason}. Also: {reason}"[:1000]
+        return waiting
+    if waiting:  # the manager is looking at it right now: start a new triage only once that one is done
+        return None
+    return enqueue(s, today, "manager_triage", opp_id, trigger, reason,
+                   {"events": [entry], "requests": [request] if request else []}, requested_by=requested_by)
+
+
+def hand_off(s, today: date, kind: str, opp_id: str, reason: str, payload: dict | None = None, requested_by: str = "",
+             parent: m.AgentJob | None = None, live: bool = False):
+    """One agent asks another for help. With the manager on, the request goes to the manager, which accepts or declines it;
+    otherwise (or when the manager is busy with this opportunity) it is queued at once, as before.
+    Returns the job that will act on it (the triage or the work itself), or None when a limit stopped it."""
+    if opp_id and manager_mode(s, live) == "on":
+        request = {"id": new_id("rq"), "kind": kind, "reason": reason, "payload": payload or {}, "requested_by": requested_by,
+                   "parent_id": parent.id if parent else None}
+        job = triage(s, today, opp_id, "handoff", f"{requested_by} asks the {KINDS[kind][0].lower()}: {reason}",
+                     requested_by=requested_by, request=request)
+        if job:
+            return job
+    return enqueue(s, today, kind, opp_id, "handoff", reason, payload, requested_by=requested_by, parent=parent)
+
+
+def carry_out_request(s, today: date, opp_id: str, request: dict, reason: str = "", by: str = "") -> m.AgentJob | None:
+    """Queue the work another agent asked for. The handoff limits (chain length, per day) still apply."""
+    parent = s.get(m.AgentJob, request["parent_id"]) if request.get("parent_id") else None
+    who = request.get("requested_by", "")
+    return enqueue(s, today, request["kind"], opp_id, "handoff", reason or request["reason"], request.get("payload") or {},
+                   requested_by=f"{who} via {by}" if by else who, parent=parent)
+
+
+def ask_for_next_actions(s, today: date, opp_id: str, trigger: str, reason: str, requested_by: str = "", live: bool = False,
+                         event: str = "stalled") -> m.AgentJob | None:
+    """Next actions for an opportunity: with the manager on, its triage plans them (one message to the owner);
+    otherwise the next-step agent does."""
+    if manager_mode(s, live) == "on":
+        return triage(s, today, opp_id, event, reason, trigger=trigger, requested_by=requested_by)
+    return enqueue(s, today, "gap_actions", opp_id, trigger, reason, requested_by=requested_by)
 
 
 def to_inbox(s, today: date, job: m.AgentJob | None, kind: str, title: str, body: str = "", data: dict | None = None,

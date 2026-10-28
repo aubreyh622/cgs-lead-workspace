@@ -5,7 +5,10 @@ How agents find work (each piece of work is a job on the board, api/jobs.py):
   patrol   once a day (and on demand) the patrol looks at every opportunity: no reply after a week,
            a nurture review date reached, no progress for two weeks, Ready but not submitted, weekly discovery and feedback
   handoff  an agent asks another for help: the evidence agent asks the research agent to find "the CFO who approves";
-           the research agent finds news on a deferred client and asks the outreach agent for a reconnect draft
+           the research agent finds news on a deferred client and asks the outreach agent for a reconnect draft.
+           With the manager on, the request goes to the manager's triage, which accepts or declines it
+  triage   with the manager watching (shadow or on), anything that happens to an opportunity (notes, a reply, a returned
+           pack, a request, a promise past its date) gets the manager's close look that day (api/manager_triage.py)
 
 What agents may do on their own: prepare. Drafts, facts, contacts, suggestions and reminders go to a person's inbox.
 Nothing is sent, no score changes, nothing is approved and nothing is written to Insightly until a person applies it.
@@ -24,6 +27,10 @@ from api import agent_runtime as R
 from api import jobs as J
 from api import live_agents as L
 from api import manager_agent as MA
+from api import manager_triage as MT
+from api import lessons as LS
+from api import lessons_agent as LA
+from api import memory as MEM
 from api import outreach_agent as OA
 from api import research_agent as RA
 from api import models as m
@@ -101,19 +108,46 @@ def patrol(c: S.Ctx) -> list[m.AgentJob]:
             add("research_refresh", o, f"Nurture review date reached ({S.fmt(o.next_due)}): check for news")
         elif o.stage == "active":
             snoozed = o.snoozed_until and o.snoozed_until > t
-            if o.last_progress and (t - o.last_progress).days >= stall and not snoozed and not recent(c, "gap_actions", o.id, t - timedelta(days=stall)):
-                add("gap_actions", o, f"No progress recorded for {(t - o.last_progress).days} days")
+            if o.last_progress and (t - o.last_progress).days >= stall and not snoozed \
+                    and not recent(c, "gap_actions", o.id, t - timedelta(days=stall)) and not stalled_triage(c, o.id, t - timedelta(days=stall)):
+                job = J.ask_for_next_actions(s, t, o.id, "patrol", f"No progress recorded for {(t - o.last_progress).days} days",
+                                             requested_by="Patrol", live=not c.demo, event="stalled")
+                if job and job not in found:
+                    found.append(job)
             if S.calculate(S.rules_input(o))["readiness"] == "Ready" and not S.open_pack(c, o) and not recent(c, "ready_reminder", o.id, t - timedelta(days=7)):
                 add("ready_reminder", o, "The rules say Ready and the pack is not submitted")
+    if mode in ("shadow", "on") and not c.demo:  # a promise past its date goes back to the manager (at most once a week)
+        for opp_id, cm in MEM.overdue(s, t):
+            o = s.get(m.Opportunity, opp_id)
+            if not o or o.stage not in MA.OPEN_STAGES:
+                continue
+            job = J.triage(s, t, opp_id, "commitment_due", f"{cm['who']} promised to {cm['what']} by {cm['due']}; nothing recorded since",
+                           trigger="patrol", requested_by="Patrol")
+            if job:
+                MEM.mark_nudged(s, opp_id, cm["id"], t)
+                if job not in found:
+                    found.append(job)
     last = J.setting(s, "last_discovery")
     if not last or (t - date.fromisoformat(last)).days >= 7:
         add("discovery_round", None, "Weekly discovery round")
     last = J.setting(s, "last_feedback_review")
     if not last or (t - date.fromisoformat(last)).days >= 7:
         add("feedback_review", None, "Weekly review of consultant feedback")
+    last = J.setting(s, "last_lessons_review")
+    if mode in ("shadow", "on") and not c.demo and (not last or (t - date.fromisoformat(last)).days >= 7):
+        add("lessons_review", None, "Weekly lessons review by the manager agent")
     J.set_setting(s, "last_patrol", t.isoformat())
     s.add(m.Activity(opportunity_id=None, on=t, actor_type="a", text=f"Patrol: {len(found)} new piece{'s' if len(found) != 1 else ''} of work for the agents"))
     return found
+
+
+def stalled_triage(c: S.Ctx, opp_id: str, since: date) -> bool:
+    """The manager already looked at this stalled opportunity since that day."""
+    for j in c.s.scalars(select(m.AgentJob).where(m.AgentJob.kind == "manager_triage", m.AgentJob.opportunity_id == opp_id,
+                                                  m.AgentJob.created_on >= since, m.AgentJob.status.in_(("queued", "running", "done")))):
+        if any(e.get("event") == "stalled" for e in (j.payload or {}).get("events", [])):
+            return True
+    return False
 
 
 # ---------- what each agent does with a job ----------
@@ -212,8 +246,8 @@ def do_research_refresh(c, job, o):
     J.to_inbox(c.s, c.today, job, "facts", f"{len(facts)} new fact{'s' if len(facts) != 1 else ''} about {o.company.name}",
                "\n".join(f"[{f['date']}] {f['text']}" for f in facts), {"facts": facts}, opp=o)
     if o.stage == "nurture":
-        J.enqueue(c.s, c.today, "reconnect_draft", o.id, "handoff", f"News on a deferred client: {facts[0]['text'][:120]}",
-                  {"facts": facts}, requested_by=job.agent, parent=job)
+        J.hand_off(c.s, c.today, "reconnect_draft", o.id, f"News on a deferred client: {facts[0]['text'][:120]}",
+                   {"facts": facts}, requested_by=job.agent, parent=job, live=not c.demo)
     found_text = f"{len(facts)} new fact{'s' if len(facts) != 1 else ''}"
     return "done", f"{found_text}; asked the outreach agent for a reconnect draft." if o.stage == "nurture" else f"{found_text}."
 
@@ -336,6 +370,120 @@ def do_manager_review(c, job, o):
     return "done", f"{mode.capitalize()} mode: {shown}. {result.get('summary', '')}"[:300]
 
 
+def do_lessons_review(c, job, o):
+    """The manager's weekly lessons review (api/lessons_agent.py). Lessons it proposes wait for a person's approval."""
+    J.set_setting(c.s, "last_lessons_review", c.today.isoformat())
+    found = LS.findings(c.s, c.today)
+    if not found:
+        return "done", "Nothing stands out in how people received the agents' work: no lessons this week."
+    trace: list[dict] = []
+    record: dict = {"proposed": []}
+
+    def live(p):
+        spec, rec = LA.lessons_agent(c, found)
+        record.update(rec)
+        out = R.run(spec, p, LA.task(c.today), may_call=may_call(c, p))
+        trace.extend(out.trace)
+        return (out.result or {"summary": out.reason}), out.usage
+
+    result, run_id = S.run_agent(c, job.agent, None, "lessons-demo", lambda: {"summary": "The manager agent needs a real AI model."},
+                                 subject="Weekly lessons", live=live, live_prompt=LA.VERSION, trace=trace)
+    rows = [c.s.get(m.AgentLesson, i) for i in record["proposed"]]
+    for x in rows:
+        x.run_id = run_id
+    if rows and J.manager_mode(c.s, not c.demo) == "on":
+        J.to_inbox(c.s, c.today, job, "lessons", f"{len(rows)} lesson{'s' if len(rows) != 1 else ''} for the agents to review",
+                   "\n".join(f"- [{LS.label(x)}] {x.agent}: {x.text}" for x in rows),
+                   {"lessons": [x.id for x in rows]}, owner=None)
+    n = len(rows)
+    return "done", (f"{len(found)} finding{'s' if len(found) != 1 else ''}; {n} lesson{'s' if n != 1 else ''} proposed for a person to approve. "
+                    + str(result.get("summary", "")))[:300]
+
+
+def do_manager_triage(c, job, o):
+    """The manager's close look at one opportunity (api/manager_triage.py). Shadow mode records; on mode carries it out.
+    If it cannot finish, nothing is lost: the other agents' requests are carried out as asked, and next actions that were
+    wanted go to the next-step agent."""
+    payload = job.payload or {}
+    events, requests = payload.get("events", []), payload.get("requests", [])
+    mode = J.manager_mode(c.s, not c.demo)
+    if o is None or o.stage not in MA.OPEN_STAGES:
+        return "skipped", f"Stage is {o.stage if o else 'unknown'}: nothing to decide."
+    if mode not in ("shadow", "on"):
+        note = fallback(c, job, o, requests, events, "the manager is off")
+        return "skipped", f"The manager agent is off.{note}"
+    trace: list[dict] = []
+    record: dict = {"decisions": [], "suggestions": [], "message": "", "answered": {}}
+    status = {"done": False, "reason": ""}
+
+    def live(p):
+        spec, rec = MT.triage_agent(c, o, mode, events, requests)
+        record.update(rec)  # the lists are shared, so what it decided is known even if the run fails part way
+        out = R.run(spec, p, MT.task(o), may_call=may_call(c, p))
+        record.update(rec)  # and the message, a plain string, as it stands at the end
+        trace.extend(out.trace)
+        status["done"], status["reason"] = out.status == "done", out.reason
+        return (out.result or {"summary": out.reason}), out.usage
+
+    try:
+        result, run_id = S.run_agent(c, job.agent, o, "triage-demo", lambda: {"summary": "The manager agent needs a real AI model."},
+                                     subject=f"Triage: {o.company.name}", live=live, live_prompt=MT.VERSION, trace=trace)
+    except S.ActionError as e:
+        note = fallback(c, job, o, requests if mode == "on" else [], events if mode == "on" else [], f"the manager could not finish ({e})")
+        return "done", f"The manager could not finish: {e}.{note}"[:300]
+    for d in record["decisions"]:
+        c.s.add(m.ManagerDecision(on=c.today, mode=mode, run_id=run_id, scope="triage", **d))
+    sent = []
+    if record["suggestions"] or record["message"]:
+        if mode == "on":
+            sent.append(owner_message(c, job, o, record["suggestions"], record["message"]))
+        if record["suggestions"]:
+            c.s.add(m.ManagerDecision(on=c.today, mode=mode, run_id=run_id, scope="triage", kind="gap_actions", opportunity_id=o.id,
+                                      reason="; ".join(x["title"] for x in record["suggestions"])[:600],
+                                      outcome="suggested" if mode == "on" else "recorded"))
+        if record["message"]:
+            c.s.add(m.ManagerDecision(on=c.today, mode=mode, run_id=run_id, scope="triage", kind="note", opportunity_id=o.id,
+                                      reason=record["message"][:600], outcome="sent" if mode == "on" else "recorded"))
+    note = ""
+    if not status["done"] and mode == "on":  # stopped early (the budget, the step limit): carry out what it left undecided
+        left = [q for q in requests if q["id"] not in record["answered"]]
+        wanted = [] if record["suggestions"] else events
+        note = fallback(c, job, o, left, wanted, f"the manager stopped early ({status['reason']})")
+    n_sug, n_ans = len(record["suggestions"]), len(record["answered"])
+    parts = [f"{mode.capitalize()} mode"] + ([f"{n_sug} next action{'s' if n_sug != 1 else ''}"] if n_sug else [])         + ([f"{n_ans} request{'s' if n_ans != 1 else ''} answered"] if n_ans else []) + (["one message to the owner"] if sent else [])
+    return "done", (", ".join(parts) + f". {result.get('summary', '')}{note}")[:300]
+
+
+def owner_message(c, job, o, suggestions: list[dict], message: str) -> m.InboxItem:
+    """One message to the owner: the manager's note and its next actions together. It replaces the unread messages from the
+    manager or the next-step agent about the same opportunity, so the owner reads one voice."""
+    for old in c.s.scalars(select(m.InboxItem).where(m.InboxItem.opportunity_id == o.id, m.InboxItem.status == "new",
+                                                     m.InboxItem.kind.in_(("actions", "advice")))):
+        old.status, old.decided_by = "dismissed", "Replaced by a newer message from the manager"
+    if suggestions:
+        S.save_suggestions(c, o, suggestions, "Manager agent")
+        lines = ([message, ""] if message else []) + [f"- {x['title']}" for x in suggestions]
+        return J.to_inbox(c.s, c.today, job, "actions", f"Manager: {len(suggestions)} next action{'s' if len(suggestions) != 1 else ''} for {o.company.name}",
+                          "\n".join(lines), {"why": job.reason, "message": message, "suggestions": suggestions}, opp=o)
+    return J.to_inbox(c.s, c.today, job, "advice", f"Manager: {o.company.name}", message, {"why": message}, opp=o)
+
+
+def fallback(c, job, o, requests: list[dict], events: list[dict], why: str) -> str:
+    """Carry out what a triage could not decide: the requests as asked; next actions by the next-step agent."""
+    done = []
+    for q in requests:
+        if o is not None and J.carry_out_request(c.s, c.today, o.id, q):
+            done.append(q["kind"])
+    wanted = [e for e in events if e.get("event") in MT.WANTS_ACTIONS]
+    if wanted and o is not None and o.stage in S.QUAL_STAGES:
+        if J.enqueue(c.s, c.today, "gap_actions", o.id, job.trigger if job.trigger in ("event", "patrol") else "event",
+                     wanted[0].get("reason", job.reason), requested_by="Manager agent"):
+            done.append("gap_actions")
+    if o is not None and done:
+        S.log(c, o.id, "s", f"Because {why}, the board carried out without the manager: {', '.join(done)}")
+    return f" Carried out without the manager: {', '.join(done)}." if done else ""
+
+
 def do_mail_sync(c, job, o):
     res = S.sync_mail(c)
     if res.get("off"):
@@ -350,7 +498,7 @@ def do_mail_sync(c, job, o):
 HANDLERS = {"followup_draft": do_followup_draft, "reconnect_draft": do_reconnect_draft, "research_refresh": do_research_refresh,
             "person_lookup": do_person_lookup, "gap_actions": do_gap_actions, "defer_nurture": do_defer_nurture,
             "ready_reminder": do_ready_reminder, "discovery_round": do_discovery_round, "feedback_review": do_feedback_review,
-            "manager_review": do_manager_review, "mail_sync": do_mail_sync}
+            "manager_review": do_manager_review, "manager_triage": do_manager_triage, "lessons_review": do_lessons_review, "mail_sync": do_mail_sync}
 assert set(HANDLERS) == set(J.KINDS)
 
 

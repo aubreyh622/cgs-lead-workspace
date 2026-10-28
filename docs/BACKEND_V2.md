@@ -52,10 +52,10 @@ Each agent is named after its job. The blueprint's ids (A1-A4) are kept here onl
 | Outreach agent | Writes first emails, follow-ups and reconnect drafts | 5 | `api/outreach_agent.py` | A1 |
 | Reply classifier | Labels a client reply (meet, need, defer, decline ...) | 5-6 | `api/live_agents.py` | A2 (reply part) |
 | Evidence agent | Reads conversation notes and proposes scores, conditions and blockers with quotes | 6 | `api/evidence_agent.py` | A2 + A3 |
-| Next-step agent | Suggests up to three next actions for the open gaps | 7 | `api/next_step_agent.py` | A4 |
+| Next-step agent | Suggests up to three next actions for the open gaps (with the manager on: only the person's button and the fallback) | 7 | `api/next_step_agent.py` | A4 |
 | Reminder rules | Not AI: reminds the owner when Ready, suggests nurture on the month the client named | 6-8 | `api/autonomy.py` | A4 (reminders) |
 | Feedback agent | Reviews accept and reject reasons weekly and may propose a direction change | 1 | `api/live_agents.py` | |
-| Manager agent | Looks over every open opportunity daily, hands work to the agents, writes notes to owners | all | `api/manager_agent.py` | |
+| Manager agent | Runs the agent team: a daily look over every open opportunity, and a close look (triage) at one opportunity when something happens to it. Remembers each opportunity, decides on the agents' requests to each other, plans next actions, writes each owner one message | all | `api/manager_agent.py`, `api/manager_triage.py` | |
 
 Prompt versions follow the same names (`outreach-agent-1.0`, `evidence-agent-1.0`, `next-step-agent-1.0`, `research-agent-1.1`). Agent runs saved before the rename keep their old names in the history.
 
@@ -66,6 +66,8 @@ Prompt versions follow the same names (`outreach-agent-1.0`, `evidence-agent-1.0
 3. Open http://127.0.0.1:8800/ for the workspace and http://127.0.0.1:8800/docs for the interactive API page.
 
 From a terminal: `python -m api.main`. Tests: `python -m pytest -q` (the old P0–P5 suites plus `tests/v2`).
+
+Live checks with the real AI on the synthetic internet: `Check AI.cmd`, `Check Research.cmd`, `Check Workflow.cmd`, `Check Agents.cmd`, and `Check Orchestrator.cmd` (`python -m api.check_orchestrator`: the manager's triage, memory, one message per owner, a returned pack and lessons; about 40 AI calls, 5 minutes; result in `runtime/orchestrator-check-result.txt`).
 
 ## AI agents (step 5)
 
@@ -90,14 +92,16 @@ Agents work like employees: they notice work, do it, and hand the result to a pe
 | How | Example | Who acts |
 |---|---|---|
 | Event | A reply says "not now" | Reminder rules suggest nurture until the month the client named |
-| Event | The approver returns a pack | Next-step agent suggests next actions, or passes on the approver's question |
+| Event | The approver returns a pack | Next-step agent suggests next actions, or passes on the approver's question (the manager's triage when the manager is on) |
 | Event | The rules now say Ready | Reminder rules remind the owner to submit |
 | Patrol (daily) | No reply 7 days after the email | Outreach agent writes a follow-up draft |
 | Patrol (daily) | A nurture review date is reached | Research agent checks for news since the last brief |
-| Patrol (daily) | No progress for 14 days | Next-step agent suggests next actions |
+| Patrol (daily) | No progress for 14 days | Next-step agent suggests next actions (the manager's triage when the manager is on) |
+| Patrol (daily) | A promise in the manager's memory is past its date | The manager's triage (shadow or on) |
 | Patrol (weekly) | — | Discovery agent runs a round; feedback agent reviews decisions |
 | Handoff | Notes say "the CEO would decide" and the CEO is not a contact | Evidence agent asks the research agent to find the CEO |
 | Handoff | The research agent finds news on a deferred client | It asks the outreach agent for a reconnect draft that cites the news |
+| Triage | Notes, a reply, a returned pack, a request or an overdue promise, with the manager shadow or on | The manager looks at that opportunity (see "Manager as orchestrator") |
 
 - **Task board** (`agent_jobs`): every piece of work, with who does it, why, who asked, and the result.
 - **Inbox** (`inbox_items`): what agents prepared for each owner (or the team). A person applies, finishes or dismisses each item. Applying is the only way anything changes: facts join the brief, a contact is added, the opportunity moves to nurture. Drafts are never sent by the workspace.
@@ -332,6 +336,132 @@ For the brief, `RESEARCH_ENGINE` in `.env` picks the engine:
 - In the server the agent runs in a background thread; `POST /api/research/sync` (or the worker, every 30 seconds) collects the
   brief. Every step is saved with the run (`GET /api/agent-runs/{id}`). A run lives in memory: after a restart, retry it.
 
+## Manager as orchestrator (multi-agent step 7, Phases 1-3)
+
+Goal: the manager runs the agent team. It remembers each opportunity, decides on the agents' requests to each other, and
+plans the next actions itself, so each owner hears one voice. Phase 1 adds the triage and the memory; Phase 2 adds agent
+scorecards; Phase 3 adds lessons: the manager proposes them from the scorecard, a person approves them, and approved
+lessons join the agents' prompts.
+
+**Triage** (`api/manager_triage.py`, prompt version `manager-triage-1.0`, job kind `manager_triage`). The daily review looks at
+the whole board once a day; the triage looks at one opportunity the day something happens to it. Everything that happens to
+it the same day goes into one triage (`api/jobs.py` `triage()`).
+
+| What happens | When the manager is shadow or on | When the manager is on |
+|---|---|---|
+| New conversation notes (analysed or not) | triage | triage |
+| A client reply is recorded | triage | triage |
+| The approver returns a pack | triage, beside the next-step agent | triage instead of the next-step agent |
+| No progress for 14 days (patrol) | next-step agent, as before | triage instead of the next-step agent |
+| A promise in the manager's memory is past its date (patrol) | triage, at most once a week per promise | same |
+| The daily review delegates `gap_actions` | recorded | the reason is added to that opportunity's triage |
+| An agent asks another for help (handoff) | queued at once, as before | goes to the triage as a request |
+
+In one run the triage:
+
+| Tool | What it does | Checked by code |
+|---|---|---|
+| `case` | The opportunity, what happened, notes (6 latest), gaps, tasks, contacts, unread inbox, recent agent work, its memory, the requests | |
+| `remember` | Rewrites its summary of the opportunity | 20-1,200 characters; required before `finish` |
+| `add_commitment` | Remembers a promise: who (client or CGS), what, due date, the sentence and its note id | The quote is in that note word for word; the date is valid and not before the note; no duplicate; at most 10 open |
+| `close_commitment` | done or dropped, with the reason | Only an open one; a reason |
+| `answer_request` | Accepts or declines another agent's request | Every request must be answered before `finish`. Accepted work is queued as a handoff, so the chain and per-day limits still apply |
+| `suggest_action` | Up to three next actions, one per gap | The next-step agent's checks (`check_suggestion`): open gap, approver first after a returned pack, no repeat of an open task, no fees or promises |
+| `delegate` | Other work (follow-up, refresh, person lookup, nurture, Ready reminder) | The daily review's checks (`delegation_refusal`); at most 3 per triage |
+| `message_owner` | What the owner needs to know or do now | 10-800 characters; no fees or promises |
+| `search_library` | The CGS library, for the service-fit gap | The manager may now read the library (toolkit ceiling) |
+
+- **One voice.** The next actions and the message go to the owner as one inbox item (kind `actions`, or `advice` with no
+  actions), which replaces the unread messages from the manager or the next-step agent about the same opportunity. The daily
+  review may not write a separate note for an opportunity that gets a triage that day.
+- **Nothing is lost when the triage fails.** If its AI request fails, or it stops before `finish` (budget, step limit), the
+  requests it did not answer are carried out as asked, and next actions that were wanted (returned pack, stall, the daily
+  review's request) go to the next-step agent. The failed run stays visible in `agent_runs`.
+- **Shadow mode** records every triage decision (`manager_decisions`, `scope` = `triage`) and keeps the memory, but queues
+  nothing and sends nothing. `GET /api/manager/compare` compares only the daily review with the rules.
+- **The next-step agent stays** for the person's button (`POST /api/opportunities/{id}/suggestions`), for when the manager is off
+  or in shadow, and as the fallback. It is no longer a separate voice when the manager is on.
+
+**Memory** (`api/memory.py`, table `opportunity_memory`). One notebook per opportunity: a summary and the promises each side
+made. The daily review sees a short version on the board (`your_memory`: summary, open promises, overdue ones) and the full
+version when it looks closer. An open promise past its date sends the opportunity back to the manager on the next patrol, so
+a promise nobody kept (for example "Daniel will talk to the CEO within two weeks") is noticed within days.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/opportunities/{id}/memory` | The summary and every promise, with `overdue` and `daysOverdue` |
+| POST | `/api/opportunities/{id}/commitments/{cid}` | A person closes a promise: `{"status": "done" \| "dropped", "why": "..."}` |
+| GET | `/api/manager/decisions?scope=triage&opportunity=` | The triage's decisions (`scope=review` for the daily review's) |
+
+- The daily review's prompt is `manager-agent-1.2` (1.1: memory and triage; 1.2: scorecard); the triage's is `manager-triage-1.2` (1.1: scorecard; 1.2: after the live run, accepting a request is not followed by a second delegation of the same work, work waiting in the owner's inbox is not suggested again, and the message does not repeat the next actions).
+- Found while building it: the "no fees or promises" check refused any dollar amount, so a next action could never repeat
+  the approver's question "Who signs off above $250K?". An amount already in the approver's question or the notes is now
+  allowed; a new amount is still refused (`promises()` in `api/next_step_agent.py`). This also fixes the next-step agent.
+- Live run (28 Oct 2026, Claude `claude-haiku-5-5`, synthetic web and data only; log in `runtime/orchestrator-live-result.txt`):
+  - Orchard Lane: the evidence agent's request to find "the CEO" went to the triage, which accepted it; the research agent
+    found Kate Morrison. Both promises were kept with their quotes, Daniel's due 21 Nov (two weeks from the 7 Nov call).
+    On 22 Nov the patrol merged "15 days without progress" and "promise overdue" into one triage, which asked the owner for
+    a nudge; the daily review's separate note was refused (one voice).
+  - Northstar: after "Who signs off above $250K?" the triage answered the approver first, asked for the approver to be looked
+    up, and wrote one message; the next-step agent fallback was not needed.
+  - Lessons: from five synthetic reviewer decisions on N, the manager proposed one lesson grounded in the reviewers' reasons
+    (N 3 when the notes state a business impact, and check the quote is this client's). After approval the evidence agent
+    still proposed N 2 for Northwind's notes (no impact stated) and N 4 for Ardent's (impact, objective and support scope stated).
+  - `Check Orchestrator.cmd` (`api/check_orchestrator.py`) repeats these three stories as 16 pass/fail checks; it passed with
+    Claude on 28 Oct 2026, and `tests/v2/test_manager_triage.py` runs it offline with a fake AI. The memory holds client
+    information, so the SoW §9 data rules apply to it as to the notes.
+
+**Scorecards (Phase 2)** (`api/scorecard.py`, no AI). How people received the agents' work, from records the workspace
+already keeps, over the last 60 days (`days=` to change):
+
+| Part | Source | What it shows |
+|---|---|---|
+| `work`, `owners` | `inbox_items`, grouped by the job that produced each item (`research_refresh`, `followup_draft`, `manager_triage` ...); per owner in `owners` | prepared; used (applied or done); dismissed by a person; ignored (expired unread); replaced by a newer version; still waiting; `usefulRate` and `ignoredRate` over the judged ones (used + dismissed + ignored) |
+| `evidence` | `proposals` (by the date of their note) and hand-entered `evidence` | per key: decided, accepted, raised (the person moved it up: the agent was too low), lowered, rejected, and values entered by hand where the agent proposed nothing. `findings` name a key reviewers often raise, or often lower or reject |
+| `reliability` | `agent_runs`, `agent_jobs` | runs, failures and AI calls per agent; jobs per kind by status |
+| `manager` | `manager_decisions` | the manager's own decisions by scope, mode and outcome |
+
+- A rate is judged only on at least 5 decisions (`enough`); below that nothing is concluded.
+- The manager uses it. The daily review has a `scorecard` tool (each owner's reception of each kind of work, judged rows
+  only); the triage's `case` includes `how_the_owner_received_agent_work`. When it hands an owner work they used at most a
+  quarter of, or left unread at least half of, `delegate` and `answer_request` return a `caution` sentence and the decision's
+  detail records it. It is a caution, not a refusal: the manager still decides, and the decision log shows it was warned.
+- The evidence part puts a number on "is the evidence agent too conservative": a key that reviewers often raise, or often
+  enter by hand where the agent proposed nothing, is scored too low. It is for people (and Phase 3), not shown to the manager.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/manager/scorecard?days=60&owner=` | The whole scorecard (`owner` limits the work rows to one owner) |
+
+**Lessons (Phase 3)** (`api/lessons.py` rules, `api/lessons_agent.py` the weekly review, table `agent_lessons`). How the
+system learns, with a person in the loop:
+
+| Step | Who | What happens | Checked by code |
+|---|---|---|---|
+| 1. Findings | code | From the scorecard: an evidence key reviewers often raise, lower or reject, or enter by hand (`evidence:N`); a kind of work owners mostly dismiss or ignore (`work:followup_draft`); manager decisions the code often refuses (`manager:refused`, at least 30% of 5+). Each comes with its numbers and the reviewers' own words (edit and reject reasons, refusal details) | Only judged rows (5+ decisions) |
+| 2. Proposal | the manager, weekly (job `lessons_review`, prompt `manager-lessons-1.0`), or a person (`POST /api/lessons`) | At most 3 lessons per review: one or two sentences to one agent, saying what to do in which situation. No findings: no AI request | The lesson rests on a listed finding and addresses that finding's agent; 20-400 characters; no "ignore, override, bypass, skip, disregard"; no fees or promises; not a near-copy of an approved or waiting lesson |
+| 3. Approval | a person (only `CGS_ADMINS` when set) | Approve, or reject with a reason the manager reads next week | At most 5 approved lessons per agent: retire one first |
+| 4. Prompt | code | Approved lessons are added at the end of the agent's prompt, after every rule, as "[L3] ...", under a line saying the rules come first. Each use is counted (`uses`, `lastUsedOn`) | Only approved lessons; only the evidence, outreach and next-step agents and the manager (daily review and triage) take lessons |
+| 5. Effect | code, then a person | `sinceApproved` shows the finding's numbers over the days since approval, next to the numbers it was proposed on (`basis`). A person retires a lesson that no longer helps | Retiring needs a reason |
+
+- The patrol queues the review once a week when the manager is shadow or on (live mode only); `POST /api/lessons/review`
+  runs it now. With the manager on, the proposed lessons are announced in the team inbox (kind `lessons`); approving happens
+  only through the lessons endpoints.
+- Lessons never loosen a rule: quotes stay word for word, inferences still cannot mark a condition met, people still decide.
+  The code checks above enforce what it can; the person approving is the final check.
+- Not done yet: the AI exam (`AI Exam.cmd`) tests the single-step evidence prompt, which does not take lessons. Before
+  approving an evidence lesson, test it on the exam cases by hand; adding lessons to the exam is a follow-up. The research
+  and discovery agents do not take lessons yet.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/lessons?status=&agent=` | Every lesson with its basis, decision, uses and `sinceApproved` |
+| GET | `/api/lessons/findings` | What the weekly review would read |
+| POST | `/api/lessons` | A person proposes a lesson: `{"agent", "text", "why"}` (it still needs approval) |
+| POST | `/api/lessons/{id}/decision` | `{"decision": "approve" \| "reject", "reason"}` (a reason is required to reject) |
+| POST | `/api/lessons/{id}/retire` | `{"reason"}`: takes an approved lesson out of the prompt |
+| POST | `/api/lessons/review` | Queue the manager's lessons review now (live mode) |
+
 ## Problem-based research direction (direction agent)
 
 The research direction can list **problems**: what a client would be struggling with, the public signals that suggest a
@@ -381,7 +511,8 @@ Permissions have three layers, strongest first:
    | Outreach agent | on | on | allowed | - | - |
    | Evidence agent | - | on | allowed | - | - |
    | Next-step agent | - | on | - | - | - |
-   | Manager agent, Feedback agent, Reply classifier | - | - | - | - | - |
+   | Manager agent | - | on | - | - | - |
+   | Feedback agent, Reply classifier | - | - | - | - | - |
 
 2. **Switches people set in the workspace** (for a management screen; stored in `connector_switches`, every change kept in
    `permission_changes` and the activity log):

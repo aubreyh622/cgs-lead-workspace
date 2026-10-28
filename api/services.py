@@ -1081,6 +1081,7 @@ def record_reply(c: Ctx, opp_id: str, text: str, on: date | None) -> dict:
         return {"replyLabel": "pending", "warning": str(e)}
     o.reply_label = label
     log(c, o.id, "a", f"Evidence agent labeled the reply: {label}")
+    notify_manager(c, o, "reply", f"The client replied ({label})")
     if label == "defer":
         J.enqueue(c.s, c.today, "defer_nurture", o.id, "event", "The client's reply says not now, but later", requested_by="Reply classifier")
     return {"replyLabel": label}
@@ -1095,6 +1096,7 @@ def add_note(c: Ctx, opp_id: str, type_: str, on: date | None, text: str, analyz
     log(c, o.id, "h", f"{type_} added by {c.actor}")
     c.s.flush()
     if not analyze:
+        notify_manager(c, o, "notes", f"New {type_.lower()} from {c.actor}")
         return {"noteId": note.id, "proposals": 0}
     c.s.commit()  # the original text is saved even if analysis fails
     star = o.company_id == "corvane" and o.title.startswith("Scaling AI")
@@ -1142,10 +1144,11 @@ def add_note(c: Ctx, opp_id: str, type_: str, on: date | None, text: str, analyz
     for ask in asks:
         if role_known(c, o.company_id, ask["role"]):
             continue
-        job = J.enqueue(c.s, c.today, "person_lookup", o.id, "handoff", f"Find the {ask['role']} at {o.company.name}, who must approve or decide",
-                        {"role": ask["role"], "quote": ask["quote"]}, requested_by="Evidence agent")
+        job = J.hand_off(c.s, c.today, "person_lookup", o.id, f"Find the {ask['role']} at {o.company.name}, who must approve or decide",
+                         {"role": ask["role"], "quote": ask["quote"]}, requested_by="Evidence agent", live=not c.demo)
         if job:
             handoffs.append(ask["role"])
+    notify_manager(c, o, "notes", f"New {note.type.lower()} from {c.actor}")
     return {"noteId": note.id, "proposals": kept, "droppedForInvalidQuote": dropped, "droppedOther": others, "handoffs": handoffs}
 
 
@@ -1302,12 +1305,23 @@ def suggest_actions(c: Ctx, opp_id: str, why: str = "", budget=None) -> int:
 
     items, _ = run_agent(c, "Next-step agent", o, "next-step-demo-1.0", lambda: A.next_actions(gaps, taken),
                          subject=o.company.name, live=live, live_prompt=NS.VERSION, trace=trace)
+    save_suggestions(c, o, items, "Action agent")
+    return len(items)
+
+
+def save_suggestions(c: Ctx, o: m.Opportunity, items: list[dict], by: str) -> None:
+    """The new next actions replace the open ones (at most three at a time)."""
     for x in c.s.scalars(select(m.Suggestion).where(m.Suggestion.opportunity_id == o.id, m.Suggestion.status == "open")):
         x.status = "dismissed"
     for it in items:
-        c.s.add(m.Suggestion(id=new_id("sg"), opportunity_id=o.id, **it))
-    log(c, o.id, "a", f"Action agent suggested {len(items)} next action{'s' if len(items) != 1 else ''} from the open gaps")
-    return len(items)
+        c.s.add(m.Suggestion(id=new_id("sg"), opportunity_id=o.id, **{k: it[k] for k in ("title", "reason", "question", "gap_key")}))
+    log(c, o.id, "a", f"{by} suggested {len(items)} next action{'s' if len(items) != 1 else ''} from the open gaps")
+
+
+def notify_manager(c: Ctx, o: m.Opportunity, event: str, reason: str) -> None:
+    """Something happened to an opportunity: when the manager is watching (shadow or on), it looks at it today."""
+    if J.manager_mode(c.s, not c.demo) in ("shadow", "on"):
+        J.triage(c.s, c.today, o.id, event, reason, requested_by=c.actor)
 
 
 def suggestion_to_task(c: Ctx, sug_id: str, title: str | None, side: str, assignee: str, due: date) -> str:
@@ -1430,7 +1444,10 @@ def decide_pack(c: Ctx, pack_id: str, b) -> dict:
         o.next_action, o.next_due = q, b.due or c.today + timedelta(days=7)
         rec("Returned", q)
         log(c, o.id, "h", f"Returned at Step 8 by {c.actor}: {q}")
-        J.enqueue(c.s, c.today, "gap_actions", o.id, "event", f"The approver returned the pack: {q}", requested_by=c.actor)
+        J.ask_for_next_actions(c.s, c.today, o.id, "event", f"The approver returned the pack: {q}", requested_by=c.actor,
+                               live=not c.demo, event="pack_returned")
+        if J.manager_mode(c.s, not c.demo) == "shadow":
+            notify_manager(c, o, "pack_returned", f"The approver returned the pack: {q}")
     elif b.decision == "nurture":
         pk.status, o.stage = "nurture", "nurture"
         o.next_action, o.next_due = "Revisit the opportunity", b.review_on or c.today + timedelta(days=60)

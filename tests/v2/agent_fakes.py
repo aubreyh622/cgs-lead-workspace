@@ -34,8 +34,12 @@ def results(payload) -> list[tuple[str, dict]]:
     return out
 
 
-def play(payload, *, evidence=None, draft=None, manager=None, discovery=None, actions=None, research=None):
+def play(payload, *, evidence=None, draft=None, manager=None, discovery=None, actions=None, research=None, triage=None, lessons=None):
     names = tool_names(payload)
+    if "case" in names:  # the manager's triage of one opportunity
+        return play_triage(payload, triage or default_triage)
+    if "propose_lesson" in names:  # the manager's weekly lessons review
+        return play_lessons(payload, lessons or default_lessons)
     if "add_problem" in names:  # the direction agent
         return play_direction(payload)
     if "add_news" in names:  # the research agent's refresh task
@@ -84,6 +88,50 @@ def play_manager(payload, plan):
         if calls:
             return turn(*calls)
     return turn(("finish", {"summary": "Reviewed the board."}))
+
+
+def default_triage(case):
+    """A careful manager: write the summary, accept every request, suggest one action per blocking gap (up to three)."""
+    o = case["opportunity"]
+    calls = [("remember", {"summary": f"{o['company']} is in stage {o['stage']}. Owner {o['owner']}. "
+                                      f"Latest: {case['what_happened'][0]['event'] if case['what_happened'] else 'nothing new'}."})]
+    calls += [("answer_request", {"request_id": q["request_id"], "decision": "accept", "reason": "It moves the opportunity forward."})
+              for q in case["requests"]]
+    gaps = [g for g in case["open_gaps"] if g["gap_key"] == "approver"] + [g for g in case["open_gaps"] if g["gap_key"] != "approver" and g["blocks_readiness"]]
+    calls += [("suggest_action", {"gap_key": g["gap_key"], "title": f"Ask about {g['label'].lower()}", "reason": g["label"],
+                                  "question": g["question"]}) for g in gaps[:3]]
+    return calls
+
+
+def play_triage(payload, plan):
+    """case -> what plan(case) returns ([(tool, args)]) -> finish."""
+    done = results(payload)
+    if not done:
+        return turn(("case", {}))
+    if len(done) == 1:
+        calls = plan(done[0][1])
+        if calls:
+            return turn(*calls)
+    return turn(("finish", {"summary": "Looked at the opportunity."}))
+
+
+def default_lessons(found):
+    """One careful lesson for each finding, addressed to the finding's agent."""
+    return [{"ref": f["ref"], "agent": f["agent"], "why": f"Answers the finding: {f['summary']}"[:300],
+             "text": f"Where a case looks like finding {f['ref']}, read the reviewers' reasons before you decide, and say which anchor you chose."}
+            for f in found["findings"]]
+
+
+def play_lessons(payload, plan):
+    """findings -> lessons -> propose what plan(findings result) returns -> finish."""
+    done = results(payload)
+    if not done:
+        return turn(("findings", {}), ("lessons", {}))
+    if len(done) == 2:
+        calls = [("propose_lesson", x) for x in plan(done[0][1])]
+        if calls:
+            return turn(*calls)
+    return turn(("finish", {"summary": "Proposed the lessons worth a review."}))
 
 
 def play_discovery(payload, pick):

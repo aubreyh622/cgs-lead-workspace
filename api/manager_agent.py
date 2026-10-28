@@ -13,14 +13,16 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from api import agent_runtime as R
 from api import jobs as J
+from api import memory as MEM
 from api import models as m
+from api import scorecard as SC
 from backend.rules import calculate
 
-VERSION = "manager-agent-1.0"
+VERSION = "manager-agent-1.2"
 MODES = ("off", "shadow", "on")
 OPEN_STAGES = ("identified", "contacted", "active", "approval", "nurture")
 MAX_DELEGATIONS = 8
@@ -57,10 +59,16 @@ How to work:
   nobody answered, news that matters to a deferred client.
 - Delegate only with a concrete reason taken from the board or the opportunity. Do not repeat work an agent did recently.
 - Every delegation costs AI calls. At most {max_delegations} per review; fewer is better.
-- Who tells the owner what: the next-step agent (gap_actions) turns open qualification gaps into concrete next actions,
-  and the reminder rules send Ready reminders and nurture suggestions. Never write a note that lists next actions for gaps:
-  delegate gap_actions with your reason instead (if it is already on the board, your reason is added to it).
-  Code refuses a note for an opportunity the next-step agent is already working on today.
+- scorecard shows how each owner received each kind of agent work lately: used, dismissed, or left unread until it expired.
+  Work an owner keeps dismissing or ignoring is worth little to them: hand it to them only with a strong reason, or tell
+  them what you noticed instead. delegate also warns you (caution) when that is the case.
+- Who tells the owner what: gap_actions turns open qualification gaps into concrete next actions (the next-step agent, or,
+  when you are on, your own close look at that one opportunity, which also writes its owner one message). The reminder
+  rules send Ready reminders and nurture suggestions. Never write a note that lists next actions for gaps: delegate
+  gap_actions with your reason instead (if it is already on the board, your reason is added to it).
+  Code refuses a note for an opportunity that already gets next actions or a close look from you today.
+- your_memory on the board is what you noted during your close looks at each opportunity: a summary and the promises each
+  side made, with dates. A promise past its date is worth a decision (delegate, or tell the owner).
 - Your notes are for what neither covers and only a person can act on: work waiting on the owner (a draft or suggestion
   nobody reviewed, a pack that is out of date), a client message nobody acted on, an opportunity stuck so long it needs a
   decision (keep going, nurture or close).
@@ -75,13 +83,37 @@ When you are done, call finish with a short summary.""".replace("{team}", team()
     .replace("{STALLED_DAYS}", str(STALLED_DAYS))
 
 
+def delegation_refusal(c, o: m.Opportunity, kind: str, role: str = "") -> str | None:
+    """Why this work may not be handed out for this opportunity now, or None. The daily review and the triage share it."""
+    from api.services import open_pack, role_known, rules_input
+    today = c.today
+    if o.stage not in DELEGABLE[kind]:
+        return f"{kind} does not fit an opportunity in stage {o.stage} (allowed: {', '.join(DELEGABLE[kind])})."
+    if kind == "person_lookup" and not role:
+        return "person_lookup needs the role (job title) to find, for example CFO."
+    if kind == "person_lookup" and role_known(c, o.company_id, role):
+        return f"The workspace already has a named {role} at {o.company.name}."
+    if kind == "ready_reminder" and (calculate(rules_input(o))["readiness"] != "Ready" or open_pack(c, o)):
+        return "The rules do not say Ready, or a pack is already submitted."
+    if kind == "followup_draft" and (not (r := c.s.get(m.Outreach, o.id)) or not r.sent_on or r.reply_on):
+        return "A follow-up needs a sent email without a reply."
+    recent = c.s.scalars(select(m.AgentJob).where(  # the same work, finished before today: do not redo it yet
+        m.AgentJob.kind == kind, m.AgentJob.opportunity_id == o.id, m.AgentJob.status == "done",
+        m.AgentJob.created_on >= today - timedelta(days=RECENT_DAYS), m.AgentJob.created_on < today)
+        .order_by(m.AgentJob.created_on.desc())).first()
+    if recent:
+        return (f"{kind} was already done for {o.company.name} on {recent.created_on.isoformat()} "
+                f"(within {RECENT_DAYS} days). Do not repeat it; tell the owner if a person needs to act.")
+    return None
+
+
 def _days(a: date | None, b: date) -> int | None:
     return (b - a).days if a else None
 
 
 def manager_agent(c, mode: str) -> tuple[R.AgentSpec, dict]:
     """Returns the agent and its record: {"decisions": [{kind, opportunity_id, reason, outcome, detail}]}."""
-    from api.services import job_title, open_pack, role_known, rules_input
+    from api.services import job_title, open_pack, rules_input
     today = c.today
     record = {"decisions": []}
     per_opp: dict[str, int] = {}
@@ -116,6 +148,7 @@ def manager_agent(c, mode: str) -> tuple[R.AgentSpec, dict]:
                         "readiness": a and {"result": a["readiness"], "open_gaps": len(a["gaps"])},
                         "pack": pk and {"stale": bool(pk.stale_reason)}, "days_since_last_note": _days(last_note, today),
                         "owner_last_told_by_you": last_told(o.id),
+                        "your_memory": MEM.brief(MEM.get(c.s, o.id), today),
                         "recent_agent_work": recent_work(o.id)})
         return {"today": today.isoformat(), "opportunities": out}
 
@@ -135,7 +168,8 @@ def manager_agent(c, mode: str) -> tuple[R.AgentSpec, dict]:
                 "recent_activity": [{"on": x.on.isoformat(), "text": x.text[:200]} for x in reversed(acts)],
                 "contacts": [{"name": x.name, "title": x.title} for x in contacts if x.name],
                 "gaps": [{"key": g["key"], "question": g["question"]} for g in a["gaps"]] if o.stage in ("active", "approval") else [],
-                "open_tasks": [{"title": t.title, "assignee": t.assignee, "due": t.due.isoformat()} for t in tasks]}
+                "open_tasks": [{"title": t.title, "assignee": t.assignee, "due": t.due.isoformat()} for t in tasks],
+                "your_memory": MEM.view(MEM.get(c.s, o.id), today)}
 
     def decide(kind, o, reason, outcome, detail=""):
         record["decisions"].append({"kind": kind, "opportunity_id": o.id if o else None, "reason": reason, "outcome": outcome, "detail": detail})
@@ -152,56 +186,56 @@ def manager_agent(c, mode: str) -> tuple[R.AgentSpec, dict]:
             raise R.ToolError("Give the concrete reason, taken from the board or the opportunity.")
         if len([d for d in record["decisions"] if d["outcome"] != "refused"]) >= MAX_DELEGATIONS:
             raise R.ToolError(f"The limit of {MAX_DELEGATIONS} decisions per review is reached. Call finish.")
-        refusal = None
-        if o.stage not in DELEGABLE[kind]:
-            refusal = f"{kind} does not fit an opportunity in stage {o.stage} (allowed: {', '.join(DELEGABLE[kind])})."
-        elif per_opp.get(o.id, 0) >= PER_OPPORTUNITY:
-            refusal = f"Already {PER_OPPORTUNITY} decisions for {o.company.name} in this review."
-        elif kind == "person_lookup" and not role:
-            refusal = "person_lookup needs the role (job title) to find, for example CFO."
-        elif kind == "person_lookup" and role_known(c, o.company_id, role):
-            refusal = f"The workspace already has a named {role} at {o.company.name}."
-        elif kind == "ready_reminder" and (calculate(rules_input(o))["readiness"] != "Ready" or open_pack(c, o)):
-            refusal = "The rules do not say Ready, or a pack is already submitted."
-        elif kind == "followup_draft" and (not (r := c.s.get(m.Outreach, o.id)) or not r.sent_on or r.reply_on):
-            refusal = "A follow-up needs a sent email without a reply."
-        elif (recent := c.s.scalars(select(m.AgentJob).where(  # the same work, finished before today: do not redo it yet
-                m.AgentJob.kind == kind, m.AgentJob.opportunity_id == o.id, m.AgentJob.status == "done",
-                m.AgentJob.created_on >= today - timedelta(days=RECENT_DAYS), m.AgentJob.created_on < today)
-                .order_by(m.AgentJob.created_on.desc())).first()):
-            refusal = (f"{kind} was already done for {o.company.name} on {recent.created_on.isoformat()} "
-                       f"(within {RECENT_DAYS} days). Do not repeat it; tell the owner if a person needs to act.")
+        refusal = (f"Already {PER_OPPORTUNITY} decisions for {o.company.name} in this review."
+                   if o.stage in DELEGABLE[kind] and per_opp.get(o.id, 0) >= PER_OPPORTUNITY else delegation_refusal(c, o, kind, role))
         if refusal:
             decide(kind, o, reason, "refused", refusal)
             raise R.ToolError(refusal)
         per_opp[o.id] = per_opp.get(o.id, 0) + 1
         payload = {"role": role} if kind == "person_lookup" else {}
-        done_today = c.s.scalars(select(m.AgentJob).where(m.AgentJob.kind == kind, m.AgentJob.opportunity_id == o.id,
+        # in on mode the manager plans next actions itself, in a close look at that one opportunity (its triage)
+        job_kind = "manager_triage" if mode == "on" and kind == "gap_actions" else kind
+        done_today = c.s.scalars(select(m.AgentJob).where(m.AgentJob.kind == job_kind, m.AgentJob.opportunity_id == o.id,
                                                           m.AgentJob.created_on == today, m.AgentJob.status != "failed")).first()
-        waiting = J.open_job(c.s, kind, o.id)
+        waiting = J.open_job(c.s, job_kind, o.id)
         if waiting or done_today:
             if mode == "on" and kind == "gap_actions" and waiting and waiting.status == "queued" and reason not in (waiting.reason or ""):
-                waiting.reason = f"{waiting.reason}. The manager adds: {reason}"[:1000]  # the next-step agent sees why both asked
+                J.triage(c.s, today, o.id, "manager", f"The manager adds: {reason}")  # the triage sees why both asked
                 decide(kind, o, reason, "already_queued", "Already on the board; the manager's reason was added to it.")
-                return {"outcome": "already_queued", "note": "Already on the board; your reason was added, so the next-step agent sees it."}
+                return {"outcome": "already_queued", "note": "Already on the board; your reason was added to it."}
             decide(kind, o, reason, "already_queued", "The same work is already on the board.")
             return {"outcome": "already_queued", "note": "The same work is already on the board; nothing added."}
+        warn = SC.caution(c.s, today, o.owner, kind)  # this owner usually dismisses or ignores this kind of work
+        extra = {"caution": warn} if warn else {}
         if mode == "shadow":
-            decide(kind, o, reason, "recorded", "Shadow mode: recorded, not queued.")
-            return {"outcome": "recorded", "note": "Shadow mode: your decision is recorded and compared, not carried out."}
-        job = J.enqueue(c.s, today, kind, o.id, "manager", reason, payload, requested_by="Manager agent")
-        decide(kind, o, reason, "queued" if job else "refused", "" if job else "The board refused it (a limit was reached).")
-        return {"outcome": "queued" if job else "refused"}
+            decide(kind, o, reason, "recorded", "Shadow mode: recorded, not queued." + (f" Caution: {warn}" if warn else ""))
+            return {"outcome": "recorded", "note": "Shadow mode: your decision is recorded and compared, not carried out.", **extra}
+        if job_kind == "manager_triage":
+            job = J.triage(c.s, today, o.id, "manager", reason, trigger="manager", requested_by="Manager agent")
+        else:
+            job = J.enqueue(c.s, today, kind, o.id, "manager", reason, payload, requested_by="Manager agent")
+        decide(kind, o, reason, "queued" if job else "refused",
+               (f"Caution: {warn}" if warn else "") if job else "The board refused it (a limit was reached).")
+        return {"outcome": "queued" if job else "refused", **extra}
+
+    def scorecard(_args):
+        rows = [r for r in SC.work(c.s, today, by_owner=True) if r["enough"]]
+        return {"days": SC.WINDOW_DAYS, "min_decisions": SC.MIN_SAMPLE,
+                "by_owner": [{"owner": r["owner"], "work": r["work"], "used": r["used"], "dismissed": r["dismissed"],
+                              "ignored": r["ignored"], "useful_rate": r["usefulRate"]} for r in rows],
+                "note": "Only kinds of work with enough decisions to judge are listed."}
 
     def note_for_owner(args):
         o = c.s.get(m.Opportunity, str(args.get("opportunity_id", "")))
         text = str(args.get("text", "")).strip()
         if not o or len(text) < 10:
             raise R.ToolError("Give an opportunity id from board and what the owner should know or do.")
-        if c.s.scalars(select(m.AgentJob).where(  # one voice per opportunity per day: the next-step agent already writes to this owner
-                m.AgentJob.kind == "gap_actions", m.AgentJob.opportunity_id == o.id, m.AgentJob.created_on == today,
-                m.AgentJob.status.in_(("queued", "running", "done")))).first():
-            why = "The next-step agent is sending this owner next actions for it today."
+        busy = c.s.scalars(select(m.AgentJob).where(  # one voice per opportunity per day: someone already writes to this owner
+            m.AgentJob.kind.in_(("gap_actions", "manager_triage")), m.AgentJob.opportunity_id == o.id, m.AgentJob.created_on == today,
+            m.AgentJob.status.in_(("queued", "running", "done")))).first()
+        if busy:
+            why = ("The next-step agent is sending this owner next actions for it today." if busy.kind == "gap_actions"
+                   else "Your close look at this opportunity today (triage) writes to its owner.")
             decide("note", o, text[:600], "refused", why)
             raise R.ToolError(f"{why} Do not add a separate note. If it should consider something, delegate gap_actions with "
                               "that reason: it is added to the work already on the board.")
@@ -227,6 +261,7 @@ def manager_agent(c, mode: str) -> tuple[R.AgentSpec, dict]:
     s = {"type": "string"}
     tools = [
         R.Tool("board", "Every open opportunity with its stage, owner, progress, outreach, readiness and recent agent work.", R.params({}), board),
+        R.Tool("scorecard", "How each owner received each kind of agent work lately (used, dismissed, left unread).", R.params({}), scorecard),
         R.Tool("opportunity", "A closer look at one opportunity: recent notes and activity, contacts, gaps, open tasks.",
                R.params({"id": s}), opportunity),
         R.Tool("delegate", "Give one piece of work to an agent. Checked by code; a refusal says why.",
@@ -237,7 +272,8 @@ def manager_agent(c, mode: str) -> tuple[R.AgentSpec, dict]:
         R.Tool("note_for_owner", "Tell an opportunity's owner something only a person can act on.",
                R.params({"opportunity_id": s, "text": s}), note_for_owner),
     ]
-    spec = R.AgentSpec(name="Manager agent", version=VERSION, system=SYSTEM, tools=tools,
+    from api.lessons import block
+    spec = R.AgentSpec(name="Manager agent", version=VERSION, system=SYSTEM + block(c.s, "Manager agent", today), tools=tools,
                        finish=R.Tool("finish", "You are done with today's review. Short summary.", R.params({"summary": s}), finish),
                        max_steps=12, max_tool_calls=30)
     return spec, record
@@ -251,7 +287,9 @@ def compare(s, day: date) -> dict:
     """The manager's decisions on one day next to the rules' jobs that day: agree, manager only, rules only."""
     rules = {(j.kind, j.opportunity_id): j for j in s.scalars(select(m.AgentJob).where(
         m.AgentJob.created_on == day, m.AgentJob.trigger.in_(("patrol", "event")), m.AgentJob.kind.in_(tuple(DELEGABLE))))}
-    decisions = list(s.scalars(select(m.ManagerDecision).where(m.ManagerDecision.on == day).order_by(m.ManagerDecision.id)))
+    decisions = list(s.scalars(select(m.ManagerDecision).where(m.ManagerDecision.on == day, or_(m.ManagerDecision.scope == "review",
+                                                                                              m.ManagerDecision.scope.is_(None)))
+                               .order_by(m.ManagerDecision.id)))
     mine = {(d.kind, d.opportunity_id): d for d in decisions if d.kind in DELEGABLE and d.outcome != "refused"}
 
     def company(opp_id):

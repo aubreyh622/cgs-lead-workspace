@@ -68,7 +68,7 @@ def test_shadow_mode_decides_and_compares_but_queues_nothing(app):
     assert cmp["refused"][0]["kind"] == "gap_actions" and "stage contacted" in cmp["refused"][0]["refusal"]
     assert cmp["notes"][0]["opportunityId"] == "northstar"
     run = next(r for r in api.get("/api/agent-runs").json() if r["agent"] == "Manager agent")
-    assert run["prompt"] == "manager-agent-1.0" and run["steps"]
+    assert run["prompt"] == "manager-agent-1.2" and run["steps"]
 
 
 def test_on_mode_carries_out_its_decisions_beside_the_rules(app):
@@ -137,8 +137,8 @@ def test_new_agent_findings_count_as_a_change_for_notes(app):
         c = AU.agent_ctx(app, s)
         s.add(m.ManagerDecision(on=c.today - timedelta(days=1), mode="on", kind="note", opportunity_id="meridian",
                                 reason="Earlier note", outcome="sent"))  # the owner was told yesterday, before the lookup ran
-        for j in s.scalars(select(m.AgentJob).where(m.AgentJob.kind == "gap_actions", m.AgentJob.opportunity_id == "meridian")):
-            j.created_on = c.today - timedelta(days=3)  # keep today's next-step work out of this check (tested separately)
+        for j in s.scalars(select(m.AgentJob).where(m.AgentJob.kind.in_(("gap_actions", "manager_triage")), m.AgentJob.opportunity_id == "meridian")):
+            j.created_on = c.today - timedelta(days=3)  # keep today's next-action work out of this check (tested separately)
         s.flush()
         spec, _ = MA.manager_agent(c, "on")
         note = next(t for t in spec.tools if t.name == "note_for_owner")
@@ -147,24 +147,26 @@ def test_new_agent_findings_count_as_a_change_for_notes(app):
             note.run({"opportunity_id": "northstar", "text": "Still out of date, please resubmit the pack soon."})
 
 
-def test_one_voice_per_opportunity_the_next_step_agent_and_the_manager_do_not_both_write():
-    """Meridian has stalled, so the rules give it to the next-step agent today. The manager may not write a separate note,
-    and its reason for wanting next actions is added to the work already on the board."""
+def test_one_voice_per_opportunity_in_on_mode_the_triage_writes_and_hears_both_reasons():
+    """Meridian has stalled. With the manager on, the patrol gives it to the manager's triage, not to the next-step agent.
+    The daily review may not write a separate note, and its reason for wanting next actions is added to that triage,
+    which sends the owner one message."""
     def plan2(board):
         return [("note_for_owner", {"opportunity_id": "meridian", "text": "Confirm who approves; the decision group task is overdue."}),
                 ("delegate", {"kind": "gap_actions", "opportunity_id": "meridian",
                               "reason": "The overdue decision-group task: ask Emma Chen who signs off."})]
 
-    seen = []
+    seen, next_step_runs = [], []
+
+    def triage(case):
+        seen.extend(e["why"] for e in case["what_happened"])
+        from agent_fakes import default_triage
+        return default_triage(case)
 
     def ai(url, headers, payload, **kw):
-        names = {d["name"] for d in payload["tools"][0]["functionDeclarations"]}
-        if "suggest" in names:  # the next-step agent: note why it was asked
-            from agent_fakes import results
-            done = results(payload)
-            if done:
-                seen.append(done[0][1]["why_you_were_asked"])
-        return play(payload, manager=plan2)
+        if "suggest" in {d["name"] for d in payload["tools"][0]["functionDeclarations"]}:
+            next_step_runs.append(1)
+        return play(payload, manager=plan2, triage=triage)
 
     import tempfile
     from pathlib import Path
@@ -173,8 +175,11 @@ def test_one_voice_per_opportunity_the_next_step_agent_and_the_manager_do_not_bo
     app = create_app(Settings(app_mode="live", db_path=db))
     app.state.provider_factory = lambda: make_provider("gemini", "m", key="k", transport=ai)
     api, ran = review(app, "on")
-    decisions = {(d["kind"], d["opportunityId"]): d for d in api.get("/api/manager/decisions").json()}
-    assert decisions[("note", "meridian")]["outcome"] == "refused" and "next-step agent" in decisions[("note", "meridian")]["detail"]
+    decisions = {(d["kind"], d["opportunityId"]): d for d in api.get("/api/manager/decisions", params={"scope": "review"}).json()}
+    assert decisions[("note", "meridian")]["outcome"] == "refused" and "triage" in decisions[("note", "meridian")]["detail"]
     assert decisions[("gap_actions", "meridian")]["outcome"] == "already_queued"
-    assert not [i for i in api.get("/api/inbox?status=all").json() if i["kind"] == "advice" and i["opportunityId"] == "meridian"]
-    assert any("The manager adds: The overdue decision-group task" in w for w in seen)  # one run, both reasons
+    assert any(r["kind"] == "manager_triage" and r["opportunityId"] == "meridian" and r["status"] == "done" for r in ran)
+    assert not next_step_runs  # the next-step agent did not run: the triage planned the next actions
+    assert any("No progress recorded" in w for w in seen) and any("The manager adds: The overdue decision-group task" in w for w in seen)
+    msgs = [i for i in api.get("/api/inbox?status=all").json() if i["kind"] in ("advice", "actions") and i["opportunityId"] == "meridian"]
+    assert len(msgs) == 1 and msgs[0]["agent"] == "Manager agent" and msgs[0]["kind"] == "actions"  # one voice

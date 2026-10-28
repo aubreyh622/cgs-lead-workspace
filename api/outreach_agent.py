@@ -130,7 +130,8 @@ def outreach_agent(c, o: m.Opportunity, *, purpose: str, angle: str | None, tone
         *([R.Tool("search_library", "Search the CGS library for a relevant service or case you may cite by passage id.",
                   R.params({"query": s}), search_library)] if lib else []),
     ]
-    spec = R.AgentSpec(name="Outreach agent", version=VERSION, system=SYSTEM, tools=tools,
+    from api.lessons import block
+    spec = R.AgentSpec(name="Outreach agent", version=VERSION, system=SYSTEM + block(c.s, "Outreach agent", c.today), tools=tools,
                        finish=R.Tool("submit_draft", "Submit the draft (plain text, citation markers included). It is checked.",
                                      R.params({"subject": s, "body": s}), submit_draft),
                        max_steps=8, max_tool_calls=12)
