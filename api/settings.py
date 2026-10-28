@@ -15,7 +15,7 @@ CRM_MODES = ("disabled", "read_only", "write_approved")
 
 
 def _load_dotenv(path: Path) -> None:
-    if not path.exists():
+    if not path.exists() or os.environ.get("PYTHON_DOTENV_DISABLED"):  # the test suite's offline guard sets this
         return
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
@@ -32,9 +32,10 @@ class Settings:
     db_path: Path = ROOT / "runtime" / "workspace-v2.sqlite3"
     frontend: Path = ROOT / "frontend" / "index.html"
     database_url: str = ""  # empty = SQLite file at db_path; set DATABASE_URL for PostgreSQL later
-    ai_provider: str = "gemini"  # gemini | openai; switch any time, see api/llm.py
+    ai_provider: str = "gemini"  # gemini | openai | claude; switch any time, see api/llm.py
     ai_model: str = ""           # empty = the provider's default model
     users: tuple[str, ...] = ("Alex Morgan", "Sarah Patel", "Daniel Brooks", "Quinn Harper")  # no login yet; pick a name
+    directors: tuple[str, ...] = ()  # who may act as Director of Operations at Step 8; empty = anyone (until CGS names them)
     agent_worker: bool = False   # True = agents patrol and work in the background (the server turns it on; tests leave it off)
 
     def __post_init__(self):
@@ -59,4 +60,5 @@ def load_settings(env_file: Path | None = ROOT / ".env") -> Settings:
         ai_model=os.environ.get("AI_MODEL", "").strip(),
         agent_worker=os.environ.get("AGENT_WORKER", "on").strip().lower() in ("on", "1", "true", "yes"),
         **({"users": tuple(u.strip() for u in os.environ["CGS_USERS"].split(",") if u.strip())} if os.environ.get("CGS_USERS") else {}),
+        directors=tuple(u.strip() for u in os.environ.get("CGS_DIRECTORS", "").split(",") if u.strip()),
     )

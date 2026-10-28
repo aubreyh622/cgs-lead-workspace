@@ -55,6 +55,16 @@ def ctx(request: Request, x_user: str | None = Header(None, description="The per
         session.close()
 
 
+def require_user(request: Request, x_user: str | None = Header(None, description="The person acting, from GET /api/users")) -> str:
+    """The X-User check alone, for endpoints that must not hold a database session open (a demo reset)."""
+    with request.app.state.db.session() as s:
+        row = s.get(m.Setting, "owners")
+        users = list(row.value) if row else []
+    if not x_user or x_user not in users:
+        raise HTTPException(401, f"Say who is acting: send the X-User header with one of {users}.")
+    return x_user
+
+
 def research_bridge(app):
     """One research bridge per server, created when live research is first needed."""
     if getattr(app.state, "research_bridge", None) is None:
@@ -357,17 +367,28 @@ class Step8(BaseModel):
     decision: Literal["approve", "return", "nurture", "close"]
     role: Literal["Lead owner", "Another consultant", "Director of Operations"] = "Lead owner"
     new_owner: str | None = None
-    handover_accepted: bool = False
+    handover_accepted: bool = Field(False, description="Ignored: only the new owner can accept, by approving themselves or "
+                                                       "through POST /api/packs/{id}/handover")
     questions: str | None = None
     due: date | None = None
     review_on: date | None = None
     reason: str | None = None
 
 
-@router.post("/packs/{pack_id}/decision", tags=["step 8"], summary="Approve, return, nurture or close")
+@router.post("/packs/{pack_id}/decision", tags=["step 8"],
+             summary="Approve, return, nurture or close. An approval that hands over to someone else waits for them to accept")
 def step8(pack_id: str, body: Step8, c: S.Ctx = Actor):
-    S.decide_pack(c, pack_id, body)
-    return {"ok": True}
+    return {"ok": True, **S.decide_pack(c, pack_id, body)}
+
+
+class HandoverAnswer(BaseModel):
+    accept: bool
+    reason: str | None = Field(None, description="Required when declining")
+
+
+@router.post("/packs/{pack_id}/handover", tags=["step 8"], summary="The new owner accepts or declines a handover (X-User must be them)")
+def handover(pack_id: str, body: HandoverAnswer, c: S.Ctx = Actor):
+    return S.answer_handover(c, pack_id, body.accept, body.reason)
 
 
 # ---------- learning loop ----------

@@ -11,6 +11,7 @@ from api.llm import make_provider
 from api.main import create_app
 from api.search import MockSearch
 from api.settings import Settings
+from agent_fakes import play, tool_names
 
 ME = {"X-User": "Alex Morgan"}
 
@@ -22,6 +23,10 @@ class SchemaAI:
         self.label, self.evidence, self.calls = label, evidence or (lambda n: {"proposals": [], "people_to_find": []}), []
 
     def __call__(self, url, headers, payload, **kw):
+        if "tools" in payload:  # a tool-using agent's turn (api/agent_runtime.py), played by tests/v2/agent_fakes.py
+            names = tool_names(payload)
+            self.calls.append("evidence" if "propose" in names else "draft" if "submit_draft" in names else "person")
+            return play(payload, evidence=self.evidence)
         props = set(payload["generationConfig"]["responseJsonSchema"]["properties"])
         user = json.loads(payload["contents"][0]["parts"][0]["text"])
         if "found" in props:
@@ -166,6 +171,11 @@ def test_evidence_agent_asks_research_agent_to_find_the_approver(live):
     assert any(x["kind"] == "person_lookup" and x["status"] == "done" for x in ran)
     item = next(i for i in inbox(api, "contact") if i["opportunityId"] == oid)
     assert item["data"]["name"] == "Kate Morrison" and "leadership" in item["data"]["url"]
+    # the research agent chose its own steps, and every step is on record
+    run = next(r for r in api.get("/api/agent-runs").json() if r["agent"] == "Research agent" and r["steps"])
+    trace = api.get(f"/api/agent-runs/{run['id']}").json()["trace"]
+    assert [t.get("tool") for t in trace if t["type"] == "tool"] == ["company_pages", "read_page"] and trace[-1]["accepted"] is True
+    assert run["calls"] == 3 and run["prompt"] == "research-person-agent-1.0"
     api.post(f"/api/inbox/{item['id']}", headers=ME, json={"action": "apply"})
     # the CEO is now known, so the same note does not send the research agent again
     r = api.post(f"/api/opportunities/{oid}/notes", headers=ME, json={"text": sim["notes"]}).json()
@@ -240,7 +250,7 @@ def test_live_agents_check_runs_the_whole_story(tmp_path, monkeypatch):
     real = ai.__call__
 
     def answer(url, headers, payload, **kw):
-        if "label" in payload["generationConfig"]["responseJsonSchema"]["properties"]:
+        if "label" in payload.get("generationConfig", {}).get("responseJsonSchema", {}).get("properties", {}):
             ai.label = next(labels)
         return real(url, headers, payload, **kw)
     code = CA.main(prepare=lambda app: setattr(app.state, "provider_factory", lambda: make_provider("gemini", "m", key="k", transport=answer)))
@@ -268,3 +278,120 @@ def test_background_worker_patrols_and_works_on_its_own(tmp_path):
         w.thread.join(2)
     assert board and all(j["status"] in ("done", "skipped") for j in board), board
     assert api.get("/api/agents").json()["lastPatrol"] and api.get("/api/inbox").json()
+
+
+def _job(app, kind, opp_id):
+    from api import jobs as J
+    with app.state.db.session() as s:
+        return J.enqueue(s, AU.agent_ctx(app, s).today, kind, opp_id, "patrol", "test", requested_by="test").id
+
+
+def test_ai_budget_wait_does_not_block_work_without_ai(live):
+    app, api = live(SchemaAI())
+    api.patch("/api/agents", headers=ME, json={"ai_budget": 0})
+    waiting = _job(app, "followup_draft", "bluegate")       # needs AI, queued first
+    rules_only = _job(app, "defer_nurture", "meridian")     # needs no AI
+    assert AU.next_job(app) == rules_only
+    assert AU.run_job(app, rules_only) == "done"
+    assert AU.next_job(app) is None and AU.queued(app) == [waiting]
+
+
+def test_temporary_ai_error_waits_before_retrying(live):
+    import httpx
+
+    def down(*a, **kw):
+        raise httpx.ConnectError("offline")
+    app, api = live(down)
+    jid = _job(app, "gap_actions", "meridian")
+    assert AU.run_job(app, jid) == "queued"
+    job = api.get("/api/agents/jobs").json()[0]
+    assert job["attempts"] == 1 and "will retry" in job["result"]
+    assert AU.queued(app) == [] and AU.next_job(app) is None   # waiting out the retry delay
+    assert AU.run_job(app, jid) == "queued" and api.get("/api/agents/jobs").json()[0]["attempts"] == 1
+    assert api.get("/api/agents").json()["queued"] == 1
+
+
+def test_two_workers_never_run_the_same_job(tmp_path, monkeypatch):
+    import threading
+    from api import jobs as J
+    app = create_app(Settings(app_mode="demo", db_path=tmp_path / "c.sqlite3"))
+    jid = _job(app, "ready_reminder", "meridian")
+    both_read = threading.Barrier(2, timeout=5)
+    real_due = J.due
+    monkeypatch.setattr(J, "due", lambda r, now=None: (both_read.wait(), real_due(r, now))[1])  # both have seen "queued"
+    ran = []
+    monkeypatch.setitem(AU.HANDLERS, "ready_reminder", lambda c, job, o: (ran.append(job.id), ("done", "ok"))[1])
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(AU.run_job(app, jid))) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(10)
+    assert ran == [jid]  # the handler ran once; the second worker saw the job already taken
+    assert len(results) == 2 and "done" in results and set(results) <= {"done", "running"}
+
+
+def test_ai_budget_is_read_from_the_env_file(tmp_path, monkeypatch):
+    from api.settings import load_settings
+    monkeypatch.setenv("AGENT_AI_DAILY_BUDGET", "0")
+    monkeypatch.delenv("AGENT_AI_DAILY_BUDGET")  # restored to unset after the test
+    monkeypatch.delenv("PYTHON_DOTENV_DISABLED", raising=False)  # this test reads its own .env file (the offline guard skips the real one)
+    env = tmp_path / ".env"
+    env.write_text("AGENT_AI_DAILY_BUDGET=7\n", encoding="utf-8")
+    load_settings(env)  # api.jobs was imported long before this, as it is when the server starts
+    app = create_app(Settings(app_mode="demo", db_path=tmp_path / "b.sqlite3"))
+    assert TestClient(app).get("/api/agents").json()["aiBudget"] == 7
+
+
+class FlakyBridge:
+    """A research service where one run cannot be checked, one returns a broken card and one finishes normally."""
+    dated, prompt, label = False, "test", "test"
+
+    def __init__(self):
+        self.runs = {}
+
+    def start(self, company, domain, consultant, **kw):
+        run_id = f"run-{company.split()[0].lower()}"
+        self.runs[run_id] = company
+        return run_id
+
+    def status(self, run_id):
+        if "down" in run_id:
+            raise ConnectionError("research service offline")
+        return {"status": "completed", "usage": {}, "events": ["done"]}
+
+    def result(self, run_id):
+        if "broken" in run_id:
+            return {"research": {}}  # missing every field
+        from api.mock_research import research
+        pages = [{"url": "https://ok.example/news", "title": "News", "published": "2026-10-01",
+                  "content": "Okay Foundry opened a second plant in Ohio. It plans more automation."}]
+        provider = make_provider("gemini", "m", key="k", transport=SchemaAI())
+        return research(provider, pages, "Okay Foundry", "ok.example")[0]
+
+
+def test_research_sync_survives_a_bad_run_and_runs_in_the_background(tmp_path):
+    db = tmp_path / "s.sqlite3"
+    create_app(Settings(app_mode="demo", db_path=db)).state.db.engine.dispose()
+    app = create_app(Settings(app_mode="live", db_path=db))
+    bridge = FlakyBridge()
+    app.state.research_bridge = bridge
+    api = TestClient(app)
+    ids = {name: api.post("/api/opportunities", headers=ME, json={"company": f"{name} Foundry", "domain": f"{name.lower()}.example"}).json()["id"]
+           for name in ("Down", "Broken", "Okay")}
+    api.patch("/api/agents", headers=ME, json={"paused": True})  # agents paused: collecting research still happens
+    w = AU.Worker(app, tick=0, pause=0)
+    w.step()  # what the background worker does every few seconds: no button press needed
+    stage = {n: api.get(f"/api/opportunities/{i}").json() for n, i in ids.items()}
+    assert stage["Okay"]["stage"] == "review"
+    assert stage["Broken"]["research"]["status"] == "failed" and "could not be read" in stage["Broken"]["research"]["error"]
+    assert stage["Down"]["research"]["status"] == "running"  # checked again next time
+
+
+def test_budget_counts_every_ai_request(live):
+    ai = SchemaAI()
+    app, api = live(ai)
+    api.post("/api/candidates/recommend", headers=ME, json={})  # discovery: one call for queries, one to nominate
+    run = api.get("/api/agent-runs").json()[0]
+    assert ai.calls == ["queries", "discovery"]
+    assert run["agent"] == "Discovery agent" and run["calls"] == 2  # was always recorded as 1

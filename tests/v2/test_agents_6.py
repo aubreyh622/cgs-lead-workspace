@@ -9,6 +9,7 @@ from api.live_agents import check_draft
 from api.llm import LLMError, make_provider
 from api.main import create_app
 from api.settings import Settings
+from agent_fakes import turn
 
 ME = {"X-User": "Alex Morgan"}
 CASES = json.loads(EXAM.read_text(encoding="utf-8"))["cases"]
@@ -20,7 +21,9 @@ class FakeAI:
 
     def __call__(self, url, headers, payload, **kw):
         self.requests.append(payload)
-        a = self.answers.pop(0)
+        a = self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]  # the last answer repeats
+        if "candidates" in a and "usageMetadata" in a:  # already a full response (a tool-using agent's turn)
+            return a
         return {"candidates": [{"content": {"parts": [{"text": json.dumps(a)}]}}], "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 5}}
 
 
@@ -92,11 +95,14 @@ def test_demo_and_live_drafts_through_the_api(tmp_path):
 
     good = {"subject": "Your new Ohio foundry", "body": "Hi Priya, I saw that [[f1|Halvorsen opened a third foundry in Ohio]]. Open to 20 minutes? Alex Morgan, CGS Advisors"}
     bad = {"subject": "x", "body": "Hi Priya, we can save you 20% for a $40K fee."}
-    api2 = live(tmp_path / "l", FakeAI(good, bad))
+    fake = FakeAI(turn(("brief", {}), ("history", {})), turn(("submit_draft", bad)), turn(("submit_draft", good)))
+    api2 = live(tmp_path / "l", fake)
     r = api2.post("/api/opportunities/halvorsen/outreach/generate", json={}, headers=ME)
-    assert r.status_code == 200 and r.json()["subject"] == "Your new Ohio foundry"
-    r = api2.post("/api/opportunities/halvorsen/outreach/generate", json={}, headers=ME)
-    assert r.status_code == 503 and r.json()["code"] == "ai_invalid_output"
+    assert r.status_code == 200 and r.json()["subject"] == "Your new Ohio foundry"  # the rejected draft went back and was fixed
+    assert "does not cite any fact" in json.dumps(fake.requests[2]["contents"][-1])
+    api3 = live(tmp_path / "f", FakeAI(turn(("brief", {})), turn(("submit_draft", bad))))  # never fixes it
+    r = api3.post("/api/opportunities/halvorsen/outreach/generate", json={}, headers=ME)
+    assert r.status_code == 503 and r.json()["code"] == "ai_invalid_output" and "does not cite any fact" in r.json()["error"]
 
 
 # ---------- A4 ----------

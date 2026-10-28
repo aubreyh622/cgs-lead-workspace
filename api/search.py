@@ -65,6 +65,18 @@ class TavilySearch:
         return [{"title": r.get("title", ""), "url": r.get("url", ""), "content": (r.get("content") or "")[:1500],
                  "published": (r.get("published_date") or "")[:10]} for r in (data.get("results") or [])[:self.results] if r.get("url")]
 
+    def read(self, url: str) -> dict | None:
+        """The full text of one page (Tavily extract; one credit per five pages)."""
+        try:
+            data = self.transport("https://api.tavily.com/extract", {"Authorization": "Bearer " + self.key},
+                                  {"urls": [url], "extract_depth": "basic", "format": "text"})
+        except ProviderError as e:
+            raise LLMError("Reading the page failed: " + redact(str(e), [self.key]), e.kind) from None
+        except httpx.HTTPError as e:
+            raise LLMError(f"Could not reach the search service ({type(e).__name__}).", "temporary") from None
+        r = next(iter(data.get("results") or []), None)
+        return {"url": url, "title": "", "content": (r.get("raw_content") or "")[:8000], "published": ""} if r else None
+
 
 class MockSearch:
     """A synthetic internet: keyword search over invented pages. Free, offline, repeatable."""
@@ -95,6 +107,9 @@ class MockSearch:
                 scored.append((score, p))
         scored.sort(key=lambda x: -x[0])
         return [dict(p) for _, p in scored[:self.results]]
+
+    def read(self, url: str) -> dict | None:
+        return next((dict(p) for p in self.pages if p["url"] == url), None)
 
     def pages_for(self, company: str, domain: str) -> list[dict]:
         name = company.lower()

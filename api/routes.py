@@ -3,11 +3,12 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 
 from api import models as m
 from api import views
+from api.actions import require_user
 from api.seed import load_demo
 from api.db import Base
 
@@ -65,7 +66,7 @@ def direction(request: Request):
                 "versions": [views.direction(v) for v in versions],
                 "proposals": [{"id": p.id, "type": p.type, "field": p.field, "target": p.target, "domain": p.domain, "scope": p.scope,
                                "origin": p.origin, "title": p.title, "rationale": p.rationale, "before": p.before, "after": p.after,
-                               "feedbackIds": p.feedback_ids, "baseVersion": p.base_version, "status": p.status,
+                               "feedbackIds": p.feedback_ids, "baseVersion": p.base_version, "proposedBy": p.proposed_by, "status": p.status,
                                "createdOn": views.iso(p.created_on)} for p in proposals]}
 
 
@@ -81,8 +82,19 @@ def feedback(request: Request):
 def agent_runs(request: Request, limit: int = Query(20, le=200)):
     with db(request).session() as s:
         return [{"id": r.id, "agent": r.agent, "subject": r.subject, "model": r.model, "prompt": r.prompt_version, "status": r.status,
-                 "calls": r.calls, "error": r.error, "on": views.iso(r.on)}
+                 "calls": r.calls, "error": r.error, "on": views.iso(r.on), "steps": len(r.trace) if r.trace else None}
                 for r in s.scalars(select(m.AgentRun).order_by(m.AgentRun.on.desc(), m.AgentRun.id.desc()).limit(limit)).all()]
+
+
+@router.get("/agent-runs/{run_id}", tags=["agents"], summary="One AI run, with every step a tool-using agent took")
+def agent_run(request: Request, run_id: str):
+    with db(request).session() as s:
+        r = s.get(m.AgentRun, run_id)
+        if not r:
+            raise HTTPException(404, "Agent run not found.")
+        return {"id": r.id, "agent": r.agent, "subject": r.subject, "model": r.model, "prompt": r.prompt_version, "status": r.status,
+                "calls": r.calls, "tokensIn": r.tokens_in, "tokensOut": r.tokens_out, "error": r.error, "on": views.iso(r.on),
+                "trace": r.trace or []}
 
 
 @router.get("/knowledge", tags=["knowledge"], summary="Search the CGS library that agents may quote (K1)")
@@ -99,11 +111,19 @@ def stats(request: Request):
 
 
 @router.post("/demo/reset", tags=["system"], summary="Demo mode only: wipe everything and reload the synthetic sample")
-def reset(request: Request):
+def reset(request: Request, user: str = Depends(require_user)):
+    """Needs the X-User header like every other change. A custom header also means another website's page cannot send
+    this request (the browser would have to ask first, and the server does not allow it)."""
     if request.app.state.settings.app_mode != "demo":
         raise HTTPException(403, "Reset is only available in demo mode.")
-    database = db(request)
-    Base.metadata.drop_all(database.engine)
-    Base.metadata.create_all(database.engine)
-    load_demo(database)
-    return {"ok": True}
+    lock = request.app.state.work_lock
+    if not lock.acquire(timeout=30):
+        raise HTTPException(409, "The agents are busy with a piece of work. Try the reset again in a minute.")
+    try:
+        database = db(request)
+        Base.metadata.drop_all(database.engine)
+        Base.metadata.create_all(database.engine)
+        load_demo(database)
+    finally:
+        lock.release()
+    return {"ok": True, "by": user}

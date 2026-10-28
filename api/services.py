@@ -151,26 +151,36 @@ def provider(c: Ctx):
     return make_provider(c.settings.ai_provider, c.settings.ai_model)
 
 
-def run_agent(c: Ctx, agent: str, o: m.Opportunity | None, prompt: str, fn, calls=1, subject="", live=None, live_prompt=None):
+def run_agent(c: Ctx, agent: str, o: m.Opportunity | None, prompt: str, fn, calls=1, subject="", live=None, live_prompt=None,
+              trace: list | None = None):
     """Run an agent and log the run. Returns (result, run_id).
 
     Demo mode runs fn() (text rules). Live mode runs live(provider) when that agent has a real version;
     otherwise, or when the AI call fails, it records a failed run and raises. It never falls back to demo results.
+    trace: a list a tool-using agent fills with its steps; it is saved with the run, also when the run fails.
     """
     if c.demo:
         return fn(), record_run(c, agent, o, prompt, calls, subject=subject)
     prompt = live_prompt or prompt
+    p = None
     try:
         if live is None:
             A.require_demo(c.settings.app_mode, agent)
         p = provider(c)
         result, usage = live(p)
     except (A.AgentUnavailable, LLMError) as e:
-        record_run(c, agent, o, prompt, 0, "failed", str(e), subject, model=None)
+        # a failed request may still use quota, so the calls already sent count toward the budget
+        rid = record_run(c, agent, o, prompt, getattr(p, "calls", 0), "failed", str(e), subject, model=None)
+        if trace:
+            c.s.get(m.AgentRun, rid).trace = trace
         c.s.commit()  # keep the failure record even though the request fails
         code = "agent_unavailable" if isinstance(e, A.AgentUnavailable) else f"ai_{e.kind}"
         raise ActionError(str(e), 503, code)
-    return result, record_run(c, agent, o, prompt, 1, subject=subject, model=p.label, usage=usage)
+    # the real number of AI requests (discovery makes two; A4 with no open gaps makes none)
+    rid = record_run(c, agent, o, prompt, getattr(p, "calls", 1), subject=subject, model=p.label, usage=usage)
+    if trace:
+        c.s.get(m.AgentRun, rid).trace = trace
+    return result, rid
 
 
 def feedback(c: Ctx, subject: str, step: int, outcome: str, reason: str, scope: str, version: str,
@@ -185,19 +195,76 @@ def feedback(c: Ctx, subject: str, step: int, outcome: str, reason: str, scope: 
     return f
 
 
+def shared_base(version: str) -> str:
+    """The shared version a personal version builds on. Personal versions are named <shared>-<person>-p<n>, e.g. v4-alex-morgan-p2."""
+    return version.split("-", 1)[0]
+
+
+def latest_personal(c: Ctx, owner: str) -> m.DirectionVersion | None:
+    return c.s.scalars(select(m.DirectionVersion).where(m.DirectionVersion.scope == "personal", m.DirectionVersion.owner == owner)
+                       .order_by(m.DirectionVersion.created_at.desc())).first()
+
+
 def current_direction(c: Ctx, personal_for: str | None = None) -> m.DirectionVersion:
-    if personal_for:
-        p = c.s.scalars(select(m.DirectionVersion).where(m.DirectionVersion.scope == "personal", m.DirectionVersion.owner == personal_for)
-                        .order_by(m.DirectionVersion.created_at.desc())).first()
-        if p:
+    """The shared direction, or that person's personal version when it is built on the current shared version.
+    A personal version built on an older shared version is never used, so shared changes (new exclusions) always reach everyone."""
+    shared = c.s.scalars(select(m.DirectionVersion).where(m.DirectionVersion.scope == "shared")
+                         .order_by(m.DirectionVersion.created_at.desc(), m.DirectionVersion.version.desc())).first()
+    if personal_for and shared:
+        p = latest_personal(c, personal_for)
+        if p and shared_base(p.version) == shared.version:
             return p
-    return c.s.scalars(select(m.DirectionVersion).where(m.DirectionVersion.scope == "shared")
-                       .order_by(m.DirectionVersion.created_at.desc(), m.DirectionVersion.version.desc())).first()
+    return shared
+
+
+def personal_version_name(c: Ctx, shared_version: str, owner: str) -> str:
+    n = c.s.scalar(select(func.count()).select_from(m.DirectionVersion).where(m.DirectionVersion.scope == "personal",
+                                                                              m.DirectionVersion.owner == owner)) + 1
+    return f"{shared_version}-{slug(owner)}-p{n}"
+
+
+def merged_direction(old: m.DirectionVersion | None, mine: m.DirectionVersion, new: m.DirectionVersion) -> tuple[dict, list[str]]:
+    """Carry one person's changes (mine compared with the shared version it was built on, old) over to the new shared version.
+    Lists keep what the person added and drop what they removed; the problem text keeps the person's wording if they changed it.
+    Returns (fields, names of the fields that still differ from the new shared version)."""
+    data, kept = {}, []
+    for f in WHITELIST:
+        base, mine_v, new_v = getattr(old or new, f), getattr(mine, f), getattr(new, f)
+        if f == "problem":
+            data[f] = mine_v if mine_v != base else new_v
+        else:
+            removed = [x for x in base if x not in mine_v]
+            added = [x for x in mine_v if x not in base]
+            data[f] = [x for x in new_v if x not in removed] + [x for x in added if x not in new_v]
+        if data[f] != new_v:
+            kept.append(f)
+    return data, kept
+
+
+def rebase_personal(c: Ctx, new_shared: m.DirectionVersion) -> list[str]:
+    """After a shared change is approved, give each person with a personal direction a new personal version on top of it."""
+    created = []
+    owners = c.s.scalars(select(m.DirectionVersion.owner).where(m.DirectionVersion.scope == "personal").distinct()).all()
+    for owner in sorted(o for o in owners if o):
+        mine = latest_personal(c, owner)
+        if not mine or shared_base(mine.version) == new_shared.version:
+            continue
+        data, kept = merged_direction(c.s.get(m.DirectionVersion, shared_base(mine.version)), mine, new_shared)
+        if not kept:
+            continue  # nothing personal is left; this person now simply follows the shared direction
+        version = personal_version_name(c, new_shared.version, owner)
+        c.s.add(m.DirectionVersion(version=version, scope="personal", owner=owner, approved_by=c.actor, approved_on=c.today,
+                                   basis=new_shared.basis, change=f"Moved to {new_shared.version}; kept personal changes to {', '.join(kept)}", **data))
+        c.s.flush()
+        created.append(version)
+    return created
 
 
 def propose_exclusion(c: Ctx, target: str, domain: str, scope: str, why: str, fb: m.Feedback) -> None:
-    c.s.add(m.DirectionProposal(id=new_id("dp"), type="exclude", target=target, domain=domain, scope="theme" if scope == "opportunity" else scope,
-                                origin="feedback", rationale=why, feedback_ids=[fb.id], base_version=current_direction(c).version,
+    scope = "theme" if scope == "opportunity" else scope
+    c.s.add(m.DirectionProposal(id=new_id("dp"), type="exclude", target=target, domain=domain, scope=scope,
+                                origin="feedback", rationale=why, feedback_ids=[fb.id], proposed_by=c.actor,
+                                base_version=current_direction(c, c.actor if scope == "consultant" else None).version,
                                 status="pending", created_on=c.today))
 
 
@@ -240,6 +307,9 @@ def run_research(c: Ctx, o: m.Opportunity) -> None:
     background (Gemini + Tavily); sync_research() collects the brief when it is done."""
     task = latest_task(c, o)
     if not c.demo:
+        # save first: the web search and the research start below can take seconds, and SQLite lets only one
+        # connection write at a time, so holding unsaved changes here would block the agents and other people
+        c.s.commit()
         try:
             if not o.company.domain:
                 from api import discovery_agent as D
@@ -332,6 +402,8 @@ def recommend(c: Ctx, intent: str) -> dict:
                                  subject=f"Direction {d.version}", live=live, live_prompt=D.DISCOVERY_PROMPT_VERSION)
     row = c.s.get(m.Setting, "round")
     rnd = (row.value if row else 0) + 1
+    while c.s.get(m.Candidate, f"r{rnd}-1"):  # another round was saved while this one searched
+        rnd += 1
     if row:
         row.value = rnd
     else:
@@ -380,16 +452,26 @@ def sync_research(c: Ctx) -> list[dict]:
         return out
     for task in running:
         o = c.s.get(m.Opportunity, task.opportunity_id)
-        st = bridge.status(task.external_run_id)
-        task.log = (task.log or [])[-20:] + [{"m": e} for e in st["events"] if {"m": e} not in (task.log or [])]
+        try:
+            st = bridge.status(task.external_run_id)
+        except Exception as e:  # one unreachable run must not stop the others; it is checked again next time
+            out.append({"opportunityId": o.id, "status": "running", "error": f"Could not check the research run ({type(e).__name__}: {e})"})
+            continue
+        task.log = (task.log or [])[-20:] + [{"m": e} for e in st.get("events", []) if {"m": e} not in (task.log or [])]
         u = st.get("usage") or {}
         o.brief.usage = {"searches": u.get("searches", 0), "pages": u.get("extractions", 0), "calls": u.get("model_calls", 0)}
         if st["status"] in ("running", "stopping", "queued"):
             out.append({"opportunityId": o.id, "status": "running", "stage": st.get("stage")})
             continue
-        card = bridge.result(task.external_run_id) if st["status"] in ("completed", "incomplete") else None
-        if card:
-            brief, person = card_to_brief(card, o.owner or c.actor, (c.today + timedelta(days=4)).isoformat(), u)
+        brief = None
+        try:
+            card = bridge.result(task.external_run_id) if st["status"] in ("completed", "incomplete") else None
+            if card:
+                owner = o.owner or (c.actor if c.actor in owners_list(c) else "")
+                brief, person = card_to_brief(card, owner, (c.today + timedelta(days=4)).isoformat(), u)
+        except (KeyError, TypeError, ValueError, AttributeError) as e:
+            st = {**st, "status": "failed", "error": f"The research result could not be read ({type(e).__name__}: {e}). Retry the research."}
+        if brief:
             for k, v in brief.items():
                 setattr(o.brief, k, v)
             if person and not o.contact.name:
@@ -546,18 +628,31 @@ def generate_draft(c: Ctx, opp_id: str, angle: str | None, tone: str) -> dict:
     if tone not in ("standard", "brief"):
         raise ActionError("Tone must be standard or brief.")
     b = o.brief
-    brief = {"facts": b.facts, "hypothesis": b.hypothesis, "relevance": b.relevance}
     contact = {"name": o.contact.name if o.contact else None, "title": o.contact.title if o.contact else "", "company": o.company.name}
     star = o.company_id == "corvane" and o.title.startswith("Scaling AI")
+    trace: list[dict] = []
+
+    def live(p):  # the tool-using outreach agent (api/outreach_agent.py)
+        from api import outreach_agent as OA
+        d, usage, steps = OA.write(c, o, p, purpose="first outreach email", angle=angle, tone=tone, sender=o.owner or c.actor)
+        trace.extend(steps)
+        return d, usage
+
+    from api.outreach_agent import VERSION as OUTREACH_AGENT_VERSION
     draft, _ = run_agent(c, "A1 Preparation and outreach", o, "a1-1.0",
                          lambda: A.demo_draft(star, contact["name"], o.company.name, o.owner or c.actor, b.facts, tone, angle),
-                         live=lambda p: L.write_outreach(p, brief, contact, o.owner or c.actor, angle, tone,
-                                                         knowledge.library().search(b.hypothesis + " " + b.relevance, k=2, types=("case", "service", "document"))),
-                         live_prompt=L.OUTREACH_PROMPT_VERSION)
+                         live=live, live_prompt=OUTREACH_AGENT_VERSION, trace=trace)
+    new_facts = draft.pop("new_facts", [])
+    if new_facts:  # a person asked for this draft, so the verified sentences the agent added join the brief at once
+        b.facts = b.facts + new_facts
+        log(c, o.id, "a", f"Outreach agent added {len(new_facts)} newer fact{'s' if len(new_facts) != 1 else ''} to the brief: "
+            + "; ".join(f"{f['id']} from {f['src']}" for f in new_facts))
     r = outreach_row(c, o)
     r.subject, r.body, r.angle, r.tone, r.status = draft["subject"], draft["body"], angle, tone, "draft"
     touch(c, o)
     log(c, o.id, "a", "Outreach agent wrote a draft from the research brief. Nothing was sent.")
+    if new_facts:
+        draft["newFacts"] = new_facts
     lib = knowledge.library().by_id
     synthetic = sorted({m.group(1) for m in re.finditer(r"\[\[([^|\]]+)\|", draft["body"]) if m.group(1) in lib and lib[m.group(1)].synthetic})
     if synthetic:
@@ -646,13 +741,24 @@ def add_note(c: Ctx, opp_id: str, type_: str, on: date | None, text: str, analyz
         return {"noteId": note.id, "proposals": 0}
     c.s.commit()  # the original text is saved even if analysis fails
     star = o.company_id == "corvane" and o.title.startswith("Scaling AI")
-    context = {"company": o.company.name, "opportunity": o.title, "team": o.team,
-               "confirmed_scores": o.scores, "confirmed_conditions": o.conditions, "confirmed_blocker": o.blocker}
     asks: list[dict] = []
+    trace: list[dict] = []
+
+    def live(p):  # the tool-using evidence agent (api/evidence_agent.py)
+        from api import agent_runtime as R
+        from api import evidence_agent as EA
+        spec, record = EA.evidence_agent(c, o, note, asks)
+        out = R.run(spec, p, EA.task(o))
+        trace.extend(out.trace)
+        if out.status != "done" and not record["kept"]:
+            raise LLMError(f"The evidence agent stopped without an answer: {out.reason}", "invalid_output")
+        return (record["kept"], record["dropped"]), out.usage
+
+    from api.evidence_agent import VERSION as EVIDENCE_AGENT_VERSION
     (found, dropped_by_check), run = run_agent(
         c, "A2 + A3 Evidence and qualification", o, "a2-1.4 / a3-1.2", lambda: (A.extract_evidence(note.text, star), {}), calls=2,
-        live=lambda p: L.extract_evidence(p, note.text, context, knowledge.library().search(note.text + " " + o.title, k=3), asks),
-        live_prompt=L.EVIDENCE_PROMPT_VERSION)
+        live=live, live_prompt=EVIDENCE_AGENT_VERSION, trace=trace)
+    note_text = {note.id: note.text}
     if c.demo:
         asks = A.people_to_find(note.text)
     existing = {(p.kind, p.key) for p in c.s.scalars(select(m.Proposal).where(m.Proposal.opportunity_id == o.id, m.Proposal.status != "rejected"))}
@@ -660,10 +766,14 @@ def add_note(c: Ctx, opp_id: str, type_: str, on: date | None, text: str, analyz
     for p in found:
         if star and (p["kind"], p["key"]) in existing:
             continue
-        if p["type"] == "client_statement" and not A.quote_in_text(p["quote"], note.text):
+        source_id = p.get("note_id") or note.id  # the agent may quote an earlier note that still applies
+        if source_id not in note_text:
+            earlier = c.s.get(m.Note, source_id)
+            note_text[source_id] = earlier.text if earlier and earlier.opportunity_id == o.id else ""
+        if p["type"] == "client_statement" and not A.quote_in_text(p["quote"], note_text[source_id]):
             dropped += 1  # an invented or altered quote never reaches a person
             continue
-        c.s.add(m.Proposal(id=new_id("pr"), opportunity_id=o.id, note_id=note.id, agent_run_id=run, kind=p["kind"], key=p["key"],
+        c.s.add(m.Proposal(id=new_id("pr"), opportunity_id=o.id, note_id=source_id, agent_run_id=run, kind=p["kind"], key=p["key"],
                            value=p["value"], quote=p["quote"], why=p["why"], evidence_type=p["type"]))
         kept += 1
     dropped += dropped_by_check.get("quote_not_found", 0)
@@ -686,8 +796,13 @@ ROLE_WORDS = {"ceo": "chief executive", "cfo": "chief financial", "coo": "chief 
               "cto": "chief technology", "cdo": "chief digital"}
 
 
+def job_title(role: str) -> str:
+    """The job title alone: "CEO (approves spend)" or "CFO, who signs off" -> "CEO", "CFO"."""
+    return re.split(r"\s*(?:[(\[,;:]|\s-\s|\s–\s|\swho\s|\sthat\s)", (role or "").strip(), maxsplit=1)[0].strip()
+
+
 def role_matches(title: str, role: str) -> bool:
-    title, role = (title or "").lower(), role.lower().strip()
+    title, role = (title or "").lower(), job_title(role).lower()
     words = ROLE_WORDS.get(role, role)
     return bool(title) and (role in title.split() or words in title or role in title)
 
@@ -766,7 +881,10 @@ def manual_review(c: Ctx, opp_id: str, kind: str, key: str, value, reason: str, 
         if value is None:
             o.revenue_low = o.revenue_high = None
         else:
-            lo, hi = int(value["low"]), int(value["high"])
+            try:
+                lo, hi = int(value["low"]), int(value["high"])
+            except (KeyError, TypeError, ValueError):
+                raise ActionError("Revenue is {\"low\": ..., \"high\": ...} in USD, or null to clear the estimate.", 400, "invalid_value") from None
             if lo <= 0 or hi < lo:
                 raise ActionError("Revenue needs a low value above 0 and a high value at least as large.")
             o.revenue_low, o.revenue_high = lo, hi
@@ -876,33 +994,62 @@ def submit_pack(c: Ctx, opp_id: str, exception: str | None, revision: int | None
 
 
 # ---------- Step 8 ----------
-def decide_pack(c: Ctx, pack_id: str, b) -> None:
+def check_approver_role(c: Ctx, o: m.Opportunity, role: str) -> None:
+    """The role a person claims at Step 8 must fit who they are. There is no login yet, so this trusts the X-User name."""
+    if role not in APPROVER_ROLES:
+        raise ActionError(f"Role must be one of {APPROVER_ROLES}.")
+    if role == "Lead owner" and c.actor != o.owner:
+        raise ActionError(f"Only the lead owner ({o.owner}) acts as Lead owner. Choose Another consultant or Director of Operations.", 403, "wrong_role")
+    if role == "Another consultant" and c.actor == o.owner:
+        raise ActionError("You own this opportunity, so your role here is Lead owner.", 403, "wrong_role")
+    directors = c.settings.directors
+    if role == "Director of Operations" and directors and c.actor not in directors:
+        raise ActionError(f"Only {', '.join(directors)} can act as Director of Operations (CGS_DIRECTORS in .env).", 403, "wrong_role")
+
+
+def clear_handover(pk: m.Pack) -> None:
+    pk.handover_to = pk.handover_by = pk.handover_role = None
+
+
+def approve_pack(c: Ctx, o: m.Opportunity, pk: m.Pack, approver: str, role: str, new_owner: str) -> None:
+    handover = new_owner != o.owner
+    c.s.add(m.Decision(opportunity_id=o.id, step=8, decision="Approved with exception" if pk.exception else "Approved", by=approver, role=role,
+                       note=f"Handed over from {o.owner} to {new_owner}; accepted by {new_owner}" if handover else "", pack_id=pk.id, on=c.today,
+                       handover_from=o.owner if handover else None, handover_to=new_owner if handover else None))
+    log(c, o.id, "h", f"Approved as Qualification by {approver} ({role})" + (f"; handed over from {o.owner} to {new_owner}, who accepted" if handover else ""))
+    pk.status, o.stage, o.owner = "approved", "qualification", new_owner
+    clear_handover(pk)
+    o.next_action, o.next_due = "Needs analysis meeting", c.today + timedelta(days=7)
+    o.crm_sync = "sync_pending"
+    log(c, o.id, "s", f"Insightly sync pending (CRM mode: {c.settings.crm_mode}). Nothing was written to Insightly.")
+
+
+def decide_pack(c: Ctx, pack_id: str, b) -> dict:
     pk = c.s.get(m.Pack, pack_id)
     if not pk:
         raise ActionError("Pack not found.", 404, "not_found")
     if pk.status != "open":
         raise ActionError(f"This pack is {pk.status}.", 409, "wrong_status")
     o = opp(c, pk.opportunity_id, "approval")
-    if b.role not in APPROVER_ROLES:
-        raise ActionError(f"Role must be one of {APPROVER_ROLES}.")
+    check_approver_role(c, o, b.role)
     rec = lambda decision, note="", **kw: c.s.add(m.Decision(opportunity_id=o.id, step=8, decision=decision, by=c.actor, role=b.role,
                                                              note=note, pack_id=pk.id, on=c.today, **kw))
+    out = {"status": b.decision}
     if b.decision == "approve":
         if pk.stale_reason:
             raise ActionError(f"This pack is out of date ({pk.stale_reason}). Return it so the owner can resubmit.", 409, "stale_pack")
         new_owner = b.new_owner or o.owner
         if new_owner not in owners_list(c):
             raise ActionError("The new owner must be a workspace user.")
-        handover = new_owner != o.owner
-        if handover and not b.handover_accepted:
-            raise ActionError(f"{new_owner} has to accept the handover first. Until then {o.owner} stays responsible.", 400, "handover_not_accepted")
-        rec("Approved with exception" if pk.exception else "Approved", f"Handed over from {o.owner} to {new_owner}; accepted by {new_owner}" if handover else "",
-            handover_from=o.owner if handover else None, handover_to=new_owner if handover else None)
-        log(c, o.id, "h", f"Approved as Qualification by {c.actor} ({b.role})" + (f"; handed over from {o.owner} to {new_owner}" if handover else ""))
-        pk.status, o.stage, o.owner = "approved", "qualification", new_owner
-        o.next_action, o.next_due = "Needs analysis meeting", c.today + timedelta(days=7)
-        o.crm_sync = "sync_pending"
-        log(c, o.id, "s", f"Insightly sync pending (CRM mode: {c.settings.crm_mode}). Nothing was written to Insightly.")
+        if new_owner != o.owner and c.actor != new_owner:
+            # only the new owner can accept a handover; the approval waits for them (POST /api/packs/{id}/handover)
+            pk.handover_to, pk.handover_by, pk.handover_role = new_owner, c.actor, b.role
+            log(c, o.id, "h", f"Approved by {c.actor} ({b.role}) with a handover to {new_owner}. "
+                              f"Waiting for {new_owner} to accept; until then {o.owner} stays responsible.")
+            o.revision += 1
+            return {"status": "handover_pending", "handoverTo": new_owner}
+        approve_pack(c, o, pk, c.actor, b.role, new_owner)  # no handover, or the new owner is approving and so accepts
+        out["status"] = "approved"
     elif b.decision == "return":
         q = need_text(b.questions, "What evidence is missing") if not pk.stale_reason else (b.questions or "Resubmit the updated pack")
         pk.status, o.stage = "returned", "active"
@@ -921,7 +1068,34 @@ def decide_pack(c: Ctx, pack_id: str, b) -> None:
         pk.status, o.stage = "closed", "closed"
         rec("Closed", b.reason)
         log(c, o.id, "h", f"Closed by {c.actor}: {b.reason}")
+    if b.decision != "approve":
+        clear_handover(pk)  # any other decision replaces an approval that was waiting for a handover
     o.revision += 1
+    return out
+
+
+def answer_handover(c: Ctx, pack_id: str, accept: bool, reason: str | None) -> dict:
+    """The new owner accepts the handover (the approval then takes effect) or declines it (the approver decides again)."""
+    pk = c.s.get(m.Pack, pack_id)
+    if not pk:
+        raise ActionError("Pack not found.", 404, "not_found")
+    if pk.status != "open" or not pk.handover_to:
+        raise ActionError("No handover is waiting on this pack.", 409, "wrong_status")
+    if c.actor != pk.handover_to:
+        raise ActionError(f"Only {pk.handover_to} can accept or decline this handover.", 403, "not_new_owner")
+    o = opp(c, pk.opportunity_id, "approval")
+    if accept:
+        if pk.stale_reason:
+            raise ActionError(f"The pack changed after the approval ({pk.stale_reason}). The approver has to decide again.", 409, "stale_pack")
+        approve_pack(c, o, pk, pk.handover_by, pk.handover_role, c.actor)
+        result = {"status": "approved"}
+    else:
+        reason = need_text(reason, "A reason for declining")
+        log(c, o.id, "h", f"{c.actor} declined the handover from {pk.handover_by}'s approval: {reason}. The pack waits for a new decision.")
+        clear_handover(pk)
+        result = {"status": "declined"}
+    o.revision += 1
+    return result
 
 
 # ---------- learning loop ----------
@@ -931,12 +1105,19 @@ def manual_direction_proposal(c: Ctx, field: str, scope: str, value, rationale: 
     if scope not in ("theme", "consultant"):
         raise ActionError("Scope must be theme (shared) or consultant (personal).")
     base = current_direction(c, c.actor if scope == "consultant" else None)
-    after = value.strip() if field == "problem" else [x.strip() for x in value if str(x).strip()] if isinstance(value, list) else [x.strip() for x in str(value).split(",") if x.strip()]
+    if field == "problem":
+        if not isinstance(value, str):
+            raise ActionError("The problem is one piece of text, not a list.", 400, "invalid_value")
+        after = need_text(value, "The problem")
+    elif isinstance(value, list):
+        after = [str(x).strip() for x in value if str(x).strip()]
+    else:
+        after = [x.strip() for x in str(value).split(",") if x.strip()]
     if after == getattr(base, field):
         raise ActionError("Nothing changed. Edit the value first.")
     p = m.DirectionProposal(id=new_id("dp"), type="direction", field=field, scope=scope, origin="manual", title=f"Change {field.replace('_', ' ')}",
                             rationale=need_text(rationale, "A reason"), before=getattr(base, field), after=after, feedback_ids=[],
-                            base_version=base.version, status="pending", created_on=c.today)
+                            base_version=base.version, proposed_by=c.actor, status="pending", created_on=c.today)
     c.s.add(p)
     return p.id
 
@@ -963,7 +1144,7 @@ def analyze_feedback(c: Ctx, scope: str) -> dict:
             c.s.add(m.DirectionProposal(id=created, type="direction", field=pr["field"], scope="theme" if shared else "consultant", origin="ai",
                                         title=pr["title"], rationale=pr["rationale"], before=getattr(base, pr["field"]), after=pr["after"],
                                         feedback_ids=pr.get("feedback_ids") or [f.id for f in eligible], base_version=base.version,
-                                        status="pending", created_on=c.today))
+                                        proposed_by=c.actor, status="pending", created_on=c.today))
             res["summary"] += " A proposal was created for approval."
     return {"eligible": len(eligible), "summary": res["summary"], "proposalId": created}
 
@@ -979,7 +1160,8 @@ def decide_direction(c: Ctx, prop_id: str, approve: bool) -> str | None:
         p.status = "rejected"
         return None
     personal = p.scope == "consultant"
-    target = current_direction(c, c.actor if personal else None)
+    owner = (p.proposed_by or c.actor) if personal else None  # a personal change belongs to the person who proposed it
+    target = current_direction(c, owner)
     if p.type == "direction" and p.base_version and p.base_version != target.version:
         raise ActionError(f"This proposal was made on {p.base_version}, but the direction is now {target.version}. Reject it and create a new one.",
                           409, "stale_proposal")
@@ -992,15 +1174,18 @@ def decide_direction(c: Ctx, prop_id: str, approve: bool) -> str | None:
         data[p.field] = p.after
         change = p.title
     if personal:
-        n = c.s.scalar(select(func.count()).select_from(m.DirectionVersion).where(m.DirectionVersion.scope == "personal", m.DirectionVersion.owner == c.actor)) + 1
-        base = target.version.split("-p")[0] if target.scope == "personal" else target.version
-        version = f"{base}-{slug(c.actor)}-p{n}"
+        version = personal_version_name(c, shared_base(target.version), owner)
     else:
         nums = [int(v[1:]) for v in c.s.scalars(select(m.DirectionVersion.version).where(m.DirectionVersion.scope == "shared")) if re.fullmatch(r"v\d+", v)]
         version = f"v{max(nums) + 1}"
-    c.s.add(m.DirectionVersion(version=version, scope="personal" if personal else "shared", owner=c.actor if personal else None, approved_by=c.actor,
-                               approved_on=c.today, basis="mock", change=change, **data))
+    new = m.DirectionVersion(version=version, scope="personal" if personal else "shared", owner=owner, approved_by=c.actor,
+                             approved_on=c.today, basis="mock", change=change, **data)
+    c.s.add(new)
     p.status = "approved"
+    if not personal:
+        c.s.flush()
+        for v in rebase_personal(c, new):
+            log(c, None, "s", f"Personal direction {v} created on {version}, keeping that person's own changes")
     record_run(c, "Workflow manager", None, "approve-direction", 0, subject=f"Direction {version}")
     return version
 

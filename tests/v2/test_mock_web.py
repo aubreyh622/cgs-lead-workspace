@@ -10,6 +10,7 @@ from api.main import create_app
 from api.mock_research import MockResearchBridge, research
 from api.search import PROVIDERS, MockSearch, make_search, search_config
 from api.settings import Settings
+from agent_fakes import turn
 
 ME = {"X-User": "Alex Morgan"}
 
@@ -20,7 +21,10 @@ class FakeAI:
 
     def __call__(self, url, headers, payload, **kw):
         self.requests.append(payload)
-        return {"candidates": [{"content": {"parts": [{"text": json.dumps(self.answers.pop(0))}]}}], "usageMetadata": {"promptTokenCount": 7}}
+        a = self.answers.pop(0)
+        if "candidates" in a and "usageMetadata" in a:  # already a full response (a tool-using agent's turn)
+            return a
+        return {"candidates": [{"content": {"parts": [{"text": json.dumps(a)}]}}], "usageMetadata": {"promptTokenCount": 7}}
 
 
 def test_default_provider_is_the_synthetic_internet(monkeypatch):
@@ -88,10 +92,12 @@ def test_draft_citing_a_synthetic_case_carries_a_warning(tmp_path):
     create_app(Settings(app_mode="demo", db_path=tmp_path / "w.sqlite3")).state.db.engine.dispose()
     app = create_app(Settings(app_mode="live", db_path=tmp_path / "w.sqlite3"))
     b = TestClient(app).get("/api/opportunities/halvorsen").json()["brief"]
-    pid = library().search(b["hypothesis"] + " " + b["relevance"], k=2, types=("case", "service", "document"))[0]["id"]
+    query = b["hypothesis"] + " " + b["relevance"]
+    passage = library().search(query, k=3, types=("case", "service", "document"))[0]
     good = {"subject": "Your new Ohio foundry", "body": f"Hi Priya, I saw that [[f1|Halvorsen opened a third foundry in Ohio]]. "
-            f"[[{pid}|we help with this]]. Open to 20 minutes? Alex Morgan, CGS Advisors"}
-    app.state.provider_factory = lambda: make_provider("gemini", "m", key="k", transport=FakeAI(good))
+            f"[[{passage['id']}|{' '.join(passage['text'].split()[:6])}]]. Open to 20 minutes? Alex Morgan, CGS Advisors"}
+    fake = FakeAI(turn(("brief", {})), turn(("search_library", {"query": query})), turn(("submit_draft", good)))
+    app.state.provider_factory = lambda: make_provider("gemini", "m", key="k", transport=fake)
     r = TestClient(app).post("/api/opportunities/halvorsen/outreach/generate", json={}, headers=ME).json()
     assert "SYNTHETIC" in r["warnings"][0]
 

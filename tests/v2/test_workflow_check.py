@@ -8,6 +8,12 @@ import pytest
 import api.check_workflow as W
 from api.llm import make_provider
 from api.search import MockSearch
+from agent_fakes import play, tool_names
+
+
+def story_draft(brief):
+    f = brief["facts"][0]
+    return {"subject": "Your integration", "body": f"Hi, I read that [[{f['id']}|{' '.join(f['text'].split()[:4])}]]. Open to a short call? Alex Morgan, CGS Advisors"}
 
 
 def quote(text: str, start: str) -> str:
@@ -28,6 +34,10 @@ class StoryAI:
         self.label, self.proposals, self.agents = label, proposals, []
 
     def __call__(self, url, headers, payload, **kw):
+        if "tools" in payload:  # the tool-using agents (evidence, outreach, person lookup)
+            names = tool_names(payload)
+            self.agents.append("evidence" if "propose" in names else "outreach" if "submit_draft" in names else "person")
+            return play(payload, evidence=lambda notes: {"proposals": self.proposals(notes), "people_to_find": []}, draft=story_draft)
         props = set(payload["generationConfig"]["responseJsonSchema"]["properties"])
         user = payload["contents"][0]["parts"][0]["text"]
         if "queries" in props:

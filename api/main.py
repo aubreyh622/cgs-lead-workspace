@@ -23,7 +23,9 @@ from api.db import Database
 from api.models import DirectionVersion, Setting
 from sqlalchemy import select
 import json
+import threading
 from datetime import date
+from urllib.parse import urlsplit
 from api.actions import router as actions_router
 from api.routes import router
 from api.services import ActionError
@@ -31,6 +33,7 @@ from api.seed import load_demo
 from api.settings import Settings, load_settings
 
 VERSION = "0.4.0"
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "testserver"}  # testserver: the host name FastAPI's TestClient sends
 Dim = Literal["B", "A", "N", "T", "H", "E"]
 Cond = Literal["problem", "fit", "external", "next", "commercial", "conflict"]
 Blocker = Literal[tuple(REASONS)]  # type: ignore[valid-type]
@@ -113,6 +116,18 @@ def starting_direction() -> DirectionVersion:
                             change=f"Imported from config/problem_brief.json ({b['version']})")
 
 
+def check_database_mode(db: Database, settings: Settings) -> bool:
+    """Returns True when the database holds the synthetic demo sample. Demo mode refuses a database that holds live
+    records: loading the sample on top would fail or mix invented records into real work."""
+    with db.session() as s:
+        demo_db = s.get(Setting, "demo_today") is not None
+        has_records = s.scalar(select(DirectionVersion.version).limit(1)) is not None
+    if settings.app_mode == "demo" and has_records and not demo_db:
+        raise RuntimeError(f"{settings.db_path} holds live-mode records, so demo mode will not load its sample into it. "
+                           "Use another file for the demo: set CGS_V2_DB_PATH in .env, for example runtime/workspace-v2-demo.sqlite3.")
+    return demo_db or settings.app_mode == "demo"
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or load_settings()
     app = FastAPI(
@@ -123,6 +138,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.db = Database(settings.database_url)
+    app.state.work_lock = threading.Lock()  # the background worker holds it while it works; a demo reset waits for it
+    app.state.demo_data = check_database_mode(app.state.db, settings)
     if settings.app_mode == "demo":
         load_demo(app.state.db)  # only fills an empty database
     with app.state.db.session() as s:
@@ -140,6 +157,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def action_error(_: Request, exc: ActionError):
         return JSONResponse({"error": str(exc), "code": exc.code}, status_code=exc.status)
 
+    @app.middleware("http")
+    async def local_only(request: Request, call_next):
+        """The workspace serves this computer only. A wrong Host header means another site reached it through DNS
+        rebinding; a foreign Origin on a write means another site's page is sending the request."""
+        if urlsplit("//" + request.headers.get("host", "")).hostname not in LOCAL_HOSTS:
+            return JSONResponse({"error": "This workspace only answers requests addressed to 127.0.0.1 or localhost.", "code": "bad_host"}, 403)
+        origin = request.headers.get("origin")
+        if request.method not in ("GET", "HEAD", "OPTIONS") and origin is not None:
+            o = urlsplit(origin)
+            if o.hostname not in LOCAL_HOSTS or (o.port or 80) != settings.port:
+                return JSONResponse({"error": "Requests from other websites are not accepted.", "code": "bad_origin"}, 403)
+        return await call_next(request)
+
     @app.get("/api/health", tags=["system"], summary="Is the server running?")
     def health():
         return {"ok": True, "version": VERSION}
@@ -151,6 +181,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"appMode": settings.app_mode, "crmMode": settings.crm_mode, "ruleVersion": RULE_VERSION,
                 "aiConnected": settings.app_mode == "live", "aiProvider": settings.ai_provider if settings.app_mode == "live" else "demo rules",
                 "web": search_config()["provider"], "timeTravel": simulated(settings), "agentWorker": bool(app.state.worker),
+                "demoData": app.state.demo_data,
                 "note": "Demo mode uses text rules instead of AI. In live mode, AI actions return an error rather than demo results."}
 
     @app.get("/api/rules", tags=["rules"], summary="The qualification rules (weights, anchors, minimums)")
@@ -187,6 +218,11 @@ def main():
     import uvicorn
     s = app.state.settings
     print(f"CGS Lead Workspace v2 ({s.app_mode} mode, CRM {s.crm_mode})")
+    if s.app_mode == "live" and app.state.demo_data:
+        print(f"Note: {s.db_path} holds the synthetic demo records. For real leads, set CGS_V2_DB_PATH in .env to a new file.")
+    if "onedrive" in str(s.db_path).lower():
+        print(f"Warning: the database {s.db_path} is in a OneDrive folder. Syncing can damage a database that is in use. "
+              "Set CGS_V2_DB_PATH in .env to a folder outside OneDrive, for example C:/cgs-data/workspace-v2.sqlite3.")
     if s.agent_worker:
         from api.autonomy import Worker
         app.state.worker = Worker(app).start()  # agents patrol and work in the background; see api/autonomy.py

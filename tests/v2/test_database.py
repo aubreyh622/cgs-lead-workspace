@@ -82,6 +82,29 @@ def test_missing_opportunity_is_404(client):
 
 
 def test_reset_restores_the_sample_in_demo_only(client, tmp_path):
-    assert client.post("/api/demo/reset").json() == {"ok": True}
+    me = {"X-User": "Alex Morgan"}
+    assert client.post("/api/demo/reset").status_code == 401  # a plain cross-site form post carries no X-User
+    assert client.post("/api/demo/reset", headers=me).json() == {"ok": True, "by": "Alex Morgan"}
     assert client.get("/api/stats").json()["opportunities"] == 14
-    assert make(tmp_path / "live", "live").post("/api/demo/reset").status_code == 403
+    assert make(tmp_path / "live", "live").post("/api/demo/reset", headers=me).status_code == 403
+
+
+def test_only_local_pages_can_reach_the_workspace(client):
+    me = {"X-User": "Alex Morgan"}
+    assert client.get("/api/health", headers={"Host": "evil.example:8800"}).status_code == 403  # DNS rebinding
+    assert client.get("/api/health", headers={"Host": "localhost:8800"}).status_code == 200
+    assert client.post("/api/opportunities/marlow/research/stop", headers={**me, "Origin": "https://evil.example"}).status_code == 403
+    assert client.post("/api/opportunities/marlow/research/stop", headers={**me, "Origin": "http://127.0.0.1:8800"}).status_code == 200
+
+
+def test_demo_mode_refuses_a_live_database(tmp_path):
+    from api.main import create_app
+    from api.settings import Settings
+    db = tmp_path / "shared.sqlite3"
+    create_app(Settings(app_mode="live", db_path=db)).state.db.engine.dispose()
+    with pytest.raises(RuntimeError, match="live-mode records"):
+        create_app(Settings(app_mode="demo", db_path=db))
+    # the other way round is allowed (live AI on the synthetic sample), and the workspace says so
+    create_app(Settings(app_mode="demo", db_path=tmp_path / "demo-first.sqlite3")).state.db.engine.dispose()
+    live_on_demo = create_app(Settings(app_mode="live", db_path=tmp_path / "demo-first.sqlite3"))
+    assert TestClient(live_on_demo).get("/api/config").json()["demoData"] is True

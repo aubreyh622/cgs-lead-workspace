@@ -241,6 +241,10 @@ class Pack(Base):
     exception: Mapped[Optional[str]] = mapped_column(Text)             # reason for submitting when not Ready
     stale_reason: Mapped[Optional[str]] = mapped_column(Text)          # set when the opportunity changes after submission
     status: Mapped[str] = mapped_column(String(20), default="open")    # open | approved | returned | nurture | closed | superseded
+    # an approval that hands the opportunity to someone else waits here until that person accepts (POST /api/packs/{id}/handover)
+    handover_to: Mapped[Optional[str]] = mapped_column(String(100))
+    handover_by: Mapped[Optional[str]] = mapped_column(String(100))    # the approver
+    handover_role: Mapped[Optional[str]] = mapped_column(String(60))   # the approver's role
 
 
 class Decision(Base):
@@ -309,6 +313,7 @@ class DirectionProposal(Base):
     after: Mapped[Any] = mapped_column(JSON, nullable=True)
     feedback_ids: Mapped[list] = mapped_column(JSON, default=list)
     base_version: Mapped[Optional[str]] = mapped_column(String(40))
+    proposed_by: Mapped[Optional[str]] = mapped_column(String(100))    # whose personal direction a consultant-scope proposal changes
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | approved | rejected
     decided_by: Mapped[Optional[str]] = mapped_column(String(100))
     created_on: Mapped[date] = mapped_column(Date)
@@ -330,6 +335,7 @@ class AgentRun(Base):
     tokens_out: Mapped[Optional[int]] = mapped_column(Integer)
     error: Mapped[Optional[str]] = mapped_column(Text)
     on: Mapped[date] = mapped_column(Date)
+    trace: Mapped[Optional[list]] = mapped_column(JSON)               # tool-using agents: every model turn and tool call
 
 
 class Activity(Base):
@@ -365,11 +371,26 @@ class AgentJob(Base):
     parent_id: Mapped[Optional[str]] = mapped_column(String(64))
     depth: Mapped[int] = mapped_column(Integer, default=0)             # 0 = found by the patrol or an event; 1+ = handoff chain
     attempts: Mapped[int] = mapped_column(Integer, default=0)
+    retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))  # set after a temporary AI error; null = run any time
     result: Mapped[str] = mapped_column(Text, default="")
     error: Mapped[Optional[str]] = mapped_column(Text)
     created_on: Mapped[date] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class ManagerDecision(Base):
+    """Every decision of the manager agent, in shadow mode as well, so it can be compared with the rules."""
+    __tablename__ = "manager_decisions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    on: Mapped[date] = mapped_column(Date, index=True)
+    mode: Mapped[str] = mapped_column(String(10))                      # shadow | on
+    run_id: Mapped[Optional[str]] = mapped_column(String(64))
+    kind: Mapped[str] = mapped_column(String(40))                      # a job kind, or "note" for a note to the owner
+    opportunity_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    outcome: Mapped[str] = mapped_column(String(20))                   # recorded | queued | already_queued | sent | refused
+    detail: Mapped[str] = mapped_column(Text, default="")
 
 
 class InboxItem(Base):
@@ -387,5 +408,9 @@ class InboxItem(Base):
     data: Mapped[dict] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(12), default="new", index=True)  # new | applied | done | dismissed
     decided_by: Mapped[Optional[str]] = mapped_column(String(80))
+    # approval gate: applying uses exactly what was prepared, while the opportunity is still where it was, before it expires
+    payload_hash: Mapped[Optional[str]] = mapped_column(String(64))
+    basis: Mapped[Optional[dict]] = mapped_column(JSON)                # {"stage": ...} when the item was prepared
+    expires_on: Mapped[Optional[date]] = mapped_column(Date)
     created_on: Mapped[date] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

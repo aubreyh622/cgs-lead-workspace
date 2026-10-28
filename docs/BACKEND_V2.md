@@ -50,7 +50,7 @@ From a terminal: `python -m api.main`. Tests: `python -m pytest -q` (the old P0�
 
 ## AI agents (step 5)
 
-- `api/llm.py` is the plug between agents and AI companies. Agents call `provider.json(...)`; `AI_PROVIDER` picks Gemini or OpenAI.
+- `api/llm.py` is the plug between agents and AI companies. Single-step agents call `provider.json(...)`; tool-using agents call `provider.chat(...)`. `AI_PROVIDER` picks Gemini, OpenAI or Claude.
 - `api/live_agents.py` holds the real A2 + A3 agent and the reply labeler. Before a person sees anything, code checks each proposal:
   - Every quote must appear word for word in the notes.
   - Keys and scores must be valid under the rubric.
@@ -82,7 +82,9 @@ Agents work like employees: they notice work, do it, and hand the result to a pe
 
 - **Task board** (`agent_jobs`): every piece of work, with who does it, why, who asked, and the result.
 - **Inbox** (`inbox_items`): what agents prepared for each owner (or the team). A person applies, finishes or dismisses each item. Applying is the only way anything changes: facts join the brief, a contact is added, the opportunity moves to nurture. Drafts are never sent by the workspace.
-- **Worker**: started by `python -m api.main` when `AGENT_WORKER=on` (default). It patrols once a day after `patrol_hour` (or at once after time travel) and works through the board one job at a time, pausing between AI calls for the free tier. Temporary AI errors are retried up to 3 times.
+- **Worker**: started by `python -m api.main` when `AGENT_WORKER=on` (default). It patrols once a day after `patrol_hour` (or at once after time travel) and works through the board one job at a time, pausing between AI calls for the free tier. Each job is claimed in one database update, so the worker and a "run now" request never run the same job twice. While the day's AI budget is used up, AI jobs wait and jobs that need no AI still run. Temporary AI errors are retried up to 3 times, after 60 s and then 120 s.
+- **Budget counting**: each AI request counts toward the daily budget (discovery makes two), including requests that failed.
+- **Personal directions**: a consultant-scope proposal changes the proposer's own direction, whoever approves it. Versions are named `<shared>-<person>-p<n>` (for example `v4-alex-morgan-p2`). When a shared change is approved, each person's own changes are carried onto the new shared version, so shared exclusions always reach everyone.
 - **Brakes**: daily AI budget (`AGENT_AI_DAILY_BUDGET`, also `PATCH /api/agents`); at most 3 handoffs per opportunity per day and chains of 2; pause switch. Every job and AI call is logged.
 - **Time travel** (`POST /api/demo/advance-days`) works with demo data and, in live mode, on the synthetic internet. The synthetic internet hides news dated after the simulated day, so a research refresh after time travel finds it.
 - `Check Agents.cmd` (`python -m api.check_agents`): three leads, then 8 days and 5 months of simulated time, with the real AI.
@@ -104,7 +106,7 @@ Agents work like employees: they notice work, do it, and hand the result to a pe
   - name a company that appears in that result,
   - use a person's name only when it appears word for word in that result; otherwise the contact is “contact to confirm”,
   - are not on an excluded domain and are not already in the workspace.
-- **Research agent** (`api/research_bridge.py`). Picking a candidate starts Aubrey's research v2 for that company in the background. That pipeline is Gemini + Tavily only, uses her `config/problem_brief.json`, and caps each company at 10 searches, 12 page reads, 18 model calls, 22 credits and 8 minutes. `POST /api/research/sync` turns a finished company card into the Step 4 brief: quoted, dated facts with source URLs; flags; and a contact only if the sources name one. A run that produces no brief stays visible as failed or paused. Research needs the company website; set it with `PATCH /api/opportunities/{id}/company`.
+- **Research agent** (`api/research_bridge.py`). Picking a candidate starts Aubrey's research v2 for that company in the background. That pipeline is Gemini + Tavily only, uses her `config/problem_brief.json`, and caps each company at 10 searches, 12 page reads, 18 model calls, 22 credits and 8 minutes. The background worker checks running research every 30 seconds (or press `POST /api/research/sync`) and turns a finished company card into the Step 4 brief: quoted, dated facts with source URLs; flags; and a contact only if the sources name one. A run that produces no brief stays visible as failed or paused. Research needs the company website; set it with `PATCH /api/opportunities/{id}/company`.
 - **CGS library** (`api/knowledge.py`, `GET /api/knowledge?q=`). A keyword (BM25) search over `knowledge/*.md|*.txt` and, while `KNOWLEDGE_DEMO=on`, a synthetic demo library.
   - A3 may use a library passage only for the “CGS service fit” condition, quoted word for word.
   - A1 may cite one passage in a draft, but must still cite at least one brief fact.
@@ -128,14 +130,15 @@ Agents work like employees: they notice work, do it, and hand the result to a pe
 | 6–7 | Review a score, condition, revenue or blocker by hand; edit the need statement | `POST …/review`, `PATCH …/need` | Every change needs a reason and marks a submitted pack out of date |
 | 7 | Get up to 3 next actions; turn one into a task; tick a task | `POST …/suggestions`, `POST /api/suggestions/{id}/task`, `POST /api/tasks/{id}/toggle` | A suggestion becomes a task only with an owner and date; finishing a task never changes a score |
 | 7 | Submit or resubmit the pack | `POST …/packs` | Not Ready needs an exception reason |
-| 8 | Approve, return, nurture, close | `POST /api/packs/{id}/decision` | An out-of-date pack cannot be approved; a handover needs the new owner's acceptance; approval sets Insightly sync to pending |
+| 8 | Approve, return, nurture, close | `POST /api/packs/{id}/decision` | An out-of-date pack cannot be approved; the role must fit the person (Lead owner = the owner; Another consultant = not the owner; Director of Operations = someone in `CGS_DIRECTORS`, or anyone while it is empty); approval sets Insightly sync to pending |
+| 8 | Accept or decline a handover | `POST /api/packs/{id}/handover` | An approval that names a new owner waits until that person (X-User) accepts; if they approve themselves, they accept in one step. Declining needs a reason and leaves the pack open |
 | Loop | Propose, analyze, approve or reject direction changes | `POST /api/direction/proposals`, `/analyze`, `/proposals/{id}/{approve,reject}` | Whitelisted fields only; a proposal made on an older version cannot be approved; personal versions apply to one person |
 
 Agents in this step are demo text rules ported from the prototype (`api/demo_agents.py`). In live mode they record a failed run and return an error.
 
 ### Step 3: reads
 
-Read endpoints: `GET /api/opportunities` (filter by stage or owner), `GET /api/opportunities/{id}`, `GET /api/companies/{id}/opportunities`, `GET /api/candidates`, `GET /api/direction`, `GET /api/feedback`, `GET /api/agent-runs`, `GET /api/stats`, and `POST /api/demo/reset` (demo mode only).
+Read endpoints: `GET /api/opportunities` (filter by stage or owner), `GET /api/opportunities/{id}`, `GET /api/companies/{id}/opportunities`, `GET /api/candidates`, `GET /api/direction`, `GET /api/feedback`, `GET /api/agent-runs`, `GET /api/stats`, and `POST /api/demo/reset` (demo mode only; needs X-User and waits for the agents' current job).
 
 ### Step 2
 
@@ -156,3 +159,59 @@ The rules engine is `backend/rules.py` (rule version 1.1-proposed), unchanged fr
 - Live mode never falls back to demo results; it shows the error.
 - Nothing is sent by email or written to Insightly without a recorded human approval.
 - All data is synthetic until CGS approves real data use.
+
+## Local safety
+
+- The server answers only requests addressed to 127.0.0.1 or localhost, and refuses changes sent from another website's page (Origin check). Every change needs the X-User header, which other websites cannot add without the server's permission.
+- Demo mode refuses a database file that holds live records. Live mode on the demo sample is allowed (the check scripts use it) and `GET /api/config` reports `demoData: true`.
+- Keep the database outside OneDrive: set `CGS_V2_DB_PATH` to a local folder. The server prints a warning when the file is in OneDrive.
+
+## Tool-using agents (multi-agent step 1)
+
+Until now every agent was one AI call with a fixed form to fill, at a moment chosen by code. Step 1 adds agents that
+reason in a loop and choose their own tools. The research agent's person lookup is the pilot (live mode only; demo mode
+keeps the text rule).
+
+| Piece | File | What it does |
+|---|---|---|
+| Tool calling | `api/llm.py` | `chat(system, messages, tools)` for Gemini, OpenAI and Claude, with one neutral history format |
+| Agent loop | `api/agent_runtime.py` | model → tools → results → model … until `finish`. Brakes: step limit, tool-call limit, a budget check before every AI request. Every step is kept in a trace |
+| Tools | `api/agent_tools.py` | `company_pages`, `search_web`, `read_page`, `known_contacts`. Nothing sends, approves or changes a score. `read_page` opens only pages the agent found, or the company's own site |
+| Research agent (pilot) | `api/research_agent.py` | Finds the person in a role ("the CEO would decide"). Its answer is checked by code: the page was read in this run, the quote is on it word for word, the quote names the person, the title is that role. A rejected answer goes back to the agent, which looks again |
+| A2 + A3 evidence agent (step 2) | `api/evidence_agent.py` | Reads the new notes and up to five earlier ones, checks what is confirmed and which gaps remain, may search the CGS library for fit, and records each proposal with `propose`, checked at once (same rules as before). A quote may come from an earlier note; the proposal links to that note. Asks the research agent directly with `ask_research` |
+| A1 outreach agent (step 2) | `api/outreach_agent.py` | First emails, follow-ups and reconnect messages. Reads the brief and what was already sent or said, may look for newer news, and can cite a new development only after reading the page and adding the sentence word for word with `add_fact`. `submit_draft` is checked: every fact cited, each cited phrase close to its source (75% of its words, every number), no prices, percentages, guarantees or promises |
+
+- The result is still a suggestion in the owner's inbox; nobody becomes a contact until a person applies it.
+- **Approval gate** (from the MVP): each inbox item records a fingerprint of what the agent prepared (`payloadHash`), the
+  opportunity's stage at that moment, and an expiry date (14 days). Applying is refused when the item is not the version the
+  person saw (send `payload_hash`), when the opportunity has moved to another stage, when it has expired, or, for a draft,
+  when a fact it cites now says something else in the brief. Dismissing is always allowed. Applying a draft adds the facts
+  it cites to the brief, so the citations resolve.
+- Demo mode keeps the text rules for all three agents. The single-step `extract_evidence` and `write_outreach` remain for
+  `Check AI.cmd` and the AI exam.
+- `GET /api/agent-runs/{id}` shows every step: what the model said, which tools it called with which arguments, and what they returned.
+- Each AI request counts toward the daily budget; the loop stops when the budget is used up.
+- Tests run behind an offline guard (`tests/offline_guard/`, from the MVP in cgs-lead-workspace): no internet, no real keys, no `.env`.
+
+## Manager agent (multi-agent step 3)
+
+`api/manager_agent.py`. Once a day the patrol queues a `manager_review` job (live mode, when `MANAGER_MODE` is not `off`).
+The manager reads the board (every open opportunity: stage, progress, outreach, readiness, recent agent work), looks closer
+at the ones that need it, and then delegates work (`delegate`) or tells an owner something only a person can act on
+(`note_for_owner`). It sits beside the rules, it does not replace them: the rules keep the predictable work, the manager adds
+judgment.
+
+| Mode | What happens |
+|---|---|
+| `off` (default) | The manager does not run |
+| `shadow` | It decides; every decision is recorded and compared with the rules' work that day. Nothing is queued, nothing reaches an inbox |
+| `on` | Its delegations are queued (trigger `manager`), its notes go to the owners' inboxes (kind `advice`) |
+
+- Code checks every delegation: the kind of work must fit the stage, a follow-up needs a sent email without a reply, a person
+  lookup needs a job title not already a contact, Ready reminders need the rules to say Ready. At most 8 decisions per review
+  and 2 per opportunity. Work already on the board, or already done today by the rules, is never queued twice.
+- For a fair comparison, the manager does not see the work the rules queued that day.
+- `GET /api/manager/decisions` lists every decision; `GET /api/manager/compare?day=` shows them next to the rules:
+  both, manager only (flagged when it repeats recent work), rules only, notes to owners, and what the code refused.
+- Switch modes with `MANAGER_MODE` in `.env` or `PATCH /api/agents {"manager_mode": "shadow"}`.
+- `Check Agents.cmd` prints the comparison after each patrol when the manager is not off.

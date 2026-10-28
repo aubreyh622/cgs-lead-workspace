@@ -149,14 +149,47 @@ def test_stale_pack_blocks_approval_until_resubmitted(api):
     assert get(api, "northstar")["stage"] == "qualification"
 
 
-def test_handover_needs_acceptance(api):
+def test_handover_needs_acceptance_by_the_new_owner(api):
+    sarah, quinn = {"X-User": "Sarah Patel"}, {"X-User": "Quinn Harper"}
     pid = post(api, "/api/opportunities/cedarbay/review", {"kind": "score", "key": "B", "value": 4, "reason": "Budget approved"}) and \
         post(api, "/api/opportunities/cedarbay/packs", {})["id"]
-    body = {"decision": "approve", "new_owner": "Quinn Harper"}
-    assert post(api, f"/api/packs/{pid}/decision", body, ok=400)["code"] == "handover_not_accepted"
-    post(api, f"/api/packs/{pid}/decision", {**body, "handover_accepted": True})
+    body = {"decision": "approve", "role": "Another consultant", "new_owner": "Quinn Harper", "handover_accepted": True}
+    assert post(api, f"/api/packs/{pid}/decision", body)["status"] == "handover_pending"  # Alex cannot accept for Quinn
     o = get(api, "cedarbay")
-    assert o["owner"] == "Quinn Harper" and o["decisions"][-1]["handoverFrom"] == "Sarah Patel"
+    assert o["stage"] == "approval" and o["owner"] == "Sarah Patel" and o["packs"][-1]["handoverTo"] == "Quinn Harper"
+    assert post(api, f"/api/packs/{pid}/handover", {"accept": True}, ok=403)["code"] == "not_new_owner"
+    assert post(api, f"/api/packs/{pid}/handover", {"accept": False}, ok=400, user=quinn)["code"] == "reason_required"
+    assert post(api, f"/api/packs/{pid}/handover", {"accept": True}, user=quinn)["status"] == "approved"
+    o = get(api, "cedarbay")
+    assert o["owner"] == "Quinn Harper" and o["stage"] == "qualification"
+    d = o["decisions"][-1]
+    assert d["by"] == "Alex Morgan" and d["handoverFrom"] == "Sarah Patel" and d["handoverTo"] == "Quinn Harper"
+    # the new owner approving accepts in one step; a declined handover leaves the pack open for a new decision
+    pid = post(api, "/api/opportunities/northstar/packs", {})["id"]
+    post(api, f"/api/packs/{pid}/decision", {"decision": "approve", "role": "Lead owner", "new_owner": "Sarah Patel"})
+    assert post(api, f"/api/packs/{pid}/handover", {"accept": False, "reason": "Too busy this month"}, user=sarah)["status"] == "declined"
+    o = get(api, "northstar")
+    assert o["stage"] == "approval" and o["owner"] == "Alex Morgan" and o["packs"][-1]["handoverTo"] is None
+
+
+def test_step8_role_must_fit_the_person(api):
+    pid = post(api, "/api/opportunities/cedarbay/review", {"kind": "score", "key": "B", "value": 4, "reason": "Budget approved"},
+               user={"X-User": "Sarah Patel"}) and post(api, "/api/opportunities/cedarbay/packs", {}, user={"X-User": "Sarah Patel"})["id"]
+    assert post(api, f"/api/packs/{pid}/decision", {"decision": "approve", "role": "Lead owner"}, ok=403)["code"] == "wrong_role"
+    assert post(api, f"/api/packs/{pid}/decision", {"decision": "approve", "role": "Another consultant"},
+                ok=403, user={"X-User": "Sarah Patel"})["code"] == "wrong_role"
+    from dataclasses import replace
+    api.app.state.settings = replace(api.app.state.settings, directors=("Quinn Harper",))  # CGS_DIRECTORS=Quinn Harper
+    assert post(api, f"/api/packs/{pid}/decision", {"decision": "approve", "role": "Director of Operations"}, ok=403)["code"] == "wrong_role"
+    assert post(api, f"/api/packs/{pid}/decision", {"decision": "approve", "role": "Director of Operations"},
+                user={"X-User": "Quinn Harper"})["status"] == "approved"
+
+
+def test_bad_input_gets_a_clear_error_not_a_crash(api):
+    r = post(api, "/api/opportunities/meridian/review", {"kind": "revenue", "value": 500000, "reason": "x"}, ok=400)
+    assert r["code"] == "invalid_value"
+    r = post(api, "/api/direction/proposals", {"field": "problem", "value": ["a", "b"], "rationale": "x"}, ok=400)
+    assert r["code"] == "invalid_value"
 
 
 def test_not_ready_needs_an_exception_reason(api):
@@ -199,6 +232,30 @@ def test_learning_loop(api):
     assert api.get("/api/direction").json()["current"]["version"] == "v4"
     # analysis finds no repeated reason on v4 yet
     assert "No change proposed" in post(api, "/api/direction/analyze")["summary"]
+
+
+def test_personal_direction_belongs_to_proposer_and_follows_shared_changes(api):
+    from api import models as m
+    sarah, quinn = {"X-User": "Sarah Patel"}, {"X-User": "Quinn Harper"}
+    post(api, "/api/direction/proposals/p2/approve")  # shared v4
+    merger = "Merger or acquisition in the last 12 months"
+    pid = post(api, "/api/direction/proposals", {"field": "signals", "scope": "consultant", "value": merger, "rationale": "My focus"})["id"]
+    assert post(api, f"/api/direction/proposals/{pid}/approve", user=sarah)["version"] == "v4-alex-morgan-p1"  # Alex's, though Sarah approved
+    pid = post(api, "/api/direction/proposals", {"field": "problem", "scope": "consultant", "value": "Alex's own problem statement", "rationale": "x"})["id"]
+    assert post(api, f"/api/direction/proposals/{pid}/approve")["version"] == "v4-alex-morgan-p2"  # the name does not grow
+    # a shared change reaches Alex too, on top of his own changes
+    excl = api.get("/api/direction").json()["current"]["exclusions"] + ["Public sector bodies"]
+    pid = post(api, "/api/direction/proposals", {"field": "exclusions", "scope": "theme", "value": excl, "rationale": "CGS policy"}, user=sarah)["id"]
+    assert post(api, f"/api/direction/proposals/{pid}/approve", user=quinn)["version"] == "v5"
+    with api.app.state.db.session() as s:
+        mine = s.get(m.DirectionVersion, "v4-alex-morgan-p2")
+        assert mine.owner == "Alex Morgan" and mine.approved_by == "Alex Morgan"
+        new = s.get(m.DirectionVersion, "v5-alex-morgan-p3")
+        assert new and new.owner == "Alex Morgan" and new.signals == [merger]
+        assert new.problem == "Alex's own problem statement" and "Public sector bodies" in new.exclusions
+        assert not s.query(m.DirectionVersion).filter_by(owner="Sarah Patel").count()
+    assert get(api, post(api, "/api/opportunities", {"company": "Fenwick Tooling"})["id"])["directionVersion"] == "v5-alex-morgan-p3"
+    assert get(api, post(api, "/api/opportunities", {"company": "Garrow Plastics"}, user=sarah)["id"])["directionVersion"] == "v5"
 
 
 def test_skip_with_competitor_reason_proposes_exclusion(api):

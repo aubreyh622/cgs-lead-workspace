@@ -5,11 +5,13 @@ to the agents without importing the agents themselves.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+import hashlib
+import json
 import os
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from api import models as m
 
@@ -24,17 +26,33 @@ KINDS = {
     "ready_reminder": ("A4 Action and reporting", False, "Reminds the owner that the rules say Ready and the pack is not submitted"),
     "discovery_round": ("Discovery agent", True, "Finds new candidate companies once a week"),
     "feedback_review": ("Feedback agent", True, "Reviews recent decisions once a week and may propose a direction change"),
+    "manager_review": ("Manager agent", True, "Looks over every open opportunity once a day and decides which agent should do what"),
 }
-TRIGGERS = ("event", "patrol", "handoff", "person")
+TRIGGERS = ("event", "patrol", "handoff", "person", "manager")
 MAX_DEPTH = 2          # a handoff may lead to one more handoff, no further
 HANDOFF_CAP = 3        # handoffs per opportunity per day
-DEFAULTS = {"agents_paused": False, "agent_ai_budget": int(os.environ.get("AGENT_AI_DAILY_BUDGET", "60")), "patrol_hour": 8,
-            "follow_days": 7, "stall_days": 14}
+INBOX_DAYS = 14        # what an agent prepared expires after two weeks: news and drafts go out of date
+DEFAULTS = {"agents_paused": False, "patrol_hour": 8, "follow_days": 7, "stall_days": 14}
+DEFAULT_AI_BUDGET = 60
+RETRY_SECONDS = 60     # wait before retrying a temporary AI error; doubles with each attempt
+
+
+def default_ai_budget() -> int:
+    """Read when needed, not at import: this module is imported before api/settings.py loads the .env file."""
+    try:
+        return max(0, int(os.environ.get("AGENT_AI_DAILY_BUDGET", DEFAULT_AI_BUDGET)))
+    except ValueError:
+        return DEFAULT_AI_BUDGET
 
 
 def setting(s, key: str):
     row = s.get(m.Setting, key)
-    return row.value if row else DEFAULTS.get(key)
+    if row:
+        return row.value
+    if key == "manager_mode":  # off | shadow | on, from MANAGER_MODE in .env until someone changes it in the workspace
+        mode = os.environ.get("MANAGER_MODE", "off").strip().lower()
+        return mode if mode in ("off", "shadow", "on") else "off"
+    return default_ai_budget() if key == "agent_ai_budget" else DEFAULTS.get(key)
 
 
 def set_setting(s, key: str, value) -> None:
@@ -79,7 +97,8 @@ def enqueue(s, today: date, kind: str, opp_id: str | None, trigger: str, reason:
                      depth=depth, created_on=today)
     s.add(job)
     if opp_id:
-        how = {"event": "picked up", "patrol": "found on patrol", "handoff": f"asked by {requested_by}", "person": f"asked by {requested_by}"}[trigger]
+        how = {"event": "picked up", "patrol": "found on patrol", "handoff": f"asked by {requested_by}", "person": f"asked by {requested_by}",
+               "manager": "assigned by the manager agent"}[trigger]
         s.add(m.Activity(opportunity_id=opp_id, on=today, actor_type="a", text=f"{job.agent} has work ({how}): {reason}"))
     s.flush()
     return job
@@ -92,14 +111,46 @@ def to_inbox(s, today: date, job: m.AgentJob | None, kind: str, title: str, body
             old.status, old.decided_by = "dismissed", "Replaced by a newer item"
     item = m.InboxItem(id=new_id("in"), owner=owner if owner is not None else (opp.owner if opp else None),
                        opportunity_id=opp.id if opp else None, job_id=job.id if job else None,
-                       agent=agent or (job.agent if job else ""), kind=kind, title=title, body=body, data=data or {}, created_on=today)
+                       agent=agent or (job.agent if job else ""), kind=kind, title=title, body=body, data=data or {}, created_on=today,
+                       payload_hash=payload_hash(kind, title, body, data or {}), basis={"stage": opp.stage} if opp else None,
+                       expires_on=today + timedelta(days=INBOX_DAYS))
     s.add(item)
     s.flush()
     return item
 
 
+def payload_hash(kind: str, title: str, body: str, data: dict) -> str:
+    """A fingerprint of exactly what an agent prepared. A person's approval is tied to it."""
+    text = json.dumps({"kind": kind, "title": title, "body": body, "data": data}, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def ai_calls_today(s, today: date) -> int:
     return s.scalar(select(func.coalesce(func.sum(m.AgentRun.calls), 0)).where(m.AgentRun.on == today, ~m.AgentRun.model.like("demo%"))) or 0
+
+
+def claim(s, job_id: str) -> bool:
+    """Mark a queued job as running in one UPDATE, so two workers can never both run it. True if this caller got it."""
+    res = s.execute(update(m.AgentJob).where(m.AgentJob.id == job_id, m.AgentJob.status == "queued")
+                    .values(status="running", attempts=m.AgentJob.attempts + 1, retry_at=None)
+                    .execution_options(synchronize_session=False))
+    s.commit()
+    return res.rowcount == 1
+
+
+def retry_later(job: m.AgentJob, message: str) -> None:
+    """Put a job back on the board, to run again after a growing wait (60 s, 120 s, ...)."""
+    job.status, job.result = "queued", message
+    job.retry_at = datetime.now(timezone.utc) + timedelta(seconds=RETRY_SECONDS * 2 ** max(0, job.attempts - 1))
+
+
+def due(job_retry_at: datetime | None, now: datetime | None = None) -> bool:
+    """True when a queued job may run now (it is not waiting out a retry delay)."""
+    if job_retry_at is None:
+        return True
+    if job_retry_at.tzinfo is None:  # SQLite returns stored datetimes without a time zone; they are UTC
+        job_retry_at = job_retry_at.replace(tzinfo=timezone.utc)
+    return job_retry_at <= (now or datetime.now(timezone.utc))
 
 
 def finish(job: m.AgentJob, status: str, result: str = "", error: str | None = None) -> None:

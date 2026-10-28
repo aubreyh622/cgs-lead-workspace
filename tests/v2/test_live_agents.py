@@ -8,7 +8,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.llm import LLMError, make_provider
-from api.live_agents import EVIDENCE_PROMPT_VERSION, check_proposals
+from api.evidence_agent import VERSION as EVIDENCE_AGENT_VERSION
+from api.live_agents import check_proposals
+from agent_fakes import turn
 from api.main import create_app
 from api.settings import Settings
 from lead_agent.providers import ProviderError
@@ -27,9 +29,11 @@ class FakeAI:
 
     def __call__(self, url, headers, payload, **kw):
         self.requests.append((url, headers, payload))
-        a = self.answers.pop(0)
+        a = self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]  # the last answer repeats
         if isinstance(a, Exception):
             raise a
+        if isinstance(a, dict) and "candidates" in a and "usageMetadata" in a:  # already a full response (a tool-using agent's turn)
+            return a
         text = a if isinstance(a, str) else json.dumps(a)
         return {"candidates": [{"content": {"parts": [{"text": text}]}}], "usageMetadata": {"promptTokenCount": 900, "candidatesTokenCount": 120}}
 
@@ -114,10 +118,9 @@ def test_checks_keep_only_valid_grounded_proposals():
 
 # ---------- the agents inside the workflow ----------
 def test_live_evidence_agent_end_to_end(tmp_path):
-    fake = FakeAI({"proposals": [
-        prop("cond", "problem", "true", "Our month-end close takes twelve days because of manual reconciliations."),
-        prop("score", "A", "4", "The CEO signed the contract yesterday."),
-    ]})
+    good = {**prop("cond", "problem", "true", "Our month-end close takes twelve days because of manual reconciliations."), "source": "notes"}
+    invented = {**prop("score", "A", "4", "The CEO signed the contract yesterday."), "source": "notes"}
+    fake = FakeAI(turn(("notes", {}), ("assessment", {})), turn(("propose", good), ("propose", invented)), turn(("finish", {"summary": "One item."})))
     api = live_app(tmp_path, fake)
     r = api.post("/api/opportunities/alder/notes", json={"text": NOTE}, headers=ME)
     assert r.status_code == 200, r.text
@@ -126,11 +129,14 @@ def test_live_evidence_agent_end_to_end(tmp_path):
     pending = [p for p in o["proposals"] if p["status"] == "pending"]
     assert pending[0]["key"] == "problem" and pending[0]["evidenceType"] == "client_statement"
     run = api.get("/api/agent-runs").json()[0]
-    assert run["model"] == "gemini:gemini-test-model" and run["status"] == "completed" and run["prompt"] == EVIDENCE_PROMPT_VERSION
-    # the notes went to the AI as data, with the rubric in the instructions
-    _, _, payload = fake.requests[0]
+    assert run["model"] == "gemini:gemini-test-model" and run["status"] == "completed" and run["prompt"] == EVIDENCE_AGENT_VERSION
+    assert run["calls"] == 3 and run["steps"]
+    # the agent read the notes through its tool, as data, with the rubric in the instructions; the invented quote went back to it
+    _, _, payload = fake.requests[1]
     assert "Unknown is not zero" in payload["systemInstruction"]["parts"][0]["text"]
-    assert "twelve days" in payload["contents"][0]["parts"][0]["text"]
+    assert "twelve days" in json.dumps(payload["contents"][2])
+    _, _, payload = fake.requests[2]
+    assert "not in those notes word for word" in json.dumps(payload["contents"][-1])
 
 
 def test_live_failure_keeps_the_note_and_shows_the_error(tmp_path):
@@ -144,7 +150,7 @@ def test_live_failure_keeps_the_note_and_shows_the_error(tmp_path):
 
 
 def test_live_invalid_output_is_an_error_not_a_guess(tmp_path):
-    api = live_app(tmp_path, FakeAI("this is not json"))
+    api = live_app(tmp_path, FakeAI("this is not json"))  # an agent that never uses its tools stops after its step limit
     r = api.post("/api/opportunities/alder/notes", json={"text": NOTE}, headers=ME)
     assert r.status_code == 503 and r.json()["code"] == "ai_invalid_output"
 

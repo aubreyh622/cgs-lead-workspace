@@ -45,7 +45,8 @@ def main(prepare=None) -> int:
 
     s = load_settings()
     say(f"CGS Workspace autonomous agents check  {datetime.now():%Y-%m-%d %H:%M}")
-    say(f"AI: {s.ai_provider} {s.ai_model or '(default model)'}   Web: synthetic internet (invented companies)\n")
+    say(f"AI: {s.ai_provider} {s.ai_model or '(default model)'}   Web: synthetic internet (invented companies)   "
+        f"Manager agent: {os.environ.get('MANAGER_MODE', 'off')}\n")
     db = Path(tempfile.mkdtemp()) / "agents-check.sqlite3"  # an empty workspace: only the three leads below
     app = create_app(Settings(app_mode="live", db_path=db, ai_provider=s.ai_provider, ai_model=s.ai_model))
     if prepare:
@@ -73,6 +74,21 @@ def main(prepare=None) -> int:
             if x["status"] == "failed":
                 nonlocal ok
                 ok = False
+
+    def show_manager():
+        """With MANAGER_MODE=shadow or on: what the manager agent decided today, next to what the rules did."""
+        if api.get("/api/agents").json()["managerMode"] == "off":
+            return
+        cmp = api.get("/api/manager/compare").json()
+        if not cmp.get("day"):
+            say("  Manager agent: no decisions today.")
+            return
+        rows = [("both", "agree"), ("manager only", "managerOnly"), ("rules only", "rulesOnly"), ("note to owner", "notes"), ("refused", "refused")]
+        say(f"  Manager agent ({cmp['mode']} mode) next to the rules: " + ", ".join(f"{len(cmp[k])} {label}" for label, k in rows))
+        for label, key in rows:
+            for x in cmp[key]:
+                extra = " (repeats recent work)" if x.get("repeatsRecentWork") else f"  -> {x['refusal'][:90]}" if x.get("refusal") else ""
+                say(f"    {label:<14} {x['kind']:<16} {x['company']:<24} {x['why'][:110]}{extra}")
 
     def company_of(oid):
         return api.get(f"/api/opportunities/{oid}").json()["company"]["name"] if oid else "(all)"
@@ -137,6 +153,7 @@ def main(prepare=None) -> int:
     for j in found:
         say(f"  Patrol found: {j['agent']:<28} {company_of(j['opportunityId']):<24} {j['reason']}")
     board_run()
+    show_manager()
     show_inbox()
 
     today = date.fromisoformat(api.get("/api/agents").json()["today"])
@@ -146,6 +163,7 @@ def main(prepare=None) -> int:
     for j in call("patrol", "post", "/api/agents/patrol")["queued"]:
         say(f"  Patrol found: {j['agent']:<28} {company_of(j['opportunityId']):<24} {j['reason']}")
     board_run()
+    show_manager()
     show_inbox()
 
     board = api.get("/api/agents/jobs", params={"limit": 200}).json()

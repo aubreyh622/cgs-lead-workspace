@@ -20,7 +20,8 @@ class Base(DeclarativeBase):
 def make_engine(db_url: str) -> Engine:
     if db_url.startswith("sqlite:///"):
         Path(db_url.removeprefix("sqlite:///")).parent.mkdir(parents=True, exist_ok=True)
-    engine = create_engine(db_url, connect_args={"check_same_thread": False} if db_url.startswith("sqlite") else {})
+    # timeout: wait up to 30 s for another writer (a person and the background agents) instead of failing with "database is locked"
+    engine = create_engine(db_url, connect_args={"check_same_thread": False, "timeout": 30} if db_url.startswith("sqlite") else {})
     if db_url.startswith("sqlite"):
         @event.listens_for(engine, "connect")
         def _pragmas(conn, _):

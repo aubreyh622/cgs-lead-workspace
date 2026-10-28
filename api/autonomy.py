@@ -20,8 +20,12 @@ import time
 
 from sqlalchemy import select
 
+from api import agent_runtime as R
 from api import jobs as J
 from api import live_agents as L
+from api import manager_agent as MA
+from api import outreach_agent as OA
+from api import research_agent as RA
 from api import models as m
 from api import services as S
 from api.llm import LLMError
@@ -83,6 +87,9 @@ def patrol(c: S.Ctx) -> list[m.AgentJob]:
         if job:
             found.append(job)
 
+    mode = J.setting(s, "manager_mode")
+    if mode in ("shadow", "on") and not c.demo:  # the manager needs a real AI model; it is queued first, so it decides before today's rule work runs
+        add("manager_review", None, f"Daily review by the manager agent ({mode} mode)")
     for o in s.scalars(select(m.Opportunity)):
         if o.stage == "contacted":
             r = s.get(m.Outreach, o.id)
@@ -112,6 +119,19 @@ def _first(name: str | None) -> str:
     return (name or "there").split()[0]
 
 
+def may_call(c: S.Ctx, p):
+    """Agents working on their own stop when today's AI budget is used up, also in the middle of a task."""
+    budget = int(J.setting(c.s, "agent_ai_budget"))
+    return lambda: J.ai_calls_today(c.s, c.today) + p.calls < budget
+
+
+def write_draft(c, o, p, trace, **kw):
+    """The tool-using outreach agent (api/outreach_agent.py), for drafts the agents prepare on their own."""
+    draft, usage, steps = OA.write(c, o, p, sender=o.owner or "CGS Advisors", may_call=may_call(c, p), **kw)
+    trace.extend(steps)
+    return draft, usage
+
+
 def do_followup_draft(c, job, o):
     if o.stage != "contacted":
         return "skipped", f"No longer waiting for a reply (stage {o.stage})."
@@ -121,16 +141,16 @@ def do_followup_draft(c, job, o):
     angle = (f"A short follow-up to the first email sent on {r.sent_on.isoformat()} (subject: {r.subject or 'introduction'}). "
              "Do not repeat the first email. One new reason to talk, then offer a 20-minute call.")
     fact = (b.facts or [{"id": "f1", "text": o.company.name}])[0]
+    trace: list[dict] = []
     draft, _ = S.run_agent(c, job.agent, o, "a1-followup-demo-1.0",
                            lambda: {"subject": f"Re: {r.subject or o.title}",
                                     "body": f"Hi {_first(contact['name'])}, I wanted to follow up on my note from {S.fmt(r.sent_on)}. "
                                             f"Since [[{fact['id']}|{fact['text'][:90]}]], would a 20-minute call in the next two weeks be useful? "
                                             f"{o.owner or 'CGS Advisors'}, CGS Advisors"},
-                           live=lambda p: L.write_outreach(p, {"facts": b.facts, "hypothesis": b.hypothesis, "relevance": b.relevance},
-                                                           contact, o.owner or "CGS Advisors", angle, "brief"),
-                           live_prompt=L.OUTREACH_PROMPT_VERSION + "+followup")
+                           live=lambda p: write_draft(c, o, p, trace, purpose="follow-up email", angle=angle, tone="brief"),
+                           live_prompt=OA.VERSION + "+followup", trace=trace)
     J.to_inbox(c.s, c.today, job, "draft", f"Follow-up draft for {contact['name'] or 'the contact'} at {o.company.name}", draft["body"],
-               {"subject": draft["subject"], "body": draft["body"], "purpose": "followup"}, opp=o)
+               {"subject": draft["subject"], "body": draft["body"], "purpose": "followup", "facts": draft.get("new_facts", [])}, opp=o)
     return "done", "Follow-up draft is in the owner's inbox. Nothing was sent."
 
 
@@ -141,15 +161,15 @@ def do_reconnect_draft(c, job, o):
     contact = {"name": o.contact.name if o.contact else None, "title": o.contact.title if o.contact else "", "company": o.company.name}
     angle = "The client asked to talk again later. Reconnect by citing the new development; keep it short and offer a short call."
     f = facts[0]
+    trace: list[dict] = []
     draft, _ = S.run_agent(c, job.agent, o, "a1-reconnect-demo-1.0",
                            lambda: {"subject": f"{o.company.name}: {f['text'][:60]}",
                                     "body": f"Hi {_first(contact['name'])}, I saw that [[{f['id']}|{f['text'][:100]}]]. When we spoke you suggested "
                                             f"reconnecting around now. Would a short call be useful? {o.owner or 'CGS Advisors'}, CGS Advisors"},
-                           live=lambda p: L.write_outreach(p, {"facts": facts, "hypothesis": o.brief.hypothesis, "relevance": o.brief.relevance},
-                                                           contact, o.owner or "CGS Advisors", angle, "standard"),
-                           live_prompt=L.OUTREACH_PROMPT_VERSION + "+reconnect")
+                           live=lambda p: write_draft(c, o, p, trace, purpose="reconnect email", angle=angle, tone="standard", extra_facts=facts),
+                           live_prompt=OA.VERSION + "+reconnect", trace=trace)
     J.to_inbox(c.s, c.today, job, "draft", f"Reconnect draft for {contact['name'] or 'the contact'} at {o.company.name}", draft["body"],
-               {"subject": draft["subject"], "body": draft["body"], "purpose": "reconnect"}, opp=o)
+               {"subject": draft["subject"], "body": draft["body"], "purpose": "reconnect", "facts": facts + draft.get("new_facts", [])}, opp=o)
     return "done", "Reconnect draft is in the owner's inbox. Nothing was sent."
 
 
@@ -203,21 +223,28 @@ def do_person_lookup(c, job, o):
     role = job.payload.get("role", "")
     if S.role_known(c, o.company_id, role):
         return "skipped", f"The {role} is already a contact."
-    pages = company_pages(c, o.company.name, o.company.domain, f"{role} leadership")
+    asked = job.payload.get("quote", "") or job.reason
 
-    def demo():
-        for p in pages:
+    def demo():  # demo mode: a text rule over the company's pages, no AI
+        for p in company_pages(c, o.company.name, o.company.domain, f"{role} leadership"):
             for name, title in _NAME_TITLE.findall(p["content"]):
                 if S.role_matches(title, role):
                     return {"found": True, "name": name, "title": title.strip(), "url": p["url"], "quote": f"{name}, {title}"}
         return {"found": False}
 
-    res, _ = S.run_agent(c, job.agent, o, "person-demo-1.0", demo, live=lambda p: L.find_person(p, pages, o.company.name, role),
-                         live_prompt=L.PERSON_PROMPT_VERSION)
-    asked = job.payload.get("quote", "")
+    trace: list[dict] = []
+
+    def live(p):  # live mode: the tool-using research agent decides where to look (api/research_agent.py)
+        spec = RA.person_agent(c, o.company_id, o.company.name, o.company.domain, role)
+        out = R.run(spec, p, RA.task(o.company.name, o.company.domain, role, asked), may_call=may_call(c, p))
+        trace.extend(out.trace)
+        return (out.result if out.status == "done" else {"found": False, "notes": out.reason}), out.usage
+
+    res, _ = S.run_agent(c, job.agent, o, "person-demo-1.0", demo, live=live, live_prompt=RA.VERSION, trace=trace)
     if not res.get("found"):
+        checked = f" What the agent checked: {res['notes']}" if res.get("notes") else ""
         J.to_inbox(c.s, c.today, job, "reminder", f"Could not find the {role} at {o.company.name}",
-                   f"The notes say: \"{asked}\". No public page names the {role}. Ask the client contact who approves.", opp=o)
+                   f"The notes say: \"{asked}\". No public page names the {role}. Ask the client contact who approves.{checked}", opp=o)
         return "done", f"No page names the {role}."
     J.to_inbox(c.s, c.today, job, "contact", f"{role} at {o.company.name}: {res['name']} ({res['title']})",
                f"Why: the notes say \"{asked}\". Source: {res['url']}", {**res, "role": role}, opp=o)
@@ -280,26 +307,64 @@ def do_feedback_review(c, job, o):
     return "done", res["summary"][:300]
 
 
+def do_manager_review(c, job, o):
+    """The manager agent's daily review (api/manager_agent.py). Shadow mode records its decisions; on mode carries them out."""
+    mode = J.setting(c.s, "manager_mode")
+    if mode not in ("shadow", "on"):
+        return "skipped", "The manager agent is off."
+    trace: list[dict] = []
+    record: dict = {"decisions": []}
+
+    def live(p):
+        spec, rec = MA.manager_agent(c, mode)
+        record.update(rec)
+        out = R.run(spec, p, MA.task(c.today), may_call=may_call(c, p))
+        trace.extend(out.trace)
+        return (out.result or {"summary": out.reason}), out.usage
+
+    result, run_id = S.run_agent(c, job.agent, None, "manager-demo", lambda: {"summary": "The manager agent needs a real AI model."},
+                                 subject="Daily review", live=live, live_prompt=MA.VERSION, trace=trace)
+    for d in record["decisions"]:
+        c.s.add(m.ManagerDecision(on=c.today, mode=mode, run_id=run_id, **d))
+    ds = record["decisions"]
+    counts = {k: sum(d["outcome"] == k for d in ds) for k in ("recorded", "queued", "already_queued", "sent", "refused")}
+    shown = ", ".join(f"{v} {k.replace('_', ' ')}" for k, v in counts.items() if v) or "no decisions"
+    return "done", f"{mode.capitalize()} mode: {shown}. {result.get('summary', '')}"[:300]
+
+
 HANDLERS = {"followup_draft": do_followup_draft, "reconnect_draft": do_reconnect_draft, "research_refresh": do_research_refresh,
             "person_lookup": do_person_lookup, "gap_actions": do_gap_actions, "defer_nurture": do_defer_nurture,
-            "ready_reminder": do_ready_reminder, "discovery_round": do_discovery_round, "feedback_review": do_feedback_review}
+            "ready_reminder": do_ready_reminder, "discovery_round": do_discovery_round, "feedback_review": do_feedback_review,
+            "manager_review": do_manager_review}
 assert set(HANDLERS) == set(J.KINDS)
 
 
 # ---------- running the board ----------
+def uses_ai(c: S.Ctx, kind: str) -> bool:
+    return J.KINDS[kind][1] and not c.demo
+
+
+def ai_budget_left(c: S.Ctx) -> bool:
+    return J.ai_calls_today(c.s, c.today) < int(J.setting(c.s, "agent_ai_budget"))
+
+
 def run_job(app, job_id: str) -> str:
-    """Run one queued job. Returns its new status: done | skipped | failed | queued (waiting for the AI budget or a retry)."""
+    """Run one queued job. Returns its new status: done | skipped | failed | queued (waiting for the AI budget or a retry)
+    | running (another worker already took it)."""
     with app.state.db.session() as s:
         c = agent_ctx(app, s)
         job = s.get(m.AgentJob, job_id)
         if not job or job.status != "queued":
             return job.status if job else "missing"
-        uses_ai = J.KINDS[job.kind][1] and not c.demo
-        if uses_ai and J.ai_calls_today(s, c.today) >= int(J.setting(s, "agent_ai_budget")):
+        if not J.due(job.retry_at):
+            return "queued"
+        if uses_ai(c, job.kind) and not ai_budget_left(c):
             job.result = "Waiting: today's AI budget is used up. It runs tomorrow."
             return "queued"
-        job.status, job.attempts = "running", job.attempts + 1
-        s.commit()
+        claimed = J.claim(s, job_id)
+        s.refresh(job)
+        if not claimed:
+            return job.status
         o = s.get(m.Opportunity, job.opportunity_id) if job.opportunity_id else None
         try:
             status, result = HANDLERS[job.kind](c, job, o)
@@ -308,7 +373,7 @@ def run_job(app, job_id: str) -> str:
                 S.log(c, o.id, "a", f"{job.agent}: {result}")
         except S.ActionError as e:
             if e.code == "ai_temporary" and job.attempts < 3:
-                job.status, job.result = "queued", f"Temporary AI error, will retry: {e}"
+                J.retry_later(job, f"Temporary AI error, will retry: {e}")
             else:
                 J.finish(job, "failed", error=str(e))
                 if o:
@@ -323,8 +388,24 @@ def run_job(app, job_id: str) -> str:
 
 
 def queued(app) -> list[str]:
+    """Queued jobs that may run now, oldest first (jobs waiting out a retry delay are left out)."""
     with app.state.db.session() as s:
-        return list(s.scalars(select(m.AgentJob.id).where(m.AgentJob.status == "queued").order_by(m.AgentJob.created_at)))
+        rows = s.execute(select(m.AgentJob.id, m.AgentJob.retry_at).where(m.AgentJob.status == "queued").order_by(m.AgentJob.created_at)).all()
+    return [jid for jid, retry_at in rows if J.due(retry_at)]
+
+
+def next_job(app) -> str | None:
+    """The oldest job the background worker can run now. While today's AI budget is used up, AI work waits
+    and work that needs no AI goes ahead, so one waiting job never blocks the rest of the board."""
+    with app.state.db.session() as s:
+        c = agent_ctx(app, s)
+        budget = ai_budget_left(c)
+        rows = s.execute(select(m.AgentJob.id, m.AgentJob.kind, m.AgentJob.retry_at)
+                         .where(m.AgentJob.status == "queued").order_by(m.AgentJob.created_at)).all()
+        for jid, kind, retry_at in rows:
+            if J.due(retry_at) and (budget or not uses_ai(c, kind)):
+                return jid
+    return None
 
 
 def run_pending(app, limit: int = 50, pause: float = 0) -> list[dict]:
@@ -363,36 +444,75 @@ def run_patrol(app) -> list[dict]:
         return [{"id": j.id, "agent": j.agent, "kind": j.kind, "opportunityId": j.opportunity_id, "reason": j.reason} for j in jobs]
 
 
-class Worker:
-    """Background worker: patrols once a day and works through the board, slowly enough for the AI free tier."""
+def sync_research(app) -> list[dict]:
+    """Live mode: collect finished research runs, so briefs reach Step 4 without anyone pressing a button."""
+    with app.state.db.session() as s:
+        c = agent_ctx(app, s)
+        return [] if c.demo else S.sync_research(c)
 
-    def __init__(self, app, tick: float = 10, pause: float = 4):
-        self.app, self.tick, self.pause, self.stop = app, tick, pause, threading.Event()
+
+class Worker:
+    """Background worker: collects finished research, patrols once a day and works through the board,
+    slowly enough for the AI free tier."""
+
+    def __init__(self, app, tick: float = 10, pause: float = 4, sync_every: float = 30):
+        self.app, self.tick, self.pause, self.sync_every, self.stop = app, tick, pause, sync_every, threading.Event()
+        self.last_sync = 0.0
+        self.lock = getattr(app.state, "work_lock", None) or threading.Lock()  # shared with POST /api/demo/reset
         self.thread = threading.Thread(target=self.loop, name="cgs-agents", daemon=True)
 
     def start(self):
         self.thread.start()
         return self
 
+    def step(self):
+        if time.monotonic() - self.last_sync >= self.sync_every:  # research runs on its own, so this ignores the pause switch
+            self.last_sync = time.monotonic()
+            sync_research(self.app)
+        with self.app.state.db.session() as s:
+            if J.setting(s, "agents_paused"):
+                return False
+        if patrol_due(self.app):
+            run_patrol(self.app)
+        job_id = next_job(self.app)
+        return bool(job_id) and run_job(self.app, job_id) != "queued"
+
     def loop(self):
         while not self.stop.wait(self.tick):
             try:
-                with self.app.state.db.session() as s:
-                    if J.setting(s, "agents_paused"):
-                        continue
-                if patrol_due(self.app):
-                    run_patrol(self.app)
-                ids = queued(self.app)
-                if ids:
-                    run_job(self.app, ids[0])
-                    time.sleep(self.pause)
+                with self.lock:
+                    worked = self.step()
+                if worked:
+                    time.sleep(self.pause)  # outside the lock, so a reset never waits for the pause
             except Exception as e:  # keep the worker alive; the error is visible in the server window
                 print(f"[agents] {type(e).__name__}: {e}", flush=True)
 
 
 # ---------- a person acts on an inbox item ----------
-def apply_item(c: S.Ctx, item_id: str, action: str) -> dict:
-    """action: apply (use what the agent prepared), done (seen, nothing to change) or dismiss (not useful)."""
+CHANGES = ("facts", "contact", "nurture", "draft")  # kinds whose apply changes the opportunity or relies on its state
+
+
+def check_still_valid(c: S.Ctx, it: m.InboxItem, o: m.Opportunity | None, seen_hash: str | None) -> None:
+    """Approval gate (the idea comes from the MVP in cgs-lead-workspace): a person applies exactly what they saw,
+    while the opportunity is still where it was when the agent prepared it, and before it expires."""
+    if it.expires_on and c.today > it.expires_on:
+        raise S.ActionError(f"This was prepared on {it.created_on.isoformat()} and expired on {it.expires_on.isoformat()}. "
+                            "Dismiss it; the agents prepare a new one when it is needed.", 409, "expired")
+    if seen_hash is not None and it.payload_hash and seen_hash != it.payload_hash:
+        raise S.ActionError("This item is not the version you saw. Reload the inbox and look again.", 409, "changed")
+    if o and it.kind in CHANGES and it.basis and it.basis.get("stage") != o.stage:
+        raise S.ActionError(f"The opportunity moved from {it.basis['stage']} to {o.stage} after this was prepared. Dismiss it.", 409, "stale")
+    if o and it.kind == "draft":  # every fact the draft cites must still mean the same thing in the brief
+        brief = {f["id"]: f["text"] for f in (o.brief.facts or [])}
+        clash = [f["id"] for f in it.data.get("facts", []) if f["id"] in brief and brief[f["id"]] != f["text"]]
+        if clash:
+            raise S.ActionError(f"The brief changed after this draft was written ({', '.join(clash)} now say something else). "
+                                "Dismiss it and ask for a new draft.", 409, "stale")
+
+
+def apply_item(c: S.Ctx, item_id: str, action: str, seen_hash: str | None = None) -> dict:
+    """action: apply (use what the agent prepared), done (seen, nothing to change) or dismiss (not useful).
+    seen_hash: the payloadHash the person saw; when given, apply refuses anything else."""
     it = c.s.get(m.InboxItem, item_id)
     if not it:
         raise S.ActionError("Inbox item not found.", 404, "not_found")
@@ -401,6 +521,7 @@ def apply_item(c: S.Ctx, item_id: str, action: str) -> dict:
     o = c.s.get(m.Opportunity, it.opportunity_id) if it.opportunity_id else None
     note = ""
     if action == "apply":
+        check_still_valid(c, it, o, seen_hash)
         if it.kind == "facts" and o:
             n = len(o.brief.facts or [])
             o.brief.facts = (o.brief.facts or []) + [{**f, "id": f"f{n + i + 1}"} for i, f in enumerate(it.data.get("facts", []))]
@@ -413,7 +534,12 @@ def apply_item(c: S.Ctx, item_id: str, action: str) -> dict:
             S.to_nurture(c, o.id, date.fromisoformat(it.data["review_on"]), "Client deferred; suggested by the action agent")
             note = f"Moved to nurture until {it.data['review_on']}"
         elif it.kind == "draft":
-            note = f"{it.data.get('purpose', 'outreach').capitalize()} draft accepted. Send it from your own email, then record it."
+            known = {f["id"] for f in (o.brief.facts or [])} if o else set()
+            added = [f for f in it.data.get("facts", []) if f["id"] not in known]
+            if o and added:  # the sentences the draft cites join the brief, so the citations resolve
+                o.brief.facts = (o.brief.facts or []) + added
+            note = (f"{it.data.get('purpose', 'outreach').capitalize()} draft accepted. Send it from your own email, then record it."
+                    + (f" {len(added)} cited fact{'s' if len(added) != 1 else ''} added to the brief." if added else ""))
         else:
             note = "Done"
         it.status = "applied"
@@ -432,7 +558,8 @@ def apply_item(c: S.Ctx, item_id: str, action: str) -> dict:
 
 def item_view(i: m.InboxItem) -> dict:
     return {"id": i.id, "owner": i.owner, "opportunityId": i.opportunity_id, "agent": i.agent, "kind": i.kind, "title": i.title,
-            "body": i.body, "data": i.data, "status": i.status, "decidedBy": i.decided_by, "on": i.created_on.isoformat(), "jobId": i.job_id}
+            "body": i.body, "data": i.data, "status": i.status, "decidedBy": i.decided_by, "on": i.created_on.isoformat(), "jobId": i.job_id,
+            "payloadHash": i.payload_hash, "expiresOn": i.expires_on.isoformat() if i.expires_on else None}
 
 
 def job_view(j: m.AgentJob) -> dict:
