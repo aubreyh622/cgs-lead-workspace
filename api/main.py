@@ -132,6 +132,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             s.add(starting_direction())  # live mode: Aubrey's approved problem brief becomes v1
     app.include_router(router)
     app.include_router(actions_router)
+    from api.agent_routes import router as agents_router
+    app.include_router(agents_router)
+    app.state.worker = None  # main() starts the background agents; importing this module never does
 
     @app.exception_handler(ActionError)
     async def action_error(_: Request, exc: ActionError):
@@ -143,9 +146,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/config", tags=["system"], summary="Current modes")
     def config():
+        from api.actions import simulated
+        from api.search import search_config
         return {"appMode": settings.app_mode, "crmMode": settings.crm_mode, "ruleVersion": RULE_VERSION,
-                "aiConnected": False, "note": "Live AI providers are connected in a later step. "
-                "In live mode, AI actions return an error rather than demo results."}
+                "aiConnected": settings.app_mode == "live", "aiProvider": settings.ai_provider if settings.app_mode == "live" else "demo rules",
+                "web": search_config()["provider"], "timeTravel": simulated(settings), "agentWorker": bool(app.state.worker),
+                "note": "Demo mode uses text rules instead of AI. In live mode, AI actions return an error rather than demo results."}
 
     @app.get("/api/rules", tags=["rules"], summary="The qualification rules (weights, anchors, minimums)")
     def rules():
@@ -181,6 +187,10 @@ def main():
     import uvicorn
     s = app.state.settings
     print(f"CGS Lead Workspace v2 ({s.app_mode} mode, CRM {s.crm_mode})")
+    if s.agent_worker:
+        from api.autonomy import Worker
+        app.state.worker = Worker(app).start()  # agents patrol and work in the background; see api/autonomy.py
+        print(f"Agents: working in the background (patrol daily; AGENT_WORKER=off in .env stops this).")
     print(f"Open http://127.0.0.1:{s.port}/  API docs: http://127.0.0.1:{s.port}/docs  Ctrl+C stops.")
     uvicorn.run(app, host="127.0.0.1", port=s.port, log_level="warning")
 

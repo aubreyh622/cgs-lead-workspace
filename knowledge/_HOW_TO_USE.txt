@@ -1,0 +1,4 @@
+Put real CGS documents here as .md or .txt files: the service list, case studies, white papers.
+Each paragraph (separated by a blank line) becomes one passage the agents can quote word for word.
+Files whose names start with "_" (like this one) are ignored.
+After adding real documents, set KNOWLEDGE_DEMO=off in .env so the synthetic demo library is no longer searched.

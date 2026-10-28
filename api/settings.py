@@ -35,6 +35,7 @@ class Settings:
     ai_provider: str = "gemini"  # gemini | openai; switch any time, see api/llm.py
     ai_model: str = ""           # empty = the provider's default model
     users: tuple[str, ...] = ("Alex Morgan", "Sarah Patel", "Daniel Brooks", "Quinn Harper")  # no login yet; pick a name
+    agent_worker: bool = False   # True = agents patrol and work in the background (the server turns it on; tests leave it off)
 
     def __post_init__(self):
         if self.app_mode not in APP_MODES:
@@ -56,5 +57,6 @@ def load_settings(env_file: Path | None = ROOT / ".env") -> Settings:
         database_url=os.environ.get("DATABASE_URL", ""),
         ai_provider=os.environ.get("AI_PROVIDER", "gemini").strip().lower(),
         ai_model=os.environ.get("AI_MODEL", "").strip(),
+        agent_worker=os.environ.get("AGENT_WORKER", "on").strip().lower() in ("on", "1", "true", "yes"),
         **({"users": tuple(u.strip() for u in os.environ["CGS_USERS"].split(",") if u.strip())} if os.environ.get("CGS_USERS") else {}),
     )

@@ -18,19 +18,29 @@ router = APIRouter(prefix="/api")
 Scope = Literal["opportunity", "theme", "consultant", "cgs"]
 
 
+def simulated(settings) -> bool:
+    """Time travel works on demo data, and in live mode on the synthetic internet; never against real companies."""
+    if settings.app_mode == "demo":
+        return True
+    from api.search import search_config
+    return search_config()["provider"] == "mock"
+
+
 def demo_today(s, settings) -> date:
-    if settings.app_mode != "demo":
-        return date.today()
-    base = s.get(m.Setting, "demo_today")
     shift = s.get(m.Setting, "day_offset")
-    return date.fromisoformat(base.value) + timedelta(days=shift.value if shift else 0)
+    days = timedelta(days=shift.value if shift else 0)
+    if settings.app_mode != "demo":
+        return date.today() + (days if simulated(settings) else timedelta(0))
+    base = s.get(m.Setting, "demo_today")
+    return date.fromisoformat(base.value) + days
 
 
 def ctx(request: Request, x_user: str | None = Header(None, description="The person acting, from GET /api/users")):
     db = request.app.state.db
     session = db.sessions()
     c = S.Ctx(s=session, actor=x_user or "", today=demo_today(session, request.app.state.settings), settings=request.app.state.settings,
-              provider_factory=getattr(request.app.state, "provider_factory", None))
+              provider_factory=getattr(request.app.state, "provider_factory", None),
+              research_factory=lambda: research_bridge(request.app), search_factory=getattr(request.app.state, "search_factory", None))
     users = S.owners_list(c)
     if not x_user or x_user not in users:
         session.close()
@@ -43,6 +53,23 @@ def ctx(request: Request, x_user: str | None = Header(None, description="The per
         raise
     finally:
         session.close()
+
+
+def research_bridge(app):
+    """One research bridge per server, created when live research is first needed."""
+    if getattr(app.state, "research_bridge", None) is None:
+        from api.search import search_config
+        if search_config()["provider"] == "mock":
+            from api.llm import make_provider
+            from api.mock_research import MockResearchBridge
+            st = app.state.settings
+            factory = getattr(app.state, "provider_factory", None) or (lambda: make_provider(st.ai_provider, st.ai_model))
+            app.state.research_bridge = MockResearchBridge(factory)
+        else:
+            from api.research_bridge import ResearchBridge
+            from api.settings import ROOT
+            app.state.research_bridge = ResearchBridge(ROOT, app.state.settings.ai_model)
+    return app.state.research_bridge
 
 
 Actor = Depends(ctx)
@@ -68,6 +95,36 @@ class ManualLead(BaseModel):
     title: str = ""
     source: str = "Conference"
     notes: str = ""
+
+
+class Recommend(BaseModel):
+    intent: str = Field("", description="What to look for, in your own words. Empty = the research direction only.")
+
+
+@router.get("/search/settings", tags=["step 1"], summary="Which search provider and queries discovery uses (config/search.json)")
+def search_settings():
+    from api.search import PROVIDERS, search_config
+    return {**search_config(), "installed_providers": list(PROVIDERS)}
+
+
+@router.post("/candidates/recommend", tags=["step 1"], summary="Recommend up to 10 new candidates (live: web search + AI, checked by code)")
+def recommend(body: Recommend, c: S.Ctx = Actor):
+    return S.recommend(c, body.intent)
+
+
+@router.post("/research/sync", tags=["steps 2-3"], summary="Live mode: collect finished research and move briefs to Step 4")
+def sync(c: S.Ctx = Actor):
+    return {"updates": S.sync_research(c)}
+
+
+class DomainIn(BaseModel):
+    domain: str
+
+
+@router.patch("/opportunities/{opp_id}/company", tags=["steps 2-3"], summary="Set the company website, which research needs")
+def company(opp_id: str, body: DomainIn, c: S.Ctx = Actor):
+    S.set_domain(c, opp_id, body.domain)
+    return {"ok": True}
 
 
 @router.post("/candidates/{cand_id}/pick", tags=["step 1"], summary="Pick a candidate for research (Steps 2-3 run on their own)")
@@ -173,6 +230,21 @@ def follow_days(c: S.Ctx) -> int:
 def draft(opp_id: str, body: Draft, c: S.Ctx = Actor):
     S.save_draft(c, opp_id, body.subject, body.body, body.angle, body.tone, body.channel)
     return {"ok": True}
+
+
+class Generate(BaseModel):
+    angle: str | None = None
+    tone: Literal["standard", "brief"] = "standard"
+
+
+@router.post("/opportunities/{opp_id}/outreach/generate", tags=["step 5"], summary="Ask the outreach agent for a draft (never sent automatically)")
+def generate(opp_id: str, body: Generate, c: S.Ctx = Actor):
+    return S.generate_draft(c, opp_id, body.angle, body.tone)
+
+
+@router.get("/alerts", tags=["step 7"], summary="Progress monitor: stalled, overdue, follow-up due, out-of-date packs")
+def alerts(c: S.Ctx = Actor):
+    return S.alerts(c, follow_days(c))
 
 
 @router.post("/opportunities/{opp_id}/outreach/sent", tags=["step 5"], summary="Record that you sent the message yourself")
@@ -322,10 +394,12 @@ def decide_direction(prop_id: str, verdict: Literal["approve", "reject"], c: S.C
 
 
 # ---------- demo helpers ----------
-@router.post("/demo/advance-days", tags=["system"], summary="Demo only: move the demo date forward, for example to reach a follow-up")
+@router.post("/demo/advance-days", tags=["system"], summary="Simulation only: move the date forward, for example to reach a follow-up or a nurture review")
 def advance(days: int = 7, c: S.Ctx = Actor):
-    if not c.demo:
-        raise S.ActionError("Only available in demo mode.", 403, "demo_only")
+    if not simulated(c.settings):
+        raise S.ActionError("Time travel works only with demo data or the synthetic internet.", 403, "demo_only")
+    if not 1 <= days <= 366:
+        raise S.ActionError("Move between 1 and 366 days.")
     row = c.s.get(m.Setting, "day_offset")
     if row:
         row.value = row.value + days

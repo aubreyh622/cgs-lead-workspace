@@ -186,3 +186,68 @@ def analyze_feedback(records: list, buyer_roles: list[str]) -> dict:
 
 def run_id() -> str:
     return "run-" + format(time.time_ns(), "x")[-10:]
+
+
+# ---------- Step 5: outreach draft ----------
+def demo_draft(star: bool, contact_name: str | None, company: str, owner: str, facts: list[dict], tone: str, angle: str | None) -> dict:
+    if star:
+        d = dict(STAR["drafts"][tone])
+        if tone == "standard" and angle == "a2":
+            d["subject"] = "Planning the Arden integration"
+        elif tone == "standard" and angle == "a3":
+            d["subject"] = "Your first year as Corvane’s Chief Digital Officer"
+        return d
+    f = facts[0]["text"].rstrip(".") if facts else f"recent news at {company}"
+    first = (contact_name or "there").split(" ")[0]
+    if tone == "brief":
+        return {"subject": f"A quick question about {company}",
+                "body": f"Hi {first},\n\n[[f1|{f}]]. Is that creating planning questions for your team?\n\n"
+                        f"We help companies plan that kind of change. Open to a 20-minute call next week?\n\n{owner}, CGS Advisors"}
+    return {"subject": f"{company}: planning for what comes next",
+            "body": f"Hi {first},\n\nI noticed that [[f1|{f[0].lower() + f[1:]}]]. Changes like this often raise questions about priorities "
+                    f"and the operating model behind them.\n\nCGS works with leaders at this stage to turn the change into a clear plan. "
+                    f"Would you be open to a 20-minute conversation in the next two weeks?\n\nBest regards,\n{owner}\nCGS Advisors"}
+
+
+# ---------- Step 1: a new demo round ----------
+POOL = [
+    ("Kinross Valve & Pump", "Ellen Shaw", "Chief Information Officer", "Merger closed", "14 Oct 2026", "Combining two ERP estates after merging with Pacific Seal."),
+    ("Halden Electrical Systems", "Ravi Nair", "Head of Transformation", "New transformation office", "30 Sep 2026", "Set up a transformation office to standardize six plants."),
+    ("Ironvale Forgings", "Claire Dubois", "VP Operations", "Plant expansion", "11 Sep 2026", "Opening a forging plant in Alabama in 2027."),
+    ("Pinecrest Adhesives", "Martin Kowalski", "Chief Digital Officer", "New CDO appointed", "1 Sep 2026", "Hired its first Chief Digital Officer."),
+    ("Saltmarsh Marine Parts", "Joanne Price", "Chief Strategy Officer", "Acquisition announced", "20 Oct 2026", "Agreed to acquire a Canadian propulsion supplier."),
+    ("Copperline Wire & Cable", "Ahmed Saleh", "Chief Information Officer", "AI pilot", "5 Aug 2026", "Piloting AI scheduling at one mill."),
+    ("Fairhaven Textiles", "Beth Morrow", "Chief Operating Officer", "Product expansion", "18 Sep 2026", "Launching a technical fabrics line for defense customers."),
+    ("Trident Pump Works", "Luis Romero", "Director of Strategy", "Divestiture", "2 Oct 2026", "Selling its residential pump unit to focus on industrial."),
+    ("Granger Rail Components", "Olivia Hart", "VP Digital Manufacturing", "AI pilot", "24 Aug 2026", "Testing predictive maintenance on two lines."),
+    ("Westlake Optics", "Noah Fischer", "Chief Technology Officer", "Plant expansion", "15 Oct 2026", "Doubling clean-room capacity in Arizona."),
+    ("Graniteridge Steel Service", "Paul Moreau", "Chief Operating Officer", "Acquisition announced", "9 Oct 2026", "Buying two service centers in Texas."),
+]
+
+
+def demo_round(direction: dict, known: set[str]) -> list[dict]:
+    out = []
+    for name, person, title, signal, when, why in POOL:
+        domain = re.sub(r"[^a-z]+", "", name.lower()) + ".example"
+        if name.lower() in known or any(domain.startswith(d.split(".")[0]) for d in direction.get("excluded_domains", [])):
+            continue
+        out.append({"company": name, "domain": domain, "person": person, "title": title, "why": why, "signal": signal, "signal_date": when,
+                    "why_person": "Matches a buyer role in the research direction", "flags": []})
+    return out[:10]
+
+
+_APPROVER = re.compile(r"[^.\n]*\b(?:the\s+)?(CEO|CFO|COO|CIO|board)\b[^.\n]*\b(?:approv\w*|decid\w*|sign[- ]?off|signs off)\b[^.\n]*"
+                       r"|[^.\n]*\b(?:approv\w*|decid\w*|sign[- ]?off)\b[^.\n]*\b(?:the\s+)(CEO|CFO|COO|CIO|board)\b[^.\n]*", re.I)
+
+
+def people_to_find(text: str) -> list[dict]:
+    """Demo text rule for the evidence agent's handoff: an approver named only by role ("the CFO approves above $500K")."""
+    out, seen = [], set()
+    for mt in _APPROVER.finditer(text):
+        if re.search(r"delegated|has approved|have approved|has asked|already approved", mt.group(0), re.I):
+            continue  # the decision is made or handed to someone named; nobody to look up
+        role = (mt.group(1) or mt.group(2)).upper() if (mt.group(1) or mt.group(2)).lower() != "board" else "Board"
+        if role not in seen:
+            seen.add(role)
+            out.append({"role": role, "quote": mt.group(0).strip()})
+    return out[:2]

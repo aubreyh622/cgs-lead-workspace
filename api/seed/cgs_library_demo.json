@@ -1,0 +1,59 @@
+{
+  "about": "SYNTHETIC demo library. Invented service descriptions and case studies written for the prototype; they are not CGS material. Replace them by putting real CGS documents (.md or .txt) in the knowledge/ folder and setting KNOWLEDGE_DEMO=off.",
+  "documents": [
+    {
+      "id": "svc-first-mile",
+      "title": "[Demo] Service: First-mile AI planning",
+      "type": "service",
+      "passages": [
+        "First-mile AI planning helps a leadership team decide which AI use cases to pursue first and in what order. We review pilots already running, size the value of each use case, and sequence them against data readiness and plant capacity.",
+        "The output is a twelve-month roadmap and the operating model behind it: who owns each use case, how pilots move to production, and which skills and data foundations each site needs first.",
+        "Typical clients are mid-size and large manufacturers with several AI pilots that have not scaled, often after a merger or a change in technology leadership."
+      ]
+    },
+    {
+      "id": "svc-operating-model",
+      "title": "[Demo] Service: Operating model design",
+      "type": "service",
+      "passages": [
+        "Operating model design aligns structure, processes, decision rights and governance with a new strategy. We map how work flows today, agree the target model with leadership, and plan the transition.",
+        "Engagements often follow a merger, a regional consolidation or an ERP program, when several sites or regions run different processes for the same work."
+      ]
+    },
+    {
+      "id": "svc-integration",
+      "title": "[Demo] Service: Post-merger integration planning",
+      "type": "service",
+      "passages": [
+        "Post-merger integration planning sets the integration priorities for the first year after a deal closes: which processes and systems to combine first, which to leave alone, and how to keep plants running during the change.",
+        "We work with the integration lead and plant operations to build a sequenced plan with clear owners and milestones."
+      ]
+    },
+    {
+      "id": "svc-finance",
+      "title": "[Demo] Service: Finance transformation",
+      "type": "service",
+      "passages": [
+        "Finance transformation redesigns the close, reporting and planning processes. Common starting points are manual reconciliations across business units and slow month-end reporting.",
+        "We design the target finance process and operating model and plan the move to it, alongside any system change."
+      ]
+    },
+    {
+      "id": "case-industrial-ai",
+      "title": "[Demo] Case: AI roadmap for an industrial components maker",
+      "type": "case",
+      "passages": [
+        "A US industrial components manufacturer with nine plants had four AI inspection pilots running independently. CGS built a sequenced roadmap that moved two pilots to production across all plants within a year.",
+        "The client's digital office and plant operations leads co-owned the plan, with a shared governance forum that met every month."
+      ]
+    },
+    {
+      "id": "case-erp-om",
+      "title": "[Demo] Case: Operating model alongside an ERP consolidation",
+      "type": "case",
+      "passages": [
+        "A specialty materials company consolidating three ERP systems asked CGS to design one order-to-cash process before cutover. The common process was agreed with all three sites before the system build began."
+      ]
+    }
+  ]
+}

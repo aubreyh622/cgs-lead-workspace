@@ -1,6 +1,6 @@
 # The workspace database, in plain language
 
-The database is the workspace's ledger. It is one file, `runtime/workspace-v2.sqlite3`, made of 20 tables. Each table holds one kind of record, the way an Excel workbook has one sheet per topic.
+The database is the workspace's ledger. It is one file, `runtime/workspace-v2.sqlite3`, made of 22 tables. Each table holds one kind of record, the way an Excel workbook has one sheet per topic.
 
 Code reaches the file through SQLAlchemy, a translator layer. To move to a shared PostgreSQL database later (for several people at once), set `DATABASE_URL`. The code stays the same.
 
@@ -26,6 +26,8 @@ Code reaches the file through SQLAlchemy, a translator layer. To move to a share
 | `direction_versions` | an approved research direction; never edited, only added to | learning loop | person approves |
 | `direction_proposals` | a suggested change to the direction, waiting for approval | learning loop | AI or person proposes |
 | `agent_runs` | one AI call: agent, model, prompt version, success or failure | all | system |
+| `agent_jobs` | one piece of agent work on the task board: which agent, why (event, patrol or handoff), who asked, status and result | all | agents |
+| `inbox_items` | what an agent prepared for a person (draft, facts, contact, suggestion, reminder) and what the person did with it | all | agents, people |
 | `activity` | one line of history for an opportunity | all | system |
 | `settings` | workspace settings, such as the demo date | — | system |
 

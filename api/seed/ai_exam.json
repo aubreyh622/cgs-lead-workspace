@@ -1,0 +1,331 @@
+{
+ "about": "Exam for the A2+A3 evidence agent. Synthetic notes with expected answers. 'expect' lists what a careful consultant would confirm, with an allowed range for scores. 'forbid' lists over-claims: proposing them is a serious error under the 'when unsure, say less' rule. Missing an expected item is acceptable but counted. The exam gives the agent the same CGS library passages it would see in the workspace.",
+ "cases": [
+  {
+   "id": "corvane-call",
+   "title": "Corvane: discovery call with a clear need",
+   "notes": "Call with Elena Fischer, 4 Nov 2026 (45 min). Elena brought her plant operations lead, Marco Silva.\n\nElena said the two AI inspection pilots \"work in isolation, but we have no plan for scaling them across the twelve plants we now run after the Arden acquisition.\" Without a plan, each plant is choosing its own tools.\n\nOn outside help: \"We'd rather bring in a partner for the first-mile plan than build it ourselves.\"\n\nElena owns the 2027 transformation budget; spend above $250K needs CEO sign-off, which she expects in January.\n\nThis would be Corvane's first project with CGS.\n\nAgreed next step: a half-day scoping workshop on 24 November with her operations and IT leads. Marco will send the plant list before then.",
+   "expect": [
+    {
+     "kind": "score",
+     "key": "B",
+     "min": 2,
+     "max": 3
+    },
+    {
+     "kind": "score",
+     "key": "A",
+     "min": 3,
+     "max": 4
+    },
+    {
+     "kind": "score",
+     "key": "N",
+     "min": 3,
+     "max": 4
+    },
+    {
+     "kind": "score",
+     "key": "T",
+     "min": 2,
+     "max": 3
+    },
+    {
+     "kind": "score",
+     "key": "H",
+     "min": 2.5,
+     "max": 2.5
+    },
+    {
+     "kind": "score",
+     "key": "E",
+     "min": 2,
+     "max": 3
+    },
+    {
+     "kind": "cond",
+     "key": "problem",
+     "value": true
+    },
+    {
+     "kind": "cond",
+     "key": "external",
+     "value": true
+    },
+    {
+     "kind": "cond",
+     "key": "commercial",
+     "value": true
+    },
+    {
+     "kind": "cond",
+     "key": "next",
+     "value": true
+    },
+    {
+     "kind": "cond",
+     "key": "fit",
+     "value": true
+    }
+   ],
+   "forbid": [
+    {
+     "kind": "blocker"
+    },
+    {
+     "kind": "score",
+     "key": "B",
+     "above": 3
+    },
+    {
+     "kind": "score",
+     "key": "E",
+     "above": 4
+    }
+   ]
+  },
+  {
+   "id": "meridian-partial",
+   "title": "Meridian: real need, but decision path unknown",
+   "notes": "Call with Emma Chen (VP Finance), 14 Oct 2026.\n\nEmma said month-end reporting relies on manual reconciliations across four business units, which delays reporting by eight days.\n\nEmma: \"Our project budget is approved and covers the initial consulting scope.\"\n\nShe wants a new close process before the next operating-model review in March.\n\nEmma is not sure who signs off above her; she will check with the CFO.\n\nWe agreed she will share a sample reporting workflow by 20 Oct.\n\nWe have not worked with Meridian before.",
+   "expect": [
+    {
+     "kind": "score",
+     "key": "N",
+     "min": 2,
+     "max": 4
+    },
+    {
+     "kind": "score",
+     "key": "B",
+     "min": 3,
+     "max": 4
+    },
+    {
+     "kind": "score",
+     "key": "T",
+     "min": 2,
+     "max": 3
+    },
+    {
+     "kind": "score",
+     "key": "H",
+     "min": 2.5,
+     "max": 2.5
+    },
+    {
+     "kind": "cond",
+     "key": "problem",
+     "value": true
+    },
+    {
+     "kind": "cond",
+     "key": "next",
+     "value": true
+    },
+    {
+     "kind": "cond",
+     "key": "fit",
+     "value": true
+    }
+   ],
+   "forbid": [
+    {
+     "kind": "cond",
+     "key": "commercial",
+     "value": true
+    },
+    {
+     "kind": "cond",
+     "key": "external",
+     "value": true
+    },
+    {
+     "kind": "score",
+     "key": "A",
+     "above": 2
+    },
+    {
+     "kind": "blocker"
+    },
+    {
+     "kind": "score",
+     "key": "E",
+     "above": 2
+    }
+   ]
+  },
+  {
+   "id": "bluegate-decline",
+   "title": "Bluegate: client declines outside help",
+   "notes": "Email from Daniel Okafor, 30 Oct 2026.\n\nThanks for following up. We have decided to run the ERP consolidation internally and we are not considering outside consultants this year. The budget is fully allocated to the software vendor.",
+   "expect": [
+    {
+     "kind": "blocker",
+     "key": "NO_EXTERNAL_SUPPORT"
+    },
+    {
+     "kind": "cond",
+     "key": "external",
+     "value": false
+    }
+   ],
+   "forbid": [
+    {
+     "kind": "cond",
+     "key": "external",
+     "value": true
+    },
+    {
+     "kind": "cond",
+     "key": "next",
+     "value": true
+    },
+    {
+     "kind": "score",
+     "key": "N",
+     "above": 2
+    },
+    {
+     "kind": "score",
+     "key": "E",
+     "above": 1
+    },
+    {
+     "kind": "cond",
+     "key": "fit",
+     "value": true
+    }
+   ]
+  },
+  {
+   "id": "summit-courtesy",
+   "title": "Summit: polite reply with nothing to confirm",
+   "notes": "Reply from Nina Wilson, 27 Oct 2026.\n\nThanks for the note, Alex. I'll keep it on file and reach out if anything comes up.",
+   "expect": [],
+   "forbid": [
+    {
+     "kind": "cond",
+     "value": true
+    },
+    {
+     "kind": "score",
+     "above": 1
+    },
+    {
+     "kind": "blocker"
+    },
+    {
+     "kind": "cond",
+     "value": false
+    }
+   ]
+  },
+  {
+   "id": "harrow-shared",
+   "title": "Harrow Ridge: clear scope and data already shared, funding not confirmed",
+   "notes": "Call with Grace Lin (VP Operations), Harrow Ridge Plastics, 6 Nov 2026, 40 minutes.\n\nGrace said the three molding plants plan maintenance separately, \"so the same press fails in one plant while another has spare parts on the shelf.\" Unplanned downtime cost about six weeks of output last year.\n\nShe wants one maintenance planning approach across the plants before the 2027 budget cycle closes in March.\n\nOn outside help: \"We need a partner to design the planning process; our engineers will handle the software.\"\n\nGrace shared the downtime records for all three plants during the call.\n\nGrace owns the operations budget, but she has not confirmed whether this work is funded.\n\nAgreed next step: a working session on 20 November with the three plant managers.",
+   "expect": [
+    {
+     "kind": "score",
+     "key": "N",
+     "min": 4,
+     "max": 4
+    },
+    {
+     "kind": "score",
+     "key": "E",
+     "min": 3,
+     "max": 3
+    },
+    {
+     "kind": "score",
+     "key": "T",
+     "min": 2,
+     "max": 3
+    },
+    {
+     "kind": "cond",
+     "key": "problem",
+     "value": true
+    },
+    {
+     "kind": "cond",
+     "key": "external",
+     "value": true
+    },
+    {
+     "kind": "cond",
+     "key": "next",
+     "value": true
+    }
+   ],
+   "forbid": [
+    {
+     "kind": "score",
+     "key": "N",
+     "above": 4
+    },
+    {
+     "kind": "score",
+     "key": "E",
+     "above": 3
+    },
+    {
+     "kind": "score",
+     "key": "B",
+     "above": 2
+    },
+    {
+     "kind": "cond",
+     "key": "commercial",
+     "value": true
+    },
+    {
+     "kind": "blocker"
+    }
+   ]
+  },
+  {
+   "id": "dunmore-defer",
+   "title": "Dunmore: not now, come back in March",
+   "notes": "Email from Marcus Hale (VP Integration), Dunmore Tooling, 2 Nov 2026.\n\nThanks, Alex. Our current consulting partner is with us until the end of February, and we are not bringing in anyone else before that. Please get back in touch in March 2027, when we plan the second phase of the integration.",
+   "expect": [
+    {
+     "kind": "blocker",
+     "key": "PROJECT_DEFERRED"
+    }
+   ],
+   "forbid": [
+    {
+     "kind": "blocker",
+     "key": "NO_EXTERNAL_SUPPORT"
+    },
+    {
+     "kind": "blocker",
+     "key": "CLIENT_DECLINED"
+    },
+    {
+     "kind": "cond",
+     "key": "external",
+     "value": false
+    },
+    {
+     "kind": "cond",
+     "key": "fit",
+     "value": true
+    },
+    {
+     "kind": "score",
+     "key": "N",
+     "above": 2
+    },
+    {
+     "kind": "score",
+     "key": "E",
+     "above": 2
+    }
+   ]
+  }
+ ]
+}

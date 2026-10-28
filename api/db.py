@@ -31,11 +31,24 @@ def make_engine(db_url: str) -> Engine:
     return engine
 
 
+def add_missing_columns(engine: Engine) -> None:
+    """A small migration: when a newer version adds an optional column, add it to an existing database file."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            have = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name not in have and col.nullable:
+                    conn.execute(text(f'ALTER TABLE {table.name} ADD COLUMN {col.name} {col.type.compile(engine.dialect)}'))
+
+
 class Database:
     def __init__(self, db_url: str):
         from api import models  # noqa: F401  (registers the tables)
         self.engine = make_engine(db_url)
         Base.metadata.create_all(self.engine)
+        add_missing_columns(self.engine)
         self.sessions = sessionmaker(self.engine, expire_on_commit=False)
 
     @contextmanager

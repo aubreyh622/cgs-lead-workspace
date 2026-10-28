@@ -11,6 +11,7 @@ Plain-language map (see docs/DATABASE.md for the full version):
   packs, decisions             Step 7 qualification packs and Step 4 / Step 8 human decisions
   feedback, direction_versions, direction_proposals   the learning loop
   agent_runs, activity         every AI call, and an append-only history of every change
+  agent_jobs, inbox_items      the agents' task board, and what they prepared for people
 
 Unknown scores and conditions are stored as null (pending), never as zero.
 """
@@ -117,6 +118,7 @@ class ResearchTask(Base):
     error: Mapped[Optional[str]] = mapped_column(Text)
     returned_with: Mapped[Optional[str]] = mapped_column(Text)          # Step 4 reviewer question
     budget_extended: Mapped[bool] = mapped_column(Boolean, default=False)
+    external_run_id: Mapped[Optional[str]] = mapped_column(String(64))  # Aubrey's research run, in live mode
     log: Mapped[list] = mapped_column(JSON, default=list)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
@@ -139,6 +141,7 @@ class Candidate(Base):
     skip_scope: Mapped[Optional[str]] = mapped_column(String(20))
     direction_version: Mapped[str] = mapped_column(String(40), default="")
     demo_star: Mapped[bool] = mapped_column(Boolean, default=False)
+    source_url: Mapped[Optional[str]] = mapped_column(Text)  # the search result a live nomination came from
 
 
 class Outreach(Base):
@@ -344,3 +347,45 @@ class Setting(Base):
     __tablename__ = "settings"
     key: Mapped[str] = mapped_column(String(60), primary_key=True)
     value: Mapped[Any] = mapped_column(JSON)
+
+
+class AgentJob(Base):
+    """One piece of agent work on the task board. Agents find work three ways: an event happened (a reply, a returned pack),
+    the patrol found something due (no reply for a week, a nurture review date), or another agent asked for help (handoff)."""
+    __tablename__ = "agent_jobs"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(40), index=True)          # see api/autonomy.py JOBS
+    agent: Mapped[str] = mapped_column(String(60))
+    opportunity_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    trigger: Mapped[str] = mapped_column(String(12))                   # event | patrol | handoff | person
+    reason: Mapped[str] = mapped_column(Text)                          # why this work was picked up, in plain words
+    requested_by: Mapped[str] = mapped_column(String(60), default="")  # the agent or person that asked
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(12), default="queued", index=True)  # queued | running | done | failed | skipped
+    parent_id: Mapped[Optional[str]] = mapped_column(String(64))
+    depth: Mapped[int] = mapped_column(Integer, default=0)             # 0 = found by the patrol or an event; 1+ = handoff chain
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    result: Mapped[str] = mapped_column(Text, default="")
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    created_on: Mapped[date] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class InboxItem(Base):
+    """What an agent prepared for a person: a draft, new facts, a suggested contact, a reminder. Nothing takes effect
+    until a person applies it; dismissing it changes nothing."""
+    __tablename__ = "inbox_items"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner: Mapped[Optional[str]] = mapped_column(String(80), index=True)  # null = the whole team
+    opportunity_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    job_id: Mapped[Optional[str]] = mapped_column(String(64))
+    agent: Mapped[str] = mapped_column(String(60))
+    kind: Mapped[str] = mapped_column(String(20))                     # draft | facts | contact | nurture | actions | ready | candidates | direction
+    title: Mapped[str] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text, default="")
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(12), default="new", index=True)  # new | applied | done | dismissed
+    decided_by: Mapped[Optional[str]] = mapped_column(String(80))
+    created_on: Mapped[date] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

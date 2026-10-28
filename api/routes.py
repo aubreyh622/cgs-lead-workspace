@@ -85,6 +85,13 @@ def agent_runs(request: Request, limit: int = Query(20, le=200)):
                 for r in s.scalars(select(m.AgentRun).order_by(m.AgentRun.on.desc(), m.AgentRun.id.desc()).limit(limit)).all()]
 
 
+@router.get("/knowledge", tags=["knowledge"], summary="Search the CGS library that agents may quote (K1)")
+def knowledge_search(q: str = Query(..., min_length=2), k: int = Query(5, le=20)):
+    from api.knowledge import library
+    lib = library()
+    return {"passages": lib.search(q, k), "librarySize": len(lib.passages), "synthetic": all(p.synthetic for p in lib.passages)}
+
+
 @router.get("/stats", tags=["system"], summary="How many records of each kind are stored")
 def stats(request: Request):
     with db(request).session() as s:

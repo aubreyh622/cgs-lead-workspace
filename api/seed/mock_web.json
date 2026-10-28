@@ -1,0 +1,577 @@
+{
+ "about": "SYNTHETIC internet for testing. Every company, person, website and article here is invented. Domains end in .example so nothing points at a real site. Used when config/search.json has provider mock. Rebuild with: python tools/build_mock_web.py",
+ "pages": [
+  {
+   "url": "https://www.ardentcastings.example/",
+   "title": "Ardent Castings | Official site",
+   "published": "",
+   "content": "Ardent Castings is a US manufacturer of precision iron and steel castings for pumps, valves and heavy equipment. It runs foundries in Ohio, Indiana and Michigan and employs about 1,900 people. Headquarters: Toledo, Ohio."
+  },
+  {
+   "url": "https://www.ardentcastings.example/leadership",
+   "title": "Leadership | Ardent Castings",
+   "published": "",
+   "content": "Ardent Castings leadership team. Paul Brennan, Chief Executive Officer. Maria Lopez, Chief Information Officer, leads IT and digital programs across all foundries. Kevin Shaw, Chief Operating Officer."
+  },
+  {
+   "url": "https://www.plantnews.example/2026/09/ardent-castings-completes-acquisition-of-hollow-pine-foundry",
+   "title": "Ardent Castings completes acquisition of Hollow Pine Foundry",
+   "published": "2026-09-14",
+   "content": "Toledo, Ohio. Ardent Castings has completed its acquisition of Hollow Pine Foundry, adding two foundries in Wisconsin and bringing its network to seven sites. Chief Information Officer Maria Lopez said the combined company will spend the next year bringing Hollow Pine onto Ardent's planning and quality systems. \"Our first priority is one way of planning production across seven foundries,\" Lopez said."
+  },
+  {
+   "url": "https://www.northwindfluid.example/",
+   "title": "Northwind Fluid Systems | Official site",
+   "published": "",
+   "content": "Northwind Fluid Systems designs and manufactures industrial pumps and flow control equipment at four plants in Minnesota, Iowa and Texas. Founded in 1962. Headquarters: Minneapolis, Minnesota."
+  },
+  {
+   "url": "https://www.northwindfluid.example/leadership",
+   "title": "Leadership | Northwind Fluid Systems",
+   "published": "",
+   "content": "Northwind Fluid Systems leadership team. Gregory Hale, President and CEO. Priya Desai, Chief Digital Officer, joined in August 2026 and reports to the CEO. Martin Cole, VP Manufacturing."
+  },
+  {
+   "url": "https://www.plantnews.example/2026/08/northwind-fluid-systems-names-priya-desai-its-first",
+   "title": "Northwind Fluid Systems names Priya Desai its first Chief Digital Officer",
+   "published": "2026-08-18",
+   "content": "Northwind Fluid Systems has appointed Priya Desai as its first Chief Digital Officer, reporting to CEO Gregory Hale. Desai will oversee the company's three predictive-maintenance AI pilots, which have run at the Minneapolis plant since 2025 but have not been rolled out to the other three plants. \"The pilots work; what we lack is a plan to scale them,\" Hale said."
+  },
+  {
+   "url": "https://www.mfgdaily.example/2026/10/inside-northwind-fluids-ai-maintenance-pilots",
+   "title": "Inside Northwind Fluid's AI maintenance pilots",
+   "published": "2026-10-06",
+   "content": "At Northwind Fluid Systems' Minneapolis plant, three AI models predict pump-line failures up to ten days ahead. The company says unplanned downtime on the pilot line fell in the first year. Expanding the pilots to its Iowa and Texas plants is planned but not yet funded, according to the company."
+  },
+  {
+   "url": "https://www.kesslermotion.example/",
+   "title": "Kessler Motion Controls | Official site",
+   "published": "",
+   "content": "Kessler Motion Controls makes electric motors, drives and motion controllers for industrial automation. Six plants in Pennsylvania, North Carolina and Mexico. Headquarters: Pittsburgh, Pennsylvania."
+  },
+  {
+   "url": "https://www.kesslermotion.example/leadership",
+   "title": "Leadership | Kessler Motion Controls",
+   "published": "",
+   "content": "Kessler Motion Controls leadership team. Robert Klein, Chief Executive Officer. Dana Whitaker, Head of Transformation, leads the integration office. Ian Moss, Chief Financial Officer."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/10/kessler-motion-controls-and-arcwell-drives-complete-merger",
+   "title": "Kessler Motion Controls and Arcwell Drives complete merger",
+   "published": "2026-10-02",
+   "content": "Kessler Motion Controls and Arcwell Drives have completed their merger, creating a motion-control manufacturer with nine plants. The company has set up an integration office led by Head of Transformation Dana Whitaker. The two businesses currently run different ERP systems and separate engineering processes."
+  },
+  {
+   "url": "https://www.ridgelinecomposites.example/",
+   "title": "Ridgeline Composites | Official site",
+   "published": "",
+   "content": "Ridgeline Composites manufactures carbon-fiber and glass-fiber parts for aerospace and wind energy at three plants in Washington and Utah. Headquarters: Spokane, Washington."
+  },
+  {
+   "url": "https://www.ridgelinecomposites.example/leadership",
+   "title": "Leadership | Ridgeline Composites",
+   "published": "",
+   "content": "Ridgeline Composites leadership team. Elaine Porter, CEO. Samuel Ortiz, Chief Information Officer. Hannah Brooks, VP Quality."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/07/ridgeline-composites-tests-ai-inspection-on-wind-blade-line",
+   "title": "Ridgeline Composites tests AI inspection on wind-blade line",
+   "published": "2026-07-22",
+   "content": "Ridgeline Composites is testing AI visual inspection on one wind-blade line in Spokane. Chief Information Officer Samuel Ortiz said the pilot catches surface defects earlier, but \"we are struggling to scale it to the aerospace lines, where the certification rules are different.\""
+  },
+  {
+   "url": "https://www.bellhavenpkg.example/",
+   "title": "Bellhaven Packaging | Official site",
+   "published": "",
+   "content": "Bellhaven Packaging is a US manufacturer of folding cartons and labels for food and consumer brands, with four plants in Georgia and Tennessee."
+  },
+  {
+   "url": "https://www.bellhavenpkg.example/leadership",
+   "title": "Leadership | Bellhaven Packaging",
+   "published": "",
+   "content": "Bellhaven Packaging leadership team. Joan Whitfield, CEO. Tom Reyes, VP Operations. Carl Benton, IT Director."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/06/bellhaven-packaging-to-build-new-plant-in-ohio",
+   "title": "Bellhaven Packaging to build new plant in Ohio",
+   "published": "2026-06-11",
+   "content": "Bellhaven Packaging will build a fifth plant in Columbus, Ohio, opening in 2027. VP Operations Tom Reyes said the new site will be the company's first fully digital plant and a model for the other four."
+  },
+  {
+   "url": "https://www.pioneervalve.example/",
+   "title": "Pioneer Valve & Fitting | Official site",
+   "published": "",
+   "content": "Pioneer Valve & Fitting manufactures industrial valves and fittings at four plants in Texas and Louisiana. Headquarters: Houston, Texas."
+  },
+  {
+   "url": "https://www.pioneervalve.example/leadership",
+   "title": "Leadership | Pioneer Valve & Fitting",
+   "published": "",
+   "content": "Pioneer Valve & Fitting leadership team. Frank Delgado, CEO. Laura Chen, Chief Information Officer, sponsor of the ERP program. Nate Ellison, VP Finance."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/09/pioneer-valve-and-fitting-starts-erp-consolidation",
+   "title": "Pioneer Valve & Fitting starts ERP consolidation",
+   "published": "2026-09-03",
+   "content": "Pioneer Valve & Fitting has started consolidating four ERP systems into one, with cutover planned for mid-2027. Chief Information Officer Laura Chen said the plants still use different order-to-cash processes."
+  },
+  {
+   "url": "https://www.silverlinemed.example/",
+   "title": "Silverline Medical Devices | Official site",
+   "published": "",
+   "content": "Silverline Medical Devices makes infusion pumps and surgical instruments at three plants in Massachusetts and Puerto Rico. Headquarters: Worcester, Massachusetts."
+  },
+  {
+   "url": "https://www.silverlinemed.example/leadership",
+   "title": "Leadership | Silverline Medical Devices",
+   "published": "",
+   "content": "Silverline Medical Devices leadership team. Diane Hollis, CEO. Raj Patel, VP Quality and Regulatory. Owen Fitch, Chief Operating Officer."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/08/silverline-medical-receives-fda-warning-letter-over-complaint",
+   "title": "Silverline Medical receives FDA warning letter over complaint handling",
+   "published": "2026-08-27",
+   "content": "Silverline Medical Devices received an FDA warning letter citing gaps in complaint handling and corrective actions at its Worcester plant. VP Quality and Regulatory Raj Patel said the company will modernize its quality management system across all three plants within 12 months."
+  },
+  {
+   "url": "https://www.ironbridgerail.example/",
+   "title": "Ironbridge Rail Parts | Official site",
+   "published": "",
+   "content": "Ironbridge Rail Parts manufactures wheels, axles and brake components for freight rail at two plants in Illinois. Headquarters: Joliet, Illinois."
+  },
+  {
+   "url": "https://www.ironbridgerail.example/leadership",
+   "title": "Leadership | Ironbridge Rail Parts",
+   "published": "",
+   "content": "Ironbridge Rail Parts leadership team. Steven Marsh, CEO. Alicia Grant, Director of Digital Manufacturing."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/07/ironbridge-rail-parts-pilots-predictive-maintenance-on-forging",
+   "title": "Ironbridge Rail Parts pilots predictive maintenance on forging line",
+   "published": "2026-07-30",
+   "content": "Ironbridge Rail Parts is piloting predictive maintenance on one forging line in Joliet. Director of Digital Manufacturing Alicia Grant said the company wants to decide in 2027 whether to extend it to the second plant."
+  },
+  {
+   "url": "https://www.quillonchem.example/",
+   "title": "Quillon Specialty Chemicals | Official site",
+   "published": "",
+   "content": "Quillon Specialty Chemicals produces coatings additives and specialty resins at four plants in Louisiana and Texas. Headquarters: Baton Rouge, Louisiana."
+  },
+  {
+   "url": "https://www.quillonchem.example/leadership",
+   "title": "Leadership | Quillon Specialty Chemicals",
+   "published": "",
+   "content": "Quillon Specialty Chemicals leadership team. Grace Mercer, CEO. Henry Vo, Chief Strategy Officer."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/09/quillon-to-sell-its-industrial-cleaners-unit",
+   "title": "Quillon to sell its industrial cleaners unit",
+   "published": "2026-09-22",
+   "content": "Quillon Specialty Chemicals agreed to sell its industrial cleaners unit to focus on coatings additives. Chief Strategy Officer Henry Vo said the remaining business will need a simpler operating model and fewer shared services."
+  },
+  {
+   "url": "https://www.westfordglass.example/",
+   "title": "Westford Glass Containers | Official site",
+   "published": "",
+   "content": "Westford Glass Containers makes glass bottles and jars for food and beverage brands at five plants in Ohio and Pennsylvania. Headquarters: Zanesville, Ohio."
+  },
+  {
+   "url": "https://www.westfordglass.example/leadership",
+   "title": "Leadership | Westford Glass Containers",
+   "published": "",
+   "content": "Westford Glass Containers leadership team. Mark Cutler, CEO. Erin Walsh, Head of Integration."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/08/westford-glass-completes-merger-with-lakeshore-containers",
+   "title": "Westford Glass completes merger with Lakeshore Containers",
+   "published": "2026-08-05",
+   "content": "Westford Glass Containers completed its merger with Lakeshore Containers of Ontario, creating a seven-plant company. Head of Integration Erin Walsh said the first year will focus on combining procurement and plant scheduling."
+  },
+  {
+   "url": "https://www.bluestemfurniture.example/",
+   "title": "Bluestem Furniture Works | Official site",
+   "published": "",
+   "content": "Bluestem Furniture Works builds office and school furniture at three plants in North Carolina. Headquarters: High Point, North Carolina."
+  },
+  {
+   "url": "https://www.bluestemfurniture.example/leadership",
+   "title": "Leadership | Bluestem Furniture Works",
+   "published": "",
+   "content": "Bluestem Furniture Works leadership team. Lydia Shaw, CEO. Marcus Dunn, VP Operations."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/10/bluestem-furniture-invests-in-automated-plant",
+   "title": "Bluestem Furniture invests in automated plant",
+   "published": "2026-10-01",
+   "content": "Bluestem Furniture Works will open an automated cutting and finishing plant in 2027. VP Operations Marcus Dunn said the company is still deciding how the new plant will share planning with the two older sites."
+  },
+  {
+   "url": "https://www.callowayfasteners.example/",
+   "title": "Calloway Aerospace Fasteners | Official site",
+   "published": "",
+   "content": "Calloway Aerospace Fasteners manufactures certified fasteners for aircraft makers at two plants in Kansas. Headquarters: Wichita, Kansas."
+  },
+  {
+   "url": "https://www.callowayfasteners.example/leadership",
+   "title": "Leadership | Calloway Aerospace Fasteners",
+   "published": "",
+   "content": "Calloway Aerospace Fasteners leadership team. Peter Calloway, CEO. Nina Osei, Chief Information Officer."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/09/calloway-aerospace-fasteners-tests-ai-scheduling",
+   "title": "Calloway Aerospace Fasteners tests AI scheduling",
+   "published": "2026-09-10",
+   "content": "Calloway Aerospace Fasteners is testing an AI scheduling tool at its Wichita plant alongside an ERP upgrade. CIO Nina Osei said the pilot has cut changeover planning time but has not been approved for the second plant."
+  },
+  {
+   "url": "https://www.granitepeakbatteries.example/",
+   "title": "Granite Peak Batteries | Official site",
+   "published": "",
+   "content": "Granite Peak Batteries manufactures lithium battery packs for industrial vehicles at a plant in Reno, Nevada."
+  },
+  {
+   "url": "https://www.granitepeakbatteries.example/leadership",
+   "title": "Leadership | Granite Peak Batteries",
+   "published": "",
+   "content": "Granite Peak Batteries leadership team. Victor Lam, CEO. Sofia Ruiz, VP Operations."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/06/granite-peak-batteries-to-triple-capacity-with-second",
+   "title": "Granite Peak Batteries to triple capacity with second Nevada plant",
+   "published": "2026-06-25",
+   "content": "Granite Peak Batteries will build a second plant in Sparks, Nevada, tripling capacity by 2028. VP Operations Sofia Ruiz said the company needs new planning and quality processes before the ramp-up."
+  },
+  {
+   "url": "https://www.larkfieldpaper.example/",
+   "title": "Larkfield Paper Mills | Official site",
+   "published": "",
+   "content": "Larkfield Paper Mills produces specialty papers and packaging board at three mills in Wisconsin. Headquarters: Green Bay, Wisconsin."
+  },
+  {
+   "url": "https://www.larkfieldpaper.example/leadership",
+   "title": "Leadership | Larkfield Paper Mills",
+   "published": "",
+   "content": "Larkfield Paper Mills leadership team. Doug Ferris, CEO. Anna Kowal, Chief Digital Officer, appointed in July 2026."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/07/larkfield-paper-mills-appoints-anna-kowal-as-chief",
+   "title": "Larkfield Paper Mills appoints Anna Kowal as Chief Digital Officer",
+   "published": "2026-07-14",
+   "content": "Larkfield Paper Mills appointed Anna Kowal as its first Chief Digital Officer. Kowal will set the company's digital roadmap for 2027 and 2028, starting with mill data and maintenance."
+  },
+  {
+   "url": "https://www.orchardlanefoods.example/",
+   "title": "Orchard Lane Foods | Official site",
+   "published": "",
+   "content": "Orchard Lane Foods makes frozen fruit and baked goods at four plants in California and Oregon. Headquarters: Fresno, California."
+  },
+  {
+   "url": "https://www.orchardlanefoods.example/leadership",
+   "title": "Leadership | Orchard Lane Foods",
+   "published": "",
+   "content": "Orchard Lane Foods leadership team. Kate Morrison, CEO. Daniel Ruiz, Chief Operating Officer. Lisa Tran, Director of Data."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/09/orchard-lane-foods-pilots-ai-demand-forecasting",
+   "title": "Orchard Lane Foods pilots AI demand forecasting",
+   "published": "2026-09-29",
+   "content": "Orchard Lane Foods is piloting AI demand forecasting for its frozen fruit line. COO Daniel Ruiz said the pilot reduced waste in the first month, but each plant still plans production in its own spreadsheets."
+  },
+  {
+   "url": "https://www.redstonepump.example/",
+   "title": "Redstone Pump & Compressor | Official site",
+   "published": "",
+   "content": "Redstone Pump & Compressor manufactures compressors for oil, gas and industrial customers at three plants in Oklahoma. Headquarters: Tulsa, Oklahoma."
+  },
+  {
+   "url": "https://www.redstonepump.example/leadership",
+   "title": "Leadership | Redstone Pump & Compressor",
+   "published": "",
+   "content": "Redstone Pump & Compressor leadership team. Brian Nolan, CEO, joined in May 2026. Tessa Grant, Head of Transformation."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/05/redstone-pump-and-compressor-names-new-ceo-after",
+   "title": "Redstone Pump & Compressor names new CEO after private equity acquisition",
+   "published": "2026-05-20",
+   "content": "Redstone Pump & Compressor named Brian Nolan as CEO following its acquisition by a private equity firm. Nolan set up a transformation office, led by Tessa Grant, to standardize operations across the three plants."
+  },
+  {
+   "url": "https://www.thornburytextiles.example/",
+   "title": "Thornbury Textiles | Official site",
+   "published": "",
+   "content": "Thornbury Textiles weaves technical fabrics for protective clothing and filtration at two mills in South Carolina."
+  },
+  {
+   "url": "https://www.thornburytextiles.example/leadership",
+   "title": "Leadership | Thornbury Textiles",
+   "published": "",
+   "content": "Thornbury Textiles leadership team. Alan Pierce, CEO. Monica Hale, Head of Transformation."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/08/thornbury-textiles-launches-protective-fabrics-line-for-defense",
+   "title": "Thornbury Textiles launches protective fabrics line for defense",
+   "published": "2026-08-21",
+   "content": "Thornbury Textiles is launching a protective fabrics line for defense customers. Head of Transformation Monica Hale said the company will redesign its quality and planning processes to meet defense contract rules."
+  },
+  {
+   "url": "https://www.vantagerobotics.example/",
+   "title": "Vantage Robotics Components | Official site",
+   "published": "",
+   "content": "Vantage Robotics Components makes gearboxes and actuators for industrial robots at four plants in Michigan and Ohio. Headquarters: Ann Arbor, Michigan."
+  },
+  {
+   "url": "https://www.vantagerobotics.example/leadership",
+   "title": "Leadership | Vantage Robotics Components",
+   "published": "",
+   "content": "Vantage Robotics Components leadership team. Helen Brooks, CEO. Jason Kim, Chief Information Officer."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/10/vantage-robotics-components-completes-merger-with-delta-actuation",
+   "title": "Vantage Robotics Components completes merger with Delta Actuation",
+   "published": "2026-10-12",
+   "content": "Vantage Robotics Components completed its merger with Delta Actuation. CIO Jason Kim said the combined company will choose one engineering and production platform in 2027."
+  },
+  {
+   "url": "https://www.elmwoodhvac.example/",
+   "title": "Elmwood HVAC Manufacturing | Official site",
+   "published": "",
+   "content": "Elmwood HVAC Manufacturing builds commercial heating and cooling units at three plants in Tennessee. Headquarters: Nashville, Tennessee."
+  },
+  {
+   "url": "https://www.elmwoodhvac.example/leadership",
+   "title": "Leadership | Elmwood HVAC Manufacturing",
+   "published": "",
+   "content": "Elmwood HVAC Manufacturing leadership team. Robert Lane, CEO. Priscilla Moore, VP Engineering."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/09/elmwood-hvac-tests-ai-quality-checks-on-assembly",
+   "title": "Elmwood HVAC tests AI quality checks on assembly line",
+   "published": "2026-09-16",
+   "content": "Elmwood HVAC Manufacturing is testing AI-based quality checks on one assembly line. VP Engineering Priscilla Moore said the pilot works but scaling it to other lines needs new data infrastructure."
+  },
+  {
+   "url": "https://www.ashfordcoatings.example/",
+   "title": "Ashford Coatings | Official site",
+   "published": "",
+   "content": "Ashford Coatings produces industrial and automotive coatings at five plants in Pennsylvania and Ohio. Headquarters: Pittsburgh, Pennsylvania."
+  },
+  {
+   "url": "https://www.ashfordcoatings.example/leadership",
+   "title": "Leadership | Ashford Coatings",
+   "published": "",
+   "content": "Ashford Coatings leadership team. Gerald Price, CEO. Rita Okafor, Chief Operating Officer."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/07/ashford-coatings-to-consolidate-five-plants-into-three",
+   "title": "Ashford Coatings to consolidate five plants into three",
+   "published": "2026-07-08",
+   "content": "Ashford Coatings will consolidate its five plants into three by 2028. COO Rita Okafor said the company will redesign its supply chain and plant roles as part of the program."
+  },
+  {
+   "url": "https://www.cobaltcreek.example/",
+   "title": "Cobalt Creek Electronics | Official site",
+   "published": "",
+   "content": "Cobalt Creek Electronics is a US contract electronics manufacturer with plants in Arizona and Texas. Headquarters: Phoenix, Arizona."
+  },
+  {
+   "url": "https://www.cobaltcreek.example/leadership",
+   "title": "Leadership | Cobalt Creek Electronics",
+   "published": "",
+   "content": "Cobalt Creek Electronics leadership team. Laura Simms, CEO. Dev Malhotra, Chief Digital Officer, appointed in September 2026."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/09/cobalt-creek-electronics-hires-first-chief-digital-officer",
+   "title": "Cobalt Creek Electronics hires first Chief Digital Officer",
+   "published": "2026-09-08",
+   "content": "Cobalt Creek Electronics hired Dev Malhotra as its first Chief Digital Officer. Malhotra will lead AI test-automation pilots that have run in Phoenix since 2025 and decide which to scale to Texas."
+  },
+  {
+   "url": "https://www.harlowag.example/",
+   "title": "Harlow Agricultural Equipment | Official site",
+   "published": "",
+   "content": "Harlow Agricultural Equipment builds tillage and planting equipment at three plants in Iowa and Nebraska. Headquarters: Des Moines, Iowa."
+  },
+  {
+   "url": "https://www.harlowag.example/leadership",
+   "title": "Leadership | Harlow Agricultural Equipment",
+   "published": "",
+   "content": "Harlow Agricultural Equipment leadership team. Wes Harlow, CEO. Jenna Cole, Chief Operating Officer."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/08/harlow-agricultural-equipment-acquires-sprayer-maker-prairie-spray",
+   "title": "Harlow Agricultural Equipment acquires sprayer maker Prairie Spray",
+   "published": "2026-08-12",
+   "content": "Harlow Agricultural Equipment acquired Prairie Spray, a sprayer manufacturer in Nebraska. COO Jenna Cole said integrating Prairie Spray's dealer network and production planning is the main task for 2027."
+  },
+  {
+   "url": "https://www.harborlinebank.example/news/new-chief-digital-officer",
+   "title": "Harborline Bank appoints Chief Digital Officer",
+   "published": "2026-08-30",
+   "content": "Harborline Bank, a regional bank in Maryland, has appointed Jason Reed as Chief Digital Officer to lead its mobile banking program."
+  },
+  {
+   "url": "https://www.consultingtimes.example/2026/09/crestview-acquires-boutique",
+   "title": "Crestview Consulting Partners acquires manufacturing strategy boutique",
+   "published": "2026-09-19",
+   "content": "Crestview Consulting Partners, a management consulting firm, has acquired a small manufacturing strategy boutique to expand its operations practice."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/10/graniteridge-steel-buys-service-centers",
+   "title": "Graniteridge Steel buys two Texas service centers",
+   "published": "2026-10-09",
+   "content": "Graniteridge Steel (graniteridge.example) has agreed to buy two steel service centers in Texas, adding processing capacity for its manufacturing customers."
+  },
+  {
+   "url": "https://www.retailnews.example/2026/08/lumen-outdoor-expands",
+   "title": "Lumen Outdoor opens 12 new stores",
+   "published": "2026-08-12",
+   "content": "Lumen Outdoor, an outdoor gear retailer, opened 12 new stores and named a new Chief Digital Officer to lead e-commerce."
+  },
+  {
+   "url": "https://www.healthnews.example/2026/09/rivermead-health-cdo",
+   "title": "Rivermead Health System names Chief Digital Officer",
+   "published": "2026-09-02",
+   "content": "Rivermead Health System, a hospital network in Ohio, named Carla Mendes as Chief Digital Officer to lead patient-app and AI scheduling pilots."
+  },
+  {
+   "url": "https://www.techwire.example/2026/10/stackpoint-acquires-planning-startup",
+   "title": "StackPoint Software acquires manufacturing planning startup",
+   "published": "2026-10-15",
+   "content": "StackPoint Software, a SaaS company, acquired a startup that sells AI planning software to manufacturers."
+  },
+  {
+   "url": "https://www.industrywire.example/2026/09/brannvik-maskin-new-plant",
+   "title": "Brannvik Maskin opens new plant in Sweden",
+   "published": "2026-09-25",
+   "content": "Brannvik Maskin AB, a Swedish machinery maker with no US operations, opened a new automated plant near Gothenburg."
+  },
+  {
+   "url": "https://www.distributionnews.example/2026/08/keystone-industrial-supply-merger",
+   "title": "Keystone Industrial Supply merges with regional distributor",
+   "published": "2026-08-19",
+   "content": "Keystone Industrial Supply, an industrial parts distributor that does not manufacture, merged with a regional distributor to expand its warehouse network."
+  },
+  {
+   "url": "https://www.industrywire.example/2027/01/bellhaven-columbus-plant-opens",
+   "title": "Bellhaven Packaging opens Columbus plant ahead of schedule",
+   "published": "2027-01-19",
+   "content": "Bellhaven Packaging has opened its fifth plant, in Columbus, Ohio, two months ahead of schedule. VP Operations Tom Reyes said the company now plans to bring its other four plants onto the Columbus scheduling system during 2027, starting with Georgia."
+  },
+  {
+   "url": "https://www.businessjournal.example/2027/02/larkfield-paper-board-approves-digital-roadmap",
+   "title": "Larkfield Paper Mills board approves 2027 digital roadmap",
+   "published": "2027-02-25",
+   "content": "The board of Larkfield Paper Mills has approved the company's 2027 digital roadmap. Chief Digital Officer Anna Kowal said the first program will standardize maintenance planning across the three mills, and Larkfield will choose an outside partner for it in the second quarter."
+  },
+  {
+   "url": "https://www.manufacturingtoday.example/2027/03/kessler-motion-arcwell-phase-one-complete",
+   "title": "Kessler Motion Controls finishes first phase of Arcwell integration",
+   "published": "2027-03-23",
+   "content": "Kessler Motion Controls has finished the first phase of its integration with Arcwell Drives, moving all nine plants onto one ERP system. Head of Transformation Dana Whitaker said phase two, starting in May, will bring the plants onto one production planning process. \"For phase two we will look for outside planning expertise,\" Whitaker said."
+  }
+ ],
+ "client_simulations": {
+  "ardentcastings.example": {
+   "reply": "Hi Alex, good timing. We are scoping exactly that integration work now. Can you do Thursday at 10am Eastern? Maria",
+   "notes": "Call with Maria Lopez (CIO) and Kevin Shaw (COO), 12 Nov 2026, 50 minutes.\n\nMaria said the seven foundries plan production in three different ways since the Hollow Pine deal: \"we can't see capacity across the network, so we turn down orders one plant could have taken.\"\n\nKevin said late orders cost them two key customers this quarter.\n\nOn outside help: \"We want a partner to design the common planning process; our team will run the system work.\"\n\nThe integration budget for 2027 is approved and covers outside support for the planning design. Maria and Kevin jointly decide; the CEO has delegated integration spending to them.\n\nThey want the common planning process live before the spring order peak in April 2027.\n\nArdent worked with CGS on a pricing study in 2023 and rated it well.\n\nKevin sent the plant capacity data after the call.\n\nAgreed next step: a two-day design workshop on 1-2 December with the planning leads from all seven foundries.",
+   "story": {
+    "stages": [
+     "qualification"
+    ],
+    "text": "Likely Ready: budget approved, joint decision makers, dated workshop, data already sent"
+   }
+  },
+  "northwindfluid.example": {
+   "reply": "Hi, thanks for reaching out. Scaling the maintenance pilots is exactly what I am working on. Could we talk next Tuesday at 2pm Central? Priya",
+   "notes": "Call with Priya Desai (Chief Digital Officer), 10 Nov 2026, 40 minutes. Martin Cole (VP Manufacturing) joined for the second half.\n\nPriya said the three predictive-maintenance pilots work at Minneapolis, but \"we have no plan for rolling them out to Iowa and Texas, and each plant manager wants something different.\"\n\nOn outside help: \"I'd rather work with a partner on the rollout plan than build the method ourselves.\"\n\nPriya owns the digital budget for 2027; anything above $400K goes to the CEO for approval. She expects to present the 2027 plan to the CEO in February.\n\nNorthwind has not worked with CGS before.\n\nMartin sent the list of production lines at the Iowa and Texas plants during the call.\n\nAgreed next step: a scoping workshop on 3 December with Priya, Martin and the two plant managers.",
+   "story": {
+    "stages": [
+     "qualification",
+     "active"
+    ],
+    "text": "Near Ready: CEO approval needed above $400K"
+   }
+  },
+  "kesslermotion.example": {
+   "reply": "Thanks for the note. We are deep in integration work and not looking at new advisors until after Q1. Happy to reconnect in April. Dana",
+   "notes": "Email from Dana Whitaker, 4 Nov 2026. Dana said the integration office will use its existing integration partner through March and is not considering other external advisors before then. She suggested reconnecting in April 2027.",
+   "story": {
+    "stages": [
+     "nurture"
+    ],
+    "text": "Deferred: reconnect in April 2027"
+   }
+  },
+  "ridgelinecomposites.example": {
+   "reply": "Hi Alex, interesting timing. Happy to compare notes. Next week works. Sam",
+   "notes": "Call with Samuel Ortiz (CIO), 9 Nov 2026, 30 minutes.\n\nSam said the AI inspection pilot works on wind blades but \"the aerospace customers have not agreed how a model-based inspection would be certified.\"\n\nHe is open to outside help \"if someone has done this with an aerospace quality team before.\"\n\nThere is no budget yet; Sam would need to build a case for the CEO and the VP Quality first. He did not know when that could happen.\n\nNo next meeting was agreed. Sam asked for a short note on how other manufacturers handled certification.",
+   "story": {
+    "stages": [
+     "active"
+    ],
+    "text": "Not ready: no budget and no timeline yet; keep working"
+   }
+  },
+  "bellhavenpkg.example": {
+   "reply": "Thanks for thinking of us. I'll keep your note on file. Tom",
+   "notes": "Reply from Tom Reyes, 28 Oct 2026: Thanks for thinking of us. I'll keep your note on file.",
+   "story": {
+    "stages": [
+     "nurture"
+    ],
+    "text": "Courtesy reply only: revisit later"
+   }
+  },
+  "pioneervalve.example": {
+   "reply": "Hi Alex, yes, process design is the open question in our ERP program. Let's talk. Laura",
+   "notes": "Call with Laura Chen (CIO), 6 Nov 2026, 45 minutes.\n\nLaura said the four plants run order-to-cash differently, and \"the ERP vendor will configure whatever we tell them, but we haven't agreed one process.\"\n\nShe wants outside help to design the common process: \"we need someone neutral between the plants.\"\n\nThe ERP program budget includes a line for process design; Laura can approve up to $500K and the CFO approves above that.\n\nCutover is planned for June 2027, so the process design has to be agreed by February.\n\nPioneer has not worked with CGS before.\n\nAgreed next step: a working session on 19 November with the four plant controllers.",
+   "story": {
+    "stages": [
+     "qualification",
+     "active"
+    ],
+    "text": "Near Ready: clear need and budget, no client action completed yet"
+   }
+  },
+  "silverlinemed.example": {
+   "reply": "Alex, thank you. This is urgent for us. Can we speak this week? Raj",
+   "notes": "Call with Raj Patel (VP Quality and Regulatory) and Owen Fitch (COO), 30 Oct 2026, 60 minutes.\n\nRaj said the FDA response is due in January and \"our complaint process runs on spreadsheets at two of three plants.\"\n\nOwen said the board has approved funding for the quality system program, including outside support.\n\nRaj and Owen decide together; the CEO has asked them to choose a partner by mid-December.\n\nSilverline has not worked with CGS before.\n\nRaj shared the FDA letter and the current process maps during the call.\n\nAgreed next step: a proposal discussion on 13 November with Raj, Owen and the three site quality leads.",
+   "story": {
+    "stages": [
+     "qualification"
+    ],
+    "text": "Likely Ready: board-approved funding, deadline, documents shared"
+   }
+  },
+  "westfordglass.example": {
+   "reply": "Hi Alex, thanks. We selected an integration partner last month, so we're covered for now. Erin",
+   "notes": "Email from Erin Walsh, 3 Nov 2026: We selected an integration partner last month and are not considering other advisors for the integration. Happy to stay in touch.",
+   "story": {
+    "stages": [
+     "closed"
+    ],
+    "text": "Declined: chose another integration partner"
+   }
+  },
+  "larkfieldpaper.example": {
+   "reply": "Hi Alex, thanks. I'm still in my first months and building the roadmap. Could we talk again in the new year? Anna",
+   "notes": "Email from Anna Kowal, 5 Nov 2026: I'm still building the 2027 roadmap and won't look at outside support until it is approved in March. Please reconnect after that.",
+   "story": {
+    "stages": [
+     "nurture"
+    ],
+    "text": "Deferred: reconnect after the roadmap is approved in March"
+   }
+  },
+  "orchardlanefoods.example": {
+   "reply": "Hi Alex, the forecasting pilot is going well and we're thinking about next steps. Happy to talk. Daniel",
+   "notes": "Call with Daniel Ruiz (COO) and Lisa Tran (Director of Data), 7 Nov 2026, 35 minutes.\n\nDaniel said \"each of the four plants plans in its own spreadsheet, so the forecast never reaches the schedule.\"\n\nHe is interested in outside help for a planning design, but said the CEO would decide on any spend and he has not raised it with her yet.\n\nNo timeline has been set.\n\nLisa will send a description of the current planning process.\n\nAgreed next step: Daniel will talk to the CEO and come back within two weeks.",
+   "story": {
+    "stages": [
+     "active"
+    ],
+    "text": "Not ready: the CEO decides and has not been asked yet"
+   }
+  }
+ }
+}

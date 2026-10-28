@@ -222,9 +222,10 @@ def test_revision_guard(api):
 
 def test_live_mode_never_falls_back_to_demo_results(tmp_path):
     api = make(tmp_path, "live")
-    # live mode starts empty; add one lead: research fails visibly instead of inventing a brief
+    api.app.state.research_bridge = object()  # never reached: research needs a website first
+    # live mode starts empty; add one lead without a website: research fails visibly instead of inventing a brief
     oid = post(api, "/api/opportunities", {"company": "Northfield Robotics", "name": "Jamie Cross", "title": "VP Operations"})["id"]
     o = get(api, oid)
-    assert o["stage"] == "researching" and o["research"]["status"] == "failed" and "not connected" in o["research"]["error"]
+    assert o["stage"] == "researching" and o["research"]["status"] == "failed" and "website" in o["research"]["error"]
     runs = api.get("/api/agent-runs").json()
     assert runs[0]["status"] == "failed"

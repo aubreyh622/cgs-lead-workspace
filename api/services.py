@@ -15,6 +15,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api import demo_agents as A
+from api import jobs as J
+from api import knowledge
 from api import live_agents as L
 from api.llm import LLMError, make_provider
 from api import models as m
@@ -48,6 +50,8 @@ class Ctx:
     today: date
     settings: Settings
     provider_factory: Callable[[], Any] | None = None  # tests inject a fake AI company here
+    research_factory: Callable[[], Any] | None = None  # Steps 2-3 live research (Aubrey's pipeline)
+    search_factory: Callable[[], Any] | None = None    # web search for Step 1 discovery
 
     @property
     def demo(self) -> bool:
@@ -116,6 +120,7 @@ def check_ready(c: Ctx, o: m.Opportunity) -> None:
         if r["readiness"] == "Ready" and o.next_action != "Submit the qualification pack":
             o.next_action, o.next_due = "Submit the qualification pack", c.today + timedelta(days=2)
             log(c, o.id, "s", f"Rules engine ({RULE_VERSION}): Ready. Q {r['ql']:g}, coverage {r['coverage']}%")
+            J.enqueue(c.s, c.today, "ready_reminder", o.id, "event", f"The rules now say Ready (Q {r['ql']:g})", requested_by="Rules engine")
 
 
 def rules_input(o: m.Opportunity) -> dict:
@@ -226,15 +231,38 @@ def unique_opp_id(c: Ctx, base: str) -> str:
     return oid
 
 
+def latest_task(c: Ctx, o: m.Opportunity) -> m.ResearchTask:
+    return c.s.scalars(select(m.ResearchTask).where(m.ResearchTask.opportunity_id == o.id).order_by(m.ResearchTask.started_at.desc())).first()
+
+
 def run_research(c: Ctx, o: m.Opportunity) -> None:
-    """Steps 2-3. Demo mode finishes at once from fixtures; live mode records a failure until step 6 connects providers."""
-    task = c.s.scalars(select(m.ResearchTask).where(m.ResearchTask.opportunity_id == o.id).order_by(m.ResearchTask.started_at.desc())).first()
-    try:
-        A.require_demo(c.settings.app_mode, "Research agent")
-    except A.AgentUnavailable as e:
-        task.status, task.error = "failed", str(e)
-        record_run(c, "Research agent", o, "research-v2.3", 0, "failed", str(e))
-        log(c, o.id, "a", "Research stopped: the live provider is not connected")
+    """Steps 2-3. Demo mode finishes at once from fixtures. Live mode starts Aubrey's research pipeline in the
+    background (Gemini + Tavily); sync_research() collects the brief when it is done."""
+    task = latest_task(c, o)
+    if not c.demo:
+        try:
+            if not o.company.domain:
+                from api import discovery_agent as D
+                try:
+                    from api.search import make_search
+                    found = D.resolve_domain(c.search_factory() if c.search_factory else make_search(as_of=c.today), o.company.name)
+                except LLMError:
+                    found = ""
+                if not found:
+                    raise LLMError("The research agent needs the company website (domain), and a search did not find it. Add it, then retry.", "config")
+                o.company.domain = found
+                log(c, o.id, "a", f"Research agent found the company website: {found}. Check it is the right company.")
+            bridge = c.research_factory() if c.research_factory else None
+            if bridge is None:
+                raise A.AgentUnavailable("Research agent: not available in this server.")
+            task.external_run_id = bridge.start(o.company.name, o.company.domain, c.actor, **({"as_of": c.today} if getattr(bridge, "dated", False) else {}))
+            task.status, task.error = "running", None
+            log(c, o.id, "a", "Research agent started (Gemini + web search, up to about 8 minutes)" +
+                (f". Reviewer question noted: {task.returned_with}" if task.returned_with else ""))
+        except (LLMError, A.AgentUnavailable) as e:
+            task.status, task.error = "failed", str(e)
+            record_run(c, "Research agent", o, "research-v2 (Aubrey)", 0, "failed", str(e))
+            log(c, o.id, "a", f"Research could not run: {e}")
         return
     b = o.brief
     if task.returned_with:
@@ -286,6 +314,36 @@ def pick_candidate(c: Ctx, cand_id: str) -> list[str]:
     return created
 
 
+def recommend(c: Ctx, intent: str) -> dict:
+    """Step 1: a new round of up to 10 candidates. Demo: prepared list. Live: web search + AI nominations, checked by code."""
+    from api import discovery_agent as D
+    d = current_direction(c, c.actor)
+    direction = {f: getattr(d, f) for f in WHITELIST}
+    known = {D._norm(n) for n in c.s.scalars(select(m.Company.name))} | {D._norm(n) for n in c.s.scalars(select(m.Candidate.company))}
+
+    def live(p):
+        from api.search import make_search, search_config
+        from api.settings import ROOT
+        search = c.search_factory() if c.search_factory else make_search(as_of=c.today)
+        return D.discover(p, search, direction, intent, known, c.today, debug_file=ROOT / "runtime" / "discovery-last-round.json",
+                          config=search_config())
+
+    (found, info), _ = run_agent(c, "Discovery agent", None, "discovery-demo-1.0", lambda: (A.demo_round(direction, known), {}),
+                                 subject=f"Direction {d.version}", live=live, live_prompt=D.DISCOVERY_PROMPT_VERSION)
+    row = c.s.get(m.Setting, "round")
+    rnd = (row.value if row else 0) + 1
+    if row:
+        row.value = rnd
+    else:
+        c.s.add(m.Setting(key="round", value=rnd))
+    for i, x in enumerate(found):
+        c.s.add(m.Candidate(id=f"r{rnd}-{i + 1}", round=rnd, company=x["company"], domain=x.get("domain", ""), person=x.get("person", ""),
+                            title=x.get("title", ""), why_person=x.get("why_person", "Matches a buyer role in the research direction" if x.get("person") else "No named person in the source"),
+                            why=x["why"], signal=x["signal"], signal_date=x["signal_date"], flags=x.get("flags", []), status="new",
+                            direction_version=d.version, source_url=x.get("source_url")))
+    return {"round": rnd, "candidates": len(found), "checks": info}
+
+
 def skip_candidate(c: Ctx, cand_id: str, reason: str, scope: str) -> None:
     cand = c.s.get(m.Candidate, cand_id)
     if not cand:
@@ -310,12 +368,67 @@ def add_manual(c: Ctx, company: str, domain: str, name: str, title: str, source:
     return o.id
 
 
+def sync_research(c: Ctx) -> list[dict]:
+    """Live mode: check running research and turn finished company cards into Step 4 briefs."""
+    from api.research_bridge import card_to_brief
+    out = []
+    running = c.s.scalars(select(m.ResearchTask).where(m.ResearchTask.status == "running", m.ResearchTask.external_run_id.is_not(None))).all()
+    if not running:
+        return out
+    bridge = c.research_factory() if c.research_factory else None
+    if bridge is None:
+        return out
+    for task in running:
+        o = c.s.get(m.Opportunity, task.opportunity_id)
+        st = bridge.status(task.external_run_id)
+        task.log = (task.log or [])[-20:] + [{"m": e} for e in st["events"] if {"m": e} not in (task.log or [])]
+        u = st.get("usage") or {}
+        o.brief.usage = {"searches": u.get("searches", 0), "pages": u.get("extractions", 0), "calls": u.get("model_calls", 0)}
+        if st["status"] in ("running", "stopping", "queued"):
+            out.append({"opportunityId": o.id, "status": "running", "stage": st.get("stage")})
+            continue
+        card = bridge.result(task.external_run_id) if st["status"] in ("completed", "incomplete") else None
+        if card:
+            brief, person = card_to_brief(card, o.owner or c.actor, (c.today + timedelta(days=4)).isoformat(), u)
+            for k, v in brief.items():
+                setattr(o.brief, k, v)
+            if person and not o.contact.name:
+                o.contact.name, o.contact.title = person["name"], person["title"]
+            task.status, task.progress, o.stage = "done", 5, "review"
+            o.revision += 1
+            record_run(c, "Research agent", o, getattr(bridge, "prompt", "research-v2 (Aubrey)"), u.get("model_calls", 0), model=getattr(bridge, "label", "gemini+tavily"),
+                       usage=type("U", (), {"tokens_in": u.get("tokens_in"), "tokens_out": u.get("tokens_out")})())
+            log(c, o.id, "a", f"Research agent finished the brief: {len(brief['facts'])} quoted sources" + (f", {len(brief['flags'])} flags" if brief["flags"] else ""))
+            out.append({"opportunityId": o.id, "status": "review"})
+        else:
+            reason = st.get("error") or ("Paused at a research limit." if st["status"] == "paused" else "No reviewable brief was produced.")
+            task.status, task.error = ("paused" if st["status"] == "paused" else "failed"), reason
+            task.pause_reason = "budget" if st["status"] == "paused" else None
+            record_run(c, "Research agent", o, getattr(bridge, "prompt", "research-v2 (Aubrey)"), u.get("model_calls", 0), "failed", reason, model=getattr(bridge, "label", "gemini+tavily"))
+            log(c, o.id, "a", f"Research ended without a brief: {reason}")
+            out.append({"opportunityId": o.id, "status": task.status, "error": reason})
+    return out
+
+
+def set_domain(c: Ctx, opp_id: str, domain: str) -> None:
+    o = opp(c, opp_id)
+    d = need_text(domain, "Website domain").lower().removeprefix("https://").removeprefix("http://").removeprefix("www.").strip("/")
+    if not re.fullmatch(r"[a-z0-9-]+(\.[a-z0-9-]+)+", d):
+        raise ActionError("Give the website as a domain, for example corvane.com.")
+    o.company.domain = d
+    touch(c, o)
+    log(c, o.id, "h", f"Company website set to {d} by {c.actor}")
+
+
 def research_control(c: Ctx, opp_id: str, action: str) -> None:
     o = opp(c, opp_id, "researching")
-    task = c.s.scalars(select(m.ResearchTask).where(m.ResearchTask.opportunity_id == o.id).order_by(m.ResearchTask.started_at.desc())).first()
+    task = latest_task(c, o)
+    bridge = c.research_factory() if (not c.demo and c.research_factory) else None
     if action == "stop":
         if task.status != "running":
             raise ActionError("Only running research can be stopped.", 409, "wrong_status")
+        if bridge and task.external_run_id:
+            bridge.stop(task.external_run_id)
         task.status, task.pause_reason = "paused", "user"
         log(c, o.id, "h", f"Research stopped by {c.actor}")
     elif action == "resume":
@@ -324,7 +437,13 @@ def research_control(c: Ctx, opp_id: str, action: str) -> None:
         task.budget_extended = task.pause_reason == "budget"
         task.status, task.pause_reason = "running", None
         log(c, o.id, "h", f"Research resumed by {c.actor}")
-        run_research(c, o)
+        if bridge and task.external_run_id:
+            try:
+                bridge.resume(task.external_run_id)
+            except LLMError as e:
+                task.status, task.error = "failed", str(e)
+        else:
+            run_research(c, o)
     elif action == "retry":
         if task.status != "failed":
             raise ActionError("Only failed research can be retried.", 409, "wrong_status")
@@ -422,6 +541,50 @@ def save_draft(c: Ctx, opp_id: str, subject: str, body: str, angle: str | None, 
     log(c, o.id, "h", f"Outreach draft saved by {c.actor}")
 
 
+def generate_draft(c: Ctx, opp_id: str, angle: str | None, tone: str) -> dict:
+    o = opp(c, opp_id, "identified")
+    if tone not in ("standard", "brief"):
+        raise ActionError("Tone must be standard or brief.")
+    b = o.brief
+    brief = {"facts": b.facts, "hypothesis": b.hypothesis, "relevance": b.relevance}
+    contact = {"name": o.contact.name if o.contact else None, "title": o.contact.title if o.contact else "", "company": o.company.name}
+    star = o.company_id == "corvane" and o.title.startswith("Scaling AI")
+    draft, _ = run_agent(c, "A1 Preparation and outreach", o, "a1-1.0",
+                         lambda: A.demo_draft(star, contact["name"], o.company.name, o.owner or c.actor, b.facts, tone, angle),
+                         live=lambda p: L.write_outreach(p, brief, contact, o.owner or c.actor, angle, tone,
+                                                         knowledge.library().search(b.hypothesis + " " + b.relevance, k=2, types=("case", "service", "document"))),
+                         live_prompt=L.OUTREACH_PROMPT_VERSION)
+    r = outreach_row(c, o)
+    r.subject, r.body, r.angle, r.tone, r.status = draft["subject"], draft["body"], angle, tone, "draft"
+    touch(c, o)
+    log(c, o.id, "a", "Outreach agent wrote a draft from the research brief. Nothing was sent.")
+    lib = knowledge.library().by_id
+    synthetic = sorted({m.group(1) for m in re.finditer(r"\[\[([^|\]]+)\|", draft["body"]) if m.group(1) in lib and lib[m.group(1)].synthetic})
+    if synthetic:
+        warning = f"The draft cites a SYNTHETIC demo document ({', '.join(synthetic)}). Replace or remove that sentence before sending."
+        log(c, o.id, "s", warning)
+        return {**draft, "warnings": [warning]}
+    return draft
+
+
+def alerts(c: Ctx, follow_days: int) -> list[dict]:
+    """Progress monitor (S1): rules only, no AI. Stalled = no recorded progress for 14 days; it does not mean the client is inactive."""
+    out = []
+    for o in c.s.scalars(select(m.Opportunity).where(m.Opportunity.stage.in_(("identified", "contacted", "active", "approval")))):
+        base = {"opportunityId": o.id, "company": o.company.name, "title": o.title, "owner": o.owner}
+        if o.last_progress and (c.today - o.last_progress).days > 14 and not (o.snoozed_until and o.snoozed_until > c.today) and o.stage != "approval":
+            out.append({**base, "type": "stalled", "message": f"No progress recorded for {(c.today - o.last_progress).days} days."})
+        if o.next_due and o.next_due < c.today:
+            out.append({**base, "type": "overdue", "message": f"Next step overdue since {o.next_due.isoformat()}: {o.next_action}"})
+        r = c.s.get(m.Outreach, o.id)
+        if o.stage == "contacted" and r and r.sent_on and not r.reply_on and (c.today - r.sent_on).days >= follow_days:
+            out.append({**base, "type": "follow_up_due", "message": f"No reply {(c.today - r.sent_on).days} days after sending."})
+        pk = open_pack(c, o)
+        if pk and pk.stale_reason:
+            out.append({**base, "type": "stale_pack", "message": f"Qualification pack out of date: {pk.stale_reason}."})
+    return out
+
+
 def mark_sent(c: Ctx, opp_id: str, via: str, on: date | None, follow_days: int) -> None:
     o = opp(c, opp_id, "identified")
     r = outreach_row(c, o)
@@ -466,6 +629,8 @@ def record_reply(c: Ctx, opp_id: str, text: str, on: date | None) -> dict:
         return {"replyLabel": "pending", "warning": str(e)}
     o.reply_label = label
     log(c, o.id, "a", f"Evidence agent labeled the reply: {label}")
+    if label == "defer":
+        J.enqueue(c.s, c.today, "defer_nurture", o.id, "event", "The client's reply says not now, but later", requested_by="A2 Evidence and engagement")
     return {"replyLabel": label}
 
 
@@ -483,9 +648,13 @@ def add_note(c: Ctx, opp_id: str, type_: str, on: date | None, text: str, analyz
     star = o.company_id == "corvane" and o.title.startswith("Scaling AI")
     context = {"company": o.company.name, "opportunity": o.title, "team": o.team,
                "confirmed_scores": o.scores, "confirmed_conditions": o.conditions, "confirmed_blocker": o.blocker}
+    asks: list[dict] = []
     (found, dropped_by_check), run = run_agent(
         c, "A2 + A3 Evidence and qualification", o, "a2-1.4 / a3-1.2", lambda: (A.extract_evidence(note.text, star), {}), calls=2,
-        live=lambda p: L.extract_evidence(p, note.text, context), live_prompt=L.EVIDENCE_PROMPT_VERSION)
+        live=lambda p: L.extract_evidence(p, note.text, context, knowledge.library().search(note.text + " " + o.title, k=3), asks),
+        live_prompt=L.EVIDENCE_PROMPT_VERSION)
+    if c.demo:
+        asks = A.people_to_find(note.text)
     existing = {(p.kind, p.key) for p in c.s.scalars(select(m.Proposal).where(m.Proposal.opportunity_id == o.id, m.Proposal.status != "rejected"))}
     kept, dropped = 0, 0
     for p in found:
@@ -502,7 +671,30 @@ def add_note(c: Ctx, opp_id: str, type_: str, on: date | None, text: str, analyz
     log(c, o.id, "a", f"Evidence agent proposed {kept} item{'s' if kept != 1 else ''} for review"
         + (f"; {dropped} dropped because the quote is not in the notes" if dropped else "")
         + (f"; also dropped: {others}" if others else ""))
-    return {"noteId": note.id, "proposals": kept, "droppedForInvalidQuote": dropped, "droppedOther": others}
+    handoffs = []
+    for ask in asks:
+        if role_known(c, o.company_id, ask["role"]):
+            continue
+        job = J.enqueue(c.s, c.today, "person_lookup", o.id, "handoff", f"Find the {ask['role']} at {o.company.name}, who must approve or decide",
+                        {"role": ask["role"], "quote": ask["quote"]}, requested_by="A2 + A3 Evidence and qualification")
+        if job:
+            handoffs.append(ask["role"])
+    return {"noteId": note.id, "proposals": kept, "droppedForInvalidQuote": dropped, "droppedOther": others, "handoffs": handoffs}
+
+
+ROLE_WORDS = {"ceo": "chief executive", "cfo": "chief financial", "coo": "chief operating", "cio": "chief information",
+              "cto": "chief technology", "cdo": "chief digital"}
+
+
+def role_matches(title: str, role: str) -> bool:
+    title, role = (title or "").lower(), role.lower().strip()
+    words = ROLE_WORDS.get(role, role)
+    return bool(title) and (role in title.split() or words in title or role in title)
+
+
+def role_known(c: Ctx, company_id: str, role: str) -> bool:
+    """True when the workspace already has a named contact with this role at the company."""
+    return any(x.name and role_matches(x.title, role) for x in c.s.scalars(select(m.Contact).where(m.Contact.company_id == company_id)))
 
 
 def _valid_value(kind: str, key: str, value):
@@ -615,7 +807,9 @@ def suggest_actions(c: Ctx, opp_id: str) -> int:
     o = opp(c, opp_id, *QUAL_STAGES)
     gaps = calculate(rules_input(o))["gaps"]
     taken = {t.title for t in c.s.scalars(select(m.Task).where(m.Task.opportunity_id == o.id))}
-    items, _ = run_agent(c, "A4 Action and reporting", o, "a4-1.0", lambda: A.next_actions(gaps, taken))
+    notes = [n.text for n in c.s.scalars(select(m.Note).where(m.Note.opportunity_id == o.id).order_by(m.Note.on))]
+    items, _ = run_agent(c, "A4 Action and reporting", o, "a4-1.0", lambda: A.next_actions(gaps, taken),
+                         live=lambda p: L.next_actions(p, gaps, notes, taken), live_prompt=L.ACTIONS_PROMPT_VERSION)
     for x in c.s.scalars(select(m.Suggestion).where(m.Suggestion.opportunity_id == o.id, m.Suggestion.status == "open")):
         x.status = "dismissed"
     for it in items:
@@ -715,6 +909,7 @@ def decide_pack(c: Ctx, pack_id: str, b) -> None:
         o.next_action, o.next_due = q, b.due or c.today + timedelta(days=7)
         rec("Returned", q)
         log(c, o.id, "h", f"Returned at Step 8 by {c.actor}: {q}")
+        J.enqueue(c.s, c.today, "gap_actions", o.id, "event", f"The approver returned the pack: {q}", requested_by=c.actor)
     elif b.decision == "nurture":
         pk.status, o.stage = "nurture", "nurture"
         o.next_action, o.next_due = "Revisit the opportunity", b.review_on or c.today + timedelta(days=60)
@@ -754,7 +949,9 @@ def analyze_feedback(c: Ctx, scope: str) -> dict:
         latest[f.subject] = f
     eligible = [f for f in latest.values() if f.direction_version == base.version and
                 (f.scope in ("theme", "cgs") if shared else f.scope == "consultant" and f.by == c.actor)]
-    res, _ = run_agent(c, "Feedback agent", None, "manager-1.1", lambda: A.analyze_feedback(eligible, base.buyer_roles), subject=f"Direction {base.version}")
+    current = {f: getattr(base, f) for f in WHITELIST}
+    res, _ = run_agent(c, "Feedback agent", None, "manager-1.1", lambda: A.analyze_feedback(eligible, base.buyer_roles), subject=f"Direction {base.version}",
+                       live=lambda p: L.analyze_feedback(p, eligible, current), live_prompt=L.FEEDBACK_PROMPT_VERSION)
     created = None
     if res["proposal"]:
         dup = c.s.scalars(select(m.DirectionProposal).where(m.DirectionProposal.status == "pending", m.DirectionProposal.field == res["proposal"]["field"])).first()
@@ -764,8 +961,9 @@ def analyze_feedback(c: Ctx, scope: str) -> dict:
             pr = res["proposal"]
             created = new_id("dp")
             c.s.add(m.DirectionProposal(id=created, type="direction", field=pr["field"], scope="theme" if shared else "consultant", origin="ai",
-                                        title=pr["title"], rationale=pr["rationale"], before=base.buyer_roles, after=pr["after"],
-                                        feedback_ids=[f.id for f in eligible], base_version=base.version, status="pending", created_on=c.today))
+                                        title=pr["title"], rationale=pr["rationale"], before=getattr(base, pr["field"]), after=pr["after"],
+                                        feedback_ids=pr.get("feedback_ids") or [f.id for f in eligible], base_version=base.version,
+                                        status="pending", created_on=c.today))
             res["summary"] += " A proposal was created for approval."
     return {"eligible": len(eligible), "summary": res["summary"], "proposalId": created}
 

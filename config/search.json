@@ -1,0 +1,14 @@
+{
+  "about": "Web search settings for the discovery agent (Step 1) and the research agent (Steps 2-3). CGS can change these without touching code.",
+  "provider": "mock",
+  "provider_options": {
+    "mock": "Synthetic internet in api/seed/mock_web.json. Invented companies, no API key, no cost. Use for demos and testing.",
+    "tavily": "Real web search through Tavily. Needs TAVILY_API_KEY in .env. Research then uses Aubrey's research pipeline on the real web.",
+    "your_own": "Add a class in api/search.py with a search() method and register it in PROVIDERS. See docs/SEARCH_INTEGRATION.md."
+  },
+  "custom_queries": [],
+  "custom_queries_help": "Leave empty to let the AI write 4 news queries from the research direction. Or list your own queries, for example [\"manufacturer completes acquisition Ohio\", \"appoints Chief Digital Officer manufacturer\"].",
+  "recency_days": 183,
+  "news_only": true,
+  "results_per_query": 5
+}

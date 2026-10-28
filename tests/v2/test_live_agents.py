@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.llm import LLMError, make_provider
-from api.live_agents import check_proposals
+from api.live_agents import EVIDENCE_PROMPT_VERSION, check_proposals
 from api.main import create_app
 from api.settings import Settings
 from lead_agent.providers import ProviderError
@@ -126,7 +126,7 @@ def test_live_evidence_agent_end_to_end(tmp_path):
     pending = [p for p in o["proposals"] if p["status"] == "pending"]
     assert pending[0]["key"] == "problem" and pending[0]["evidenceType"] == "client_statement"
     run = api.get("/api/agent-runs").json()[0]
-    assert run["model"] == "gemini:gemini-test-model" and run["status"] == "completed" and run["prompt"] == "a2a3-live-1.0"
+    assert run["model"] == "gemini:gemini-test-model" and run["status"] == "completed" and run["prompt"] == EVIDENCE_PROMPT_VERSION
     # the notes went to the AI as data, with the rubric in the instructions
     _, _, payload = fake.requests[0]
     assert "Unknown is not zero" in payload["systemInstruction"]["parts"][0]["text"]
