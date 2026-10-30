@@ -37,7 +37,7 @@ The v2 backend joins three things into one product: the Step 1–8 prototype, Au
 | 6e | Search plug and settings for CGS (`api/search.py`, `config/search.json`); synthetic internet; synthetic research; `Check Workflow.cmd` runs Steps 1–8 with real AI on the synthetic internet | Done; passed with real Gemini on Northwind, Ardent and Westford |
 | 6f | Workflow check acts like a careful consultant: decline or blocker → pack to Step 8 and close (or nurture if deferred); defer or courtesy → nurture on the month the client named; engaged → internal conflict check, then submit only if Ready, otherwise stay Active with a task. Each simulated company has a story the result is compared with. Evidence agent prompt v1.4: data the client already sent supports E 3; N 4 needs the objective and the support scope in the notes. AI exam case 5 (Harrow Ridge) tests both | Done; live run pending |
 | 6g | Autonomous agents (`api/autonomy.py`, `api/jobs.py`): task board, background worker, daily patrol, handoffs, inbox, brakes. Synthetic internet gains dated future news revealed by time travel; time travel works in live mode on the synthetic internet. Evidence agent prompt v1.5 ("not now" is PROJECT_DEFERRED, not NO_EXTERNAL_SUPPORT; approvers named only by role go to the research agent); AI exam case 6. `Check Agents.cmd` runs the story with the real AI | Done; live run pending |
-| 7 | P3: Insightly and mail adapters, after CGS grants access | |
+| 7 | P3: Insightly and mail adapters | Gmail done; Insightly done on the team's own test account with synthetic data (`Check CRM.cmd --write` passed live on 29 Oct) |
 | 8 | Merge with the UI: the prototype calls the API; offline demo still works without a server | |
 
 ## Agent names
@@ -394,6 +394,23 @@ a promise nobody kept (for example "Daniel will talk to the CEO within two weeks
 | GET | `/api/manager/decisions?scope=triage&opportunity=` | The triage's decisions (`scope=review` for the daily review's) |
 
 - The daily review's prompt is `manager-agent-1.2` (1.1: memory and triage; 1.2: scorecard); the triage's is `manager-triage-1.2` (1.1: scorecard; 1.2: after the live run, accepting a request is not followed by a second delegation of the same work, work waiting in the owner's inbox is not suggested again, and the message does not repeat the next actions).
+- The other agents, reviewed once the manager existed (28 Oct 2026):
+  - An agent that cannot deliver what it was asked for reports back with `report()` (`api/autonomy.py`): the research agent
+    finding nobody in a role, or no usable news on a nurture review. With the manager on, this goes to the manager's triage
+    (event `agent_result`), which decides what the owner hears; with the manager off, the owner gets a reminder as before.
+    What an agent did deliver (a draft, new facts, a contact) still goes straight to the owner's inbox.
+  - Client emails are now read during qualification too (stages active and approval). Applying one adds it to the notes as
+    an "Email reply", runs the evidence agent on it, and tells the manager; if the analysis fails, the email is still saved.
+    A client's reply is never refused as out of date when the opportunity moved on: before, a second reply was lost once the
+    first had made the lead Active. A follow-up sent from Gmail during qualification is logged without resetting the stage.
+  - A contact the owner applies from the inbox is recorded as confirmed by that person.
+  - Not changed: the reminder rules (Ready, nurture), the weekly discovery and feedback rounds, and agents' deliveries to the
+    inbox. The research and discovery agents do not take lessons yet.
+  - Whole team with the manager on (`MANAGER_MODE=on` + `Check Agents.cmd`, Claude, 28 Oct 2026): 17 jobs done, 0 failed,
+    24 AI runs. Both handoffs went through the manager (evidence -> research for Orchard Lane's CEO; research -> outreach for
+    Kessler's reconnect draft); the overdue promise came back after five months; each owner had one manager message per
+    opportunity. Seen, not changed: the daily review once told an owner a follow-up draft was "still in the inbox" after it
+    had expired, and once announced a follow-up draft the rules were already preparing.
 - Found while building it: the "no fees or promises" check refused any dollar amount, so a next action could never repeat
   the approver's question "Who signs off above $250K?". An amount already in the approver's question or the notes is now
   allowed; a new amount is still refused (`promises()` in `api/next_step_agent.py`). This also fixes the next-step agent.
@@ -496,7 +513,7 @@ table governs every agent. `GET /api/toolkit` shows the connectors and the table
 | library (CGS solutions, services, cases, documents) | cgs | in use |
 | mail (Gmail, or MockMail) | client | in use |
 | drive (Google Drive) | cgs | not built |
-| crm (Insightly) | client | not built |
+| crm (Insightly, or MockCRM) | client | in use |
 
 Permissions have three layers, strongest first:
 
@@ -580,3 +597,56 @@ it), check with `Check Mail.cmd` (`python -m api.check_mail`: a test draft to yo
 `MAIL_PROVIDER=gmail` and `APP_MODE=live` in `.env` and restart. Scopes: `gmail.compose` (drafts and sending) and
 `gmail.readonly` (threads). While the Google app is in "Testing", Google ends the sign-in after 7 days; sign in again.
 
+## CRM (Insightly)
+
+`api/toolkit/crm.py` is the connector: `InsightlyCRM` (Insightly API v3.1) and `MockCRM` (in memory, same methods).
+`api/crm_sync.py` keeps Insightly in step with the workspace. `config/crm.json` maps the workspace onto Insightly by
+**names** (statuses, lead sources, pipeline and stage, custom fields, tag, users); the connector looks the IDs up, so
+another Insightly account (CGS's) needs only that file changed.
+
+Settings (`.env`): `CRM_MODE` = `disabled` (default) | `read_only` (duplicate check only) | `write_approved` (also writes);
+`CRM_PROVIDER` = `insightly` | `mock` | `off` (empty = mock in demo mode, off in live mode). Insightly works in demo mode
+too, so the demo data can be shown in the team's own Insightly. Credentials:
+`%USERPROFILE%\.cgs-workspace\insightly.env` (`INSIGHTLY_API_KEY`, `INSIGHTLY_API_URL` from Insightly > User Settings >
+API), outside the synced folder.
+
+**What is written, and when.** Only after a person's action; never by an agent.
+
+| Workspace | Insightly |
+|---|---|
+| researching, review | nothing: a candidate becomes a lead only when a person accepts it at Step 4 |
+| Step 4 accept (identified) | a lead: name, title, email, company, website, rating, status Identified, source "AI Research Agent" (or Other for manual leads), custom fields Workspace ID, Target Problem, Evidence URL, Priority Tier, Lead Type; tag `CGS-Workspace`; the research brief as its first note. Before creating, the lead is looked up by Workspace ID and then by email: an existing lead is linked, never duplicated |
+| contact confirmed, email sent (contacted), reply (active), approval (active), nurture | the lead's details and status |
+| a workspace note (meeting notes, email reply) | copied once as a note on the lead (on the opportunity after conversion) |
+| an email sent through Gmail | BCC to the lead's own Insightly address, so Insightly logs the email on the lead (the client does not see it) |
+| Qualification approved | organization (found by name or created), contact (found by email, or name at that organization, or created), opportunity at the qualification stage with Opp Workspace ID, linked to the contact; then the lead is set to the closed status "Converted(API)" and marked converted, in that order (Insightly refuses a status change on a converted lead). A note on the opportunity sums up the need and scores |
+| Step 8 return, nurture, close | the lead's status (Active, Nurture, Disqualified) |
+
+The sync runs right after the person's request is saved, so a failure never undoes their action: the opportunity shows
+`crmSync: sync_failed` and `crm.lastError`, the activity log says why, and it is retried by the daily `crm_sync` job
+(patrol) or `POST /api/crm/sync`. Every step looks before it creates, so a retry after a partial failure creates nothing
+twice. Calls are metered in `connector_uses` as "CRM sync" or "Workspace (person)".
+
+**Reads.** `GET /api/opportunities/{id}/crm` is the duplicate check for Step 4: the leads, contacts, organizations and
+opportunities Insightly already has for this company (exact name) or person (email), with links. Agents read only through
+the toolkit gate: the discovery agent's `check_company` and `nominate` consult the CRM when the `crm` connector is on for
+it and `CLIENT_DATA_TO_AI=allowed`; a company with an open lead or open opportunity is not nominated (dropped as `in_crm`).
+`crm_lookup` is a ready-made read tool for an agent that may use the CRM. The connector is off for every agent in
+`config/toolkit.json` until switched on.
+
+| Endpoint | What it does |
+|---|---|
+| `GET /api/crm` | Provider, mode, account, and every opportunity that is synced, pending or failed |
+| `POST /api/crm/sync` (`?all=true`) | Sync what is pending or failed now; `all` marks every opportunity past Step 4 and fills an empty CRM |
+| `GET /api/opportunities/{id}/crm` | The duplicate check, and this opportunity's CRM records |
+| `POST /api/opportunities/{id}/crm/sync` | Sync this one now |
+| `POST /api/opportunities/{id}/crm/unlink` | Forget the CRM records (after a lead was deleted in Insightly); the next sync finds or creates the lead again |
+
+What Insightly cannot do through its API, so it is done in its web settings: create custom fields, delete lead statuses
+or change their type (open or closed), set the built-in "Converted" status, send email. Deleted records stay in
+Insightly's recycle bin and still count as using their status.
+
+`Check CRM.cmd` (`python -m api.check_crm`): signs in, checks that every name in `config/crm.json` exists in the
+Insightly account, and runs a duplicate check. With `--write` it runs one synthetic company ("CRM Check <time> (TEST)")
+through Step 4, email (mock mailbox, nothing sent), reply and an approved qualification, and checks Insightly after each
+step. Tests: `tests/v2/test_crm.py` (a fake Insightly over `httpx.MockTransport`, and the workflow on the MockCRM).

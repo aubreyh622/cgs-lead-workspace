@@ -156,6 +156,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from api import toolkit
     toolkit.check_config()  # config/toolkit.json must stay inside what the code allows each agent
     app.state.mail = make_mail(settings.mail_provider, settings.app_mode)  # tests may replace it with a MockMail
+    from api.toolkit.crm import make_crm
+    app.state.crm = make_crm(settings.crm_provider, settings.app_mode, settings.crm_mode)  # tests may replace it with a MockCRM
 
     @app.exception_handler(toolkit.LimitReached)
     async def limit_reached(_: Request, exc: toolkit.LimitReached):
@@ -190,7 +192,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def config():
         from api.actions import simulated
         from api.search import search_config
-        return {"appMode": settings.app_mode, "crmMode": settings.crm_mode, "ruleVersion": RULE_VERSION,
+        crm = getattr(app.state, "crm", None)
+        return {"appMode": settings.app_mode, "crmMode": settings.crm_mode, "crm": crm.name if crm else "off", "ruleVersion": RULE_VERSION,
                 "aiConnected": settings.app_mode == "live", "aiProvider": settings.ai_provider if settings.app_mode == "live" else "demo rules",
                 "web": search_config()["provider"], "timeTravel": simulated(settings), "agentWorker": bool(app.state.worker),
                 "demoData": app.state.demo_data,

@@ -41,7 +41,7 @@ def ctx(request: Request, x_user: str | None = Header(None, description="The per
     c = S.Ctx(s=session, actor=x_user or "", today=demo_today(session, request.app.state.settings), settings=request.app.state.settings,
               provider_factory=getattr(request.app.state, "provider_factory", None),
               research_factory=lambda: research_bridge(request.app), search_factory=getattr(request.app.state, "search_factory", None),
-              mail_factory=lambda: getattr(request.app.state, "mail", None))
+              mail_factory=lambda: getattr(request.app.state, "mail", None), crm_factory=lambda: getattr(request.app.state, "crm", None))
     users = S.owners_list(c)
     if not x_user or x_user not in users:
         session.close()
@@ -54,6 +54,9 @@ def ctx(request: Request, x_user: str | None = Header(None, description="The per
         raise
     finally:
         session.close()
+    if c.crm_dirty:  # the person's action is saved; now bring the CRM in line (a failure is recorded, never raised)
+        from api import crm_sync
+        crm_sync.after_request(request.app, set(c.crm_dirty), c.today)
 
 
 def require_user(request: Request, x_user: str | None = Header(None, description="The person acting, from GET /api/users")) -> str:
@@ -301,7 +304,63 @@ def mail_sync(c: S.Ctx = Actor):
 def toolkit(request: Request, c: S.Ctx = Actor):
     from api import toolkit as TK
     box = getattr(request.app.state, "mail", None)
-    return {**TK.catalog(c.s), "mail": {"provider": box.name if box else "off", "ready": bool(box and box.ready())}}
+    crm = getattr(request.app.state, "crm", None)
+    return {**TK.catalog(c.s), "mail": {"provider": box.name if box else "off", "ready": bool(box and box.ready())},
+            "crm": {"provider": crm.name if crm else "off", "mode": c.settings.crm_mode, "ready": bool(crm and crm.ready())}}
+
+
+# ---------- the CRM (Insightly): api/toolkit/crm.py, api/crm_sync.py ----------
+@router.get("/crm", tags=["crm"], summary="The CRM connection: provider, mode, account, and opportunities waiting to sync or failed")
+def crm_status(request: Request, c: S.Ctx = Actor):
+    from sqlalchemy import select
+    from api import crm_sync as CRM
+    from api.toolkit.crm import CrmError
+    crm = getattr(request.app.state, "crm", None)
+    out = {"provider": crm.name if crm else "off", "mode": c.settings.crm_mode, "reads": CRM.reads_on(c), "writes": CRM.writes_on(c)}
+    if crm is not None:
+        try:
+            out["account"] = crm.account()
+        except CrmError as e:
+            out["error"] = str(e)
+    rows = c.s.scalars(select(m.Opportunity).where(m.Opportunity.crm_sync.in_(("sync_pending", "sync_failed", "synced"))))
+    out["opportunities"] = [{"id": o.id, "company": o.company.name, "stage": o.stage, "crmSync": o.crm_sync, "crm": CRM.view(o)} for o in rows]
+    return out
+
+
+@router.post("/crm/sync", tags=["crm"], summary="Sync the opportunities waiting for it (or all, to fill an empty CRM) now")
+def crm_sync_now(all: bool = False, c: S.Ctx = Actor):
+    from api import crm_sync as CRM
+    if not CRM.writes_on(c):
+        raise S.ActionError(f"Writing to the CRM is off (CRM_MODE={c.settings.crm_mode}). Set CRM_MODE=write_approved.", 409, "crm_off")
+    return CRM.sync_all(c) if all else CRM.sync(c)
+
+
+@router.get("/opportunities/{opp_id}/crm", tags=["crm"], summary="What the CRM already holds for this company and person (the duplicate check), and this opportunity's CRM records")
+def crm_matches(opp_id: str, c: S.Ctx = Actor):
+    from api import crm_sync as CRM
+    return CRM.matches(c, S.opp(c, opp_id))
+
+
+@router.post("/opportunities/{opp_id}/crm/sync", tags=["crm"], summary="Sync this opportunity to the CRM now")
+def crm_sync_one(opp_id: str, c: S.Ctx = Actor):
+    from api import crm_sync as CRM
+    if not CRM.writes_on(c):
+        raise S.ActionError(f"Writing to the CRM is off (CRM_MODE={c.settings.crm_mode}).", 409, "crm_off")
+    o = S.opp(c, opp_id)
+    CRM.mark(c, o)
+    if o.crm_sync != "sync_pending":
+        raise S.ActionError("Nothing to sync: this opportunity is not a CRM lead yet (it becomes one when accepted at Step 4).", 409, "not_yet")
+    c.s.commit()
+    c.crm_dirty.discard(o.id)  # synced here, not again after the request
+    res = CRM.sync(c, [o.id])
+    return {**res, "crm": CRM.view(c.s.get(m.Opportunity, o.id))}
+
+
+@router.post("/opportunities/{opp_id}/crm/unlink", tags=["crm"], summary="Forget this opportunity's CRM records (after a lead was deleted in the CRM); the next sync finds or creates the lead again")
+def crm_unlink(opp_id: str, c: S.Ctx = Actor):
+    from api import crm_sync as CRM
+    CRM.unlink(c, S.opp(c, opp_id))
+    return {"ok": True}
 
 
 class PermissionIn(BaseModel):

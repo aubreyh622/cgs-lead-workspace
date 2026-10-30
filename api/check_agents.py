@@ -38,6 +38,9 @@ def main(prepare=None) -> int:
     """prepare(app) lets the tests plug in a fake AI; normal runs leave it out."""
     os.environ["WEB_MODE"] = "mock"
     LINES.clear()
+    import sys
+    if hasattr(sys.stdout, "reconfigure"):  # a Windows console cannot show every character the AI writes
+        sys.stdout.reconfigure(errors="replace")
     from fastapi.testclient import TestClient
     from api import autonomy as AU
     from api.main import create_app

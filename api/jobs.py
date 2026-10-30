@@ -27,6 +27,7 @@ KINDS = {
     "discovery_round": ("Discovery agent", True, "Finds new candidate companies once a week"),
     "feedback_review": ("Feedback agent", True, "Reviews recent decisions once a week and may propose a direction change"),
     "mail_sync": ("Mail rules", False, "Checks the email threads for client replies and for drafts a person sent from Gmail"),
+    "crm_sync": ("CRM rules", False, "Writes what people changed to the CRM (Insightly) when that could not happen at once"),
     "manager_review": ("Manager agent", True, "Looks over every open opportunity once a day and decides which agent should do what"),
     "lessons_review": ("Manager agent", True, "Once a week turns the scorecard's findings into lessons for the agents, which a person approves"),
     "manager_triage": ("Manager agent", True, "Looks closely at one opportunity when something happens: keeps its notes, decides on "

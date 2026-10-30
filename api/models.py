@@ -6,6 +6,7 @@ Plain-language map (see docs/DATABASE.md for the full version):
   research_briefs, research_tasks   Steps 2-3 output and progress
   candidates                   Step 1 recommendations before anyone picks them
   outreach, notes              Step 5 messages and Step 6 conversations
+  crm_links                    which CRM (Insightly) records belong to an opportunity, and how its sync went
   proposals, evidence          AI suggestions, and what a person confirmed
   tasks, suggestions           agreed actions, and AI-suggested actions not yet agreed
   packs, decisions             Step 7 qualification packs and Step 4 / Step 8 human decisions
@@ -87,6 +88,7 @@ class Opportunity(Base):
     company: Mapped[Company] = relationship(back_populates="opportunities")
     contact: Mapped[Optional[Contact]] = relationship()
     brief: Mapped[Optional["ResearchBrief"]] = relationship(back_populates="opportunity", uselist=False)
+    crm_link: Mapped[Optional["CrmLink"]] = relationship(uselist=False)
 
     @property
     def revenue(self) -> Optional[dict]:
@@ -166,6 +168,25 @@ class Outreach(Base):
     mail_thread_id: Mapped[Optional[str]] = mapped_column(String(120))  # the Gmail conversation, once a draft or email exists
     mail_draft_id: Mapped[Optional[str]] = mapped_column(String(120))   # a Gmail draft waiting for a person to send it from Gmail
     mail_draft_purpose: Mapped[Optional[str]] = mapped_column(String(20))  # first | followup | reconnect
+
+
+class CrmLink(Base):
+    """The CRM records that belong to one opportunity (api/crm_sync.py). Written only after a person's action."""
+    __tablename__ = "crm_links"
+    opportunity_id: Mapped[str] = mapped_column(ForeignKey("opportunities.id"), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(20))                 # insightly | mock
+    lead_id: Mapped[Optional[str]] = mapped_column(String(40))
+    lead_url: Mapped[Optional[str]] = mapped_column(String(300))
+    mailbox: Mapped[Optional[str]] = mapped_column(String(200))       # the lead's own address: BCC it and the email is logged on the lead
+    status: Mapped[Optional[str]] = mapped_column(String(60))         # the CRM status last written
+    converted: Mapped[bool] = mapped_column(Boolean, default=False)
+    organisation_id: Mapped[Optional[str]] = mapped_column(String(40))
+    contact_id: Mapped[Optional[str]] = mapped_column(String(40))
+    deal_id: Mapped[Optional[str]] = mapped_column(String(40))        # the CRM opportunity created at Qualification
+    deal_url: Mapped[Optional[str]] = mapped_column(String(300))
+    notes_sent: Mapped[list] = mapped_column(JSON, default=list)      # workspace note ids already copied to the CRM
+    last_error: Mapped[Optional[str]] = mapped_column(Text)
+    synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 
 class Note(Base):

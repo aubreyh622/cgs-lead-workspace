@@ -6,6 +6,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from api import crm_sync as CRM
 from api import models as m
 from backend.rules import calculate
 
@@ -31,7 +32,7 @@ def summary(o: m.Opportunity) -> dict:
         "contact": {"name": c.name if c else None, "title": c.title if c else "Contact to confirm"},
         "stage": o.stage, "owner": o.owner, "rating": o.rating,
         "next": {"action": o.next_action, "due": iso(o.next_due)}, "lastProgress": iso(o.last_progress),
-        "crmSync": o.crm_sync, "assessment": assessment(o), "revenue": o.revenue,
+        "crmSync": o.crm_sync, "crm": CRM.view(o), "assessment": assessment(o), "revenue": o.revenue,
     }
 
 

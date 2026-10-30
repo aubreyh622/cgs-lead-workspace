@@ -2,6 +2,7 @@
 
 APP_MODE   demo | live            demo never calls an AI provider; live never falls back to demo.
 CRM_MODE   disabled | read_only | write_approved
+CRM_PROVIDER  off | mock | insightly; empty = mock in demo mode, off in live mode (api/toolkit/crm.py)
 """
 from __future__ import annotations
 
@@ -39,6 +40,7 @@ class Settings:
     admins: tuple[str, ...] = ()     # who may change the agents' connector permissions; empty = any workspace user
     agent_worker: bool = False   # True = agents patrol and work in the background (the server turns it on; tests leave it off)
     mail_provider: str = ""  # off | mock | gmail; empty = mock in demo mode, off in live mode (api/toolkit/mail.py)
+    crm_provider: str = ""   # off | mock | insightly; empty = mock in demo mode, off in live mode (api/toolkit/crm.py)
     research_engine: str = "agent"  # Steps 2-3: agent (api/research_agent.py) | pipeline (Aubrey's pipeline, or one request on the synthetic web)
 
     def __post_init__(self):
@@ -50,6 +52,8 @@ class Settings:
             raise ValueError(f"RESEARCH_ENGINE must be agent or pipeline, not {self.research_engine!r}.")
         if self.mail_provider not in ("", "off", "mock", "gmail"):
             raise ValueError(f"MAIL_PROVIDER must be off, mock or gmail, not {self.mail_provider!r}.")
+        if self.crm_provider not in ("", "off", "mock", "insightly"):
+            raise ValueError(f"CRM_PROVIDER must be off, mock or insightly, not {self.crm_provider!r}.")
         if self.mail_provider == "gmail" and self.app_mode == "demo":
             raise ValueError("MAIL_PROVIDER=gmail needs APP_MODE=live: demo data must not reach a real mailbox.")
         if not self.database_url:
@@ -70,6 +74,7 @@ def load_settings(env_file: Path | None = ROOT / ".env") -> Settings:
         agent_worker=os.environ.get("AGENT_WORKER", "on").strip().lower() in ("on", "1", "true", "yes"),
         research_engine=os.environ.get("RESEARCH_ENGINE", "agent").strip().lower() or "agent",
         mail_provider=os.environ.get("MAIL_PROVIDER", "").strip().lower(),
+        crm_provider=os.environ.get("CRM_PROVIDER", "").strip().lower(),
         **({"users": tuple(u.strip() for u in os.environ["CGS_USERS"].split(",") if u.strip())} if os.environ.get("CGS_USERS") else {}),
         directors=tuple(u.strip() for u in os.environ.get("CGS_DIRECTORS", "").split(",") if u.strip()),
         admins=tuple(u.strip() for u in os.environ.get("CGS_ADMINS", "").split(",") if u.strip()),

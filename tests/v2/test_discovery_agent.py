@@ -122,7 +122,7 @@ def test_a_full_round_with_the_fake_agent(tmp_path):
     assert [k["company"] for k in kept] == ["Ardent Castings"] and p.calls == 4
     assert info["searches"] == 1 and info["ai_nominations"] == 1 and info["search_results"] == 3 and "stopped" not in info
     assert trace[-1]["type"] == "finish" and usage.tokens_in == 20
-    assert '"agent": "discovery-agent-1.0"' in debug.read_text(encoding="utf-8")
+    assert '"agent": "discovery-agent-1.1"' in debug.read_text(encoding="utf-8")
 
 
 def test_the_budget_stops_the_agent_and_keeps_what_it_checked():
@@ -158,7 +158,7 @@ def test_the_weekly_round_uses_the_agents_ai_budget(tmp_path, monkeypatch):
         s.commit()
     assert status == "done" and "no new candidates" in text and len(turns) == 2  # stopped at the budget, mid-round
     run = next(r for r in api.get("/api/agent-runs").json() if r["agent"] == "Discovery agent")
-    assert run["prompt"] == "discovery-agent-1.0" and run["calls"] == 2
+    assert run["prompt"] == "discovery-agent-1.1" and run["calls"] == 2
     steps = api.get(f"/api/agent-runs/{run['id']}").json()["trace"]
     assert steps[-1]["type"] == "stop"
 

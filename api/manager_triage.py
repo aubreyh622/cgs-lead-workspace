@@ -35,12 +35,13 @@ MAX_DELEGATIONS = 3
 MESSAGE_MAX = 800
 EVENTS = {"notes": "new conversation notes", "reply": "a client reply", "pack_returned": "the approver returned the pack",
           "handoff": "another agent asks for help", "commitment_due": "a promise is past its date",
-          "stalled": "no progress for a while", "manager": "you asked for a closer look in your daily review"}
+          "stalled": "no progress for a while", "manager": "you asked for a closer look in your daily review",
+          "agent_result": "an agent reports back: it could not deliver what it was asked for"}
 WANTS_ACTIONS = ("pack_returned", "stalled", "manager")  # events that ask for next actions; a failed triage passes them on
 
 SYSTEM = """You are the manager of the AI agents at CGS Advisors, a consulting firm. Something just happened to one sales
 opportunity: new conversation notes, a client reply, a returned qualification pack, another agent asking for help, a promise
-past its date, or no progress for a while. You look at it closely, keep your notes on it current, and decide what happens next.
+past its date, an agent reporting back that it could not deliver, or no progress for a while. You look at it closely, keep your notes on it current, and decide what happens next.
 
 The agents you can delegate to (kind: agent, what it does, stages where it may work):
 {team}

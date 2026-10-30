@@ -2,7 +2,7 @@
 
 Connectors are the outside systems: the web (Tavily or the synthetic web), the CGS library, email (Gmail), and later
 Google Drive and the CRM (Insightly). Every connector client an agent works with comes through the gate in this module
-(web_for, library_for, mail_for, or grant for ready-made tools), so one permission table governs all agents.
+(web_for, library_for, mail_for, crm_for, or grant for ready-made tools), so one permission table governs all agents.
 
 Permissions, strongest first:
 1. CEILING (in code, reviewed like code): what each agent may ever use. "on" = allowed and on by default; "allowed" = may
@@ -48,7 +48,7 @@ CONNECTORS = {
     "library": ("cgs", "The CGS library: solutions, services, cases and documents", True),
     "mail": ("client", "Email threads with clients (Gmail)", True),
     "drive": ("cgs", "Google Drive documents", False),
-    "crm": ("client", "The CRM (Insightly): accounts, contacts, opportunities", False),
+    "crm": ("client", "The CRM (Insightly): leads, contacts, organizations, opportunities", True),
 }
 
 # What each agent may ever use. Changing this is a code change.
@@ -331,6 +331,30 @@ def mail_for(agent: str, c):
     return box
 
 
+def crm_client(c):
+    """The workspace's CRM (api/toolkit/crm.py), or None when CRM_MODE is disabled or no CRM is set up."""
+    if getattr(getattr(c, "settings", None), "crm_mode", "disabled") == "disabled":
+        return None
+    f = getattr(c, "crm_factory", None)
+    return f() if f else None
+
+
+def crm_for(agent: str, c):
+    """The CRM as this agent may read it. Agents only read; writes run in api/crm_sync.py after a person acts."""
+    client = connector(agent, "crm", lambda: crm_client(c), getattr(c, "s", None), getattr(c, "today", None))
+    if client is None:
+        raise Denied("The CRM is off (CRM_MODE, CRM_PROVIDER).")
+    return client
+
+
+def crm_if_allowed(agent: str, c):
+    """The CRM for an agent that can work without it: None (nothing recorded) when it may not read the CRM now, including
+    when client data may not go to the AI (CLIENT_DATA_TO_AI)."""
+    if crm_client(c) is None or not client_data_allowed() or not allowed(agent, "crm", getattr(c, "s", None)):
+        return None
+    return crm_for(agent, c)
+
+
 # ---------- ready-made tools ----------
 @dataclass
 class Run:
@@ -382,6 +406,8 @@ def grant(agent: str, run: Run, names: list[str]) -> list[Tool]:
         if e.data == "client" and not client_data_allowed():
             continue
         if e.connector == "mail" and mailbox(run.c) is None:
+            continue
+        if e.connector == "crm" and crm_client(run.c) is None:
             continue
         out.append(e.make(run))
     return out
@@ -438,3 +464,31 @@ def _mail_thread(run: Run) -> Tool:
 
     return Tool("mail_thread", "The email thread with this client, newest last: what CGS sent and what the client wrote.",
                 params({}), mail_thread)
+
+
+# crm connector (Insightly, or a mock CRM; see api/toolkit/crm.py). Read only: writes are api/crm_sync.py after a person acts.
+def crm_summary(found: dict) -> dict:
+    """What an agent needs from a CRM lookup: who exists and whether someone at CGS is already working it."""
+    return {"leads": [{"name": x["name"], "company": x["company"], "status": x["status"], "converted": x["converted"]} for x in found["leads"][:10]],
+            "contacts": [{"name": x["name"], "title": x.get("title", "")} for x in found["contacts"][:10]],
+            "organizations": [x["name"] for x in found["organizations"][:5]],
+            "opportunities": [{"name": x["name"], "state": x.get("state", "")} for x in found["opportunities"][:10]]}
+
+
+@register("crm_lookup", "crm", "What the CRM already holds for a company or a person (leads, contacts, opportunities)")
+def _crm_lookup(run: Run) -> Tool:
+    from api.toolkit.crm import CrmError
+
+    def crm_lookup(args):
+        company = str(args.get("company") or run.company or "").strip()
+        email = str(args.get("email") or "").strip()
+        try:
+            return crm_summary(crm_for(run.agent, run.c).matches(company=company, email=email))
+        except CrmError as e:
+            raise ToolError(f"The CRM could not be read: {e}") from None
+
+    return Tool("crm_lookup", "What CGS's CRM already holds for a company (exact name) or a person's email: leads with their "
+                "status, contacts, organizations and opportunities. An open lead or opportunity means someone at CGS is working it.",
+                params({"company": {"type": "string", "description": "Exact company name; empty = this opportunity's company"},
+                       "email": {"type": "string", "description": "Optional"}}, []), crm_lookup)
+

@@ -164,7 +164,7 @@ def resolve_domain(search, company: str) -> str:
 # its own searches, changes a query when results are thin, reads a page when the preview is not enough, checks whether a
 # company is already known or excluded, and nominates one company at a time. Code checks each nomination at once; a
 # rejection goes back to the agent with the reason. Nominations are hints for a person to pick from, not evidence in a brief.
-AGENT_VERSION = "discovery-agent-1.0"
+AGENT_VERSION = "discovery-agent-1.1"  # 1.1: check_company and nominate also consult the CRM when it may
 MAX_AGENT_SEARCHES = 6   # each real search costs one Tavily credit
 MAX_READS = 6
 PREVIEW = 300
@@ -200,8 +200,9 @@ def two_companies(name: str) -> bool:
     return len(parts) == 2 and all(len(p.split()) >= 2 for p in parts)
 
 
-def discovery_agent(search, direction: dict, intent: str, known: set[str], today: date, config: dict | None = None):
-    """Returns (spec, record). record: found {url: result}, queries, kept, dropped {reason: n}, reads."""
+def discovery_agent(search, direction: dict, intent: str, known: set[str], today: date, config: dict | None = None, crm=None):
+    """Returns (spec, record). record: found {url: result}, queries, kept, dropped {reason: n}, reads.
+    crm: the CRM as the discovery agent may read it (api/toolkit crm_if_allowed), or None."""
     from api import agent_runtime as R
     from api.demo_agents import quote_in_text
     cfg = {"custom_queries": [], "recency_days": 183, "news_only": True, **(config or {})}
@@ -256,11 +257,29 @@ def discovery_agent(search, direction: dict, intent: str, known: set[str], today
             r["content"] = page["content"]
         return {"url": url, "title": r.get("title", ""), "published": r.get("published") or "undated", "text": (r.get("content") or "")[:4000]}
 
+    def in_crm(name: str) -> dict | None:
+        """What the CRM holds for this company, or None (no CRM, or it could not be read: the person checks at Step 4)."""
+        if crm is None or not name:
+            return None
+        from api.toolkit.crm import CrmError
+        try:
+            found = crm.matches(company=name)
+        except CrmError:
+            return None
+        closed = {(crm.cfg.get("statuses") or {}).get(k) for k in ("rejected", "closed")}
+        return {"open_leads": sum(1 for x in found["leads"] if not x["converted"] and x["status"] not in closed),
+                "open_opportunities": sum(1 for x in found["opportunities"] if (x.get("state") or "OPEN").upper() == "OPEN"),
+                "past_records": len(found["leads"]) + len(found["opportunities"]) + len(found["organizations"])}
+
     def check_company(args):
         name = str(args.get("company", "")).strip()
         dom = str(args.get("domain", "")).strip().lower().removeprefix("www.")
-        return {"already_known": _norm(name) in known, "website_excluded": is_excluded(dom),
-                "already_nominated_this_round": nominated(name)}
+        out = {"already_known": _norm(name) in known, "website_excluded": is_excluded(dom),
+               "already_nominated_this_round": nominated(name)}
+        crm_found = in_crm(name)
+        if crm_found is not None:
+            out["in_crm"] = crm_found
+        return out
 
     def nominate(args):
         url, name = str(args.get("url", "")).strip(), str(args.get("company", "")).strip()
@@ -288,6 +307,9 @@ def discovery_agent(search, direction: dict, intent: str, known: set[str], today
             drop("already_known", "The workspace already has this company.")
         if nominated(name):
             drop("duplicate", "You already nominated this company in this round.")
+        crm_found = in_crm(name)
+        if crm_found and (crm_found["open_leads"] or crm_found["open_opportunities"]):
+            drop("in_crm", "CGS's CRM already has an open lead or opportunity for this company: someone is working it.")
         problems = {p["id"]: p for p in direction.get("problems") or []}
         pid = str(args.get("problem_id", "")).strip()
         if problems and pid not in problems:
@@ -313,7 +335,8 @@ def discovery_agent(search, direction: dict, intent: str, known: set[str], today
         R.Tool("direction", "The research direction, the consultant's request and today's date.", R.params({}), direction_tool),
         R.Tool("search_news", "Search recent news. Returns titles, dates and short previews.", R.params({"query": s}), search_news),
         R.Tool("read_page", "Read the full text of a result that search_news returned.", R.params({"url": s}), read_page),
-        R.Tool("check_company", "Is this company already in the workspace, or its website excluded by the direction?",
+        R.Tool("check_company", "Is this company already in the workspace or in CGS's CRM (open leads and opportunities), "
+               "or its website excluded by the direction?",
                R.params({"company": s, "domain": {"type": "string", "description": "Website domain if known, else empty"}}, ["company"]),
                check_company),
         R.Tool("nominate", "Nominate one company for a person to review. Checked at once; a rejection says why.",
@@ -336,10 +359,10 @@ def discovery_agent(search, direction: dict, intent: str, known: set[str], today
 
 
 def discover_with_agent(provider: Provider, search, direction: dict, intent: str, known: set[str], today: date,
-                        debug_file: Path | None = None, config: dict | None = None, may_call=None):
+                        debug_file: Path | None = None, config: dict | None = None, may_call=None, crm=None):
     """One discovery round by the agent. Returns ((kept, info), usage, trace): discover()'s result plus the trace."""
     from api import agent_runtime as R
-    spec, record = discovery_agent(search, direction, intent, known, today, config)
+    spec, record = discovery_agent(search, direction, intent, known, today, config, crm=crm)
     task = f"Find companies for a new discovery round (today is {today.isoformat()}). Start with direction."
     out = R.run(spec, provider, task, **({"may_call": may_call} if may_call else {}))
     if debug_file is not None:

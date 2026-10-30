@@ -223,3 +223,43 @@ def test_a_person_approves_an_inbox_draft_and_it_is_sent_at_once(ws):
     assert [x["subject"] for x in box.outbox] == ["Your second foundry", "Re: Your second foundry"]
     assert act(payload_hash=seen, to="dana@halvorsen.example").json()["code"] == "wrong_status"  # never twice
     assert api.get(f"/api/opportunities/{oid}").json()["outreach"]["status"] == "followup"
+
+
+def test_client_emails_during_qualification_join_the_notes_and_none_is_lost(ws):
+    """Found reviewing the agents after the manager was built: two replies in a row lost the second one (refused as stale once
+    the first moved the lead to Active), and emails stopped being picked up once a lead was Active."""
+    app, api, oid = ws
+    box = app.state.mail
+    p = api.get(f"/api/opportunities/{oid}/outreach/email", headers=ME, params={"to": "dana@halvorsen.example"}).json()
+    sent = api.post(f"/api/opportunities/{oid}/outreach/email", headers=ME, json={"to": p["to"], "mode": "send", "seenHash": p["seenHash"]}).json()
+    box.deliver_reply(sent["threadId"], "Dana <dana@halvorsen.example>", "Happy to talk on Tuesday.")
+    box.deliver_reply(sent["threadId"], "Dana <dana@halvorsen.example>", "Our budget for the foundry work is approved.")
+    assert api.post("/api/mail/sync", headers=ME).json()["replies"] == 2
+    first, second = sorted((i for i in api.get("/api/inbox").json() if i["kind"] == "reply"), key=lambda i: i["body"].startswith("Our"))
+    api.post(f"/api/inbox/{first['id']}", headers=ME, json={"action": "apply"})
+    assert api.get(f"/api/opportunities/{oid}").json()["stage"] == "active"
+    r = api.post(f"/api/inbox/{second['id']}", headers=ME, json={"action": "apply"}).json()
+    assert r["status"] == "applied" and "Email added to the notes" in r["note"]  # not refused as stale
+    box.deliver_reply(sent["threadId"], "Dana <dana@halvorsen.example>", "Kevin will send the capacity data on Friday.")
+    assert api.post("/api/mail/sync", headers=ME).json()["replies"] == 1  # still read while the lead is Active
+    third = next(i for i in api.get("/api/inbox").json() if i["kind"] == "reply")
+    assert api.post(f"/api/inbox/{third['id']}", headers=ME, json={"action": "apply"}).json()["status"] == "applied"
+    notes = api.get(f"/api/opportunities/{oid}").json()["notes"]
+    texts = [n["text"] for n in notes if n["type"] == "Email reply"]
+    assert {"Happy to talk on Tuesday.", "Our budget for the foundry work is approved.", "Kevin will send the capacity data on Friday."} <= set(texts)
+
+
+def test_a_contact_the_owner_applies_is_confirmed_by_that_person(ws):
+    app, api, oid = ws
+    with app.state.db.session() as s:
+        o = s.get(m.Opportunity, oid)
+        item = J.to_inbox(s, AU.agent_ctx(app, s).today, None, "contact", "CFO", "x",
+                          {"name": "Rita Olsen", "title": "Chief Financial Officer", "url": "https://x.example/leadership", "quote": "Rita Olsen, CFO"},
+                          opp=o, agent="Research agent")
+        item_id, company = item.id, o.company_id
+        s.commit()
+    api.post(f"/api/inbox/{item_id}", headers=ME, json={"action": "apply"})
+    with app.state.db.session() as s:
+        from sqlalchemy import select
+        ct = s.scalars(select(m.Contact).where(m.Contact.company_id == company, m.Contact.name == "Rita Olsen")).one()
+        assert ct.confirmed_by == "Alex Morgan"

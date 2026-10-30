@@ -1,0 +1,37 @@
+{
+  "_about": "How the workspace maps onto the CRM (Insightly). Names, not IDs: the connector looks the IDs up, so the same file works on another Insightly account once the names match. A field left empty is not written. CRM_MODE in .env decides whether the workspace reads (read_only) or also writes (write_approved); CRM_PROVIDER picks insightly or mock.",
+  "statuses": {
+    "_about": "Workspace stage -> Insightly lead status. 'converted' is set just before a lead is marked converted at Qualification; it must be a CLOSED status.",
+    "identified": "Identified",
+    "contacted": "Contacted",
+    "active": "Active",
+    "approval": "Active",
+    "nurture": "Nurture",
+    "rejected": "Disqualified",
+    "closed": "Disqualified",
+    "converted": "Converted(API)"
+  },
+  "leadSources": {
+    "_about": "Where the opportunity came from (source_type) -> Insightly lead source.",
+    "ai": "AI Research Agent",
+    "manual": "Other",
+    "import": "Other"
+  },
+  "pipeline": "Opportunity Pipeline",
+  "qualificationStage": "Qualification",
+  "fields": {
+    "_about": "Insightly custom field names (FIELD_NAME, ending in __c). Create them in Insightly first (System Settings > Objects and Fields); the API cannot.",
+    "workspaceId": "Workspace_ID__c",
+    "targetProblem": "Target_Problem__c",
+    "evidenceUrl": "Evidence_URL__c",
+    "priorityTier": "Priority_Tier__c",
+    "leadType": "Lead_Type__c",
+    "opportunityWorkspaceId": "Opp_Workspace_ID__c"
+  },
+  "leadType": "New Prospect",
+  "tag": "CGS-Workspace",
+  "users": {
+    "_about": "Workspace user -> Insightly USER_ID, for Lead Owner and User Responsible. A user not listed leaves Insightly's default (the API key's user).",
+    "Alex Morgan": null
+  }
+}

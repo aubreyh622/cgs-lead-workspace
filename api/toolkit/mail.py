@@ -41,10 +41,13 @@ class MailError(Exception):
 
 
 # ---------- helpers shared by every mailbox ----------
-def build_raw(to: str, subject: str, body: str, sender: str = "", reply_to_rfc_id: str = "") -> str:
-    """A plain-text email. Gmail adds From (with the account's name), Date and Message-Id when it sends."""
+def build_raw(to: str, subject: str, body: str, sender: str = "", reply_to_rfc_id: str = "", bcc: str = "") -> str:
+    """A plain-text email. Gmail adds From (with the account's name), Date and Message-Id when it sends.
+    bcc: a hidden copy, for example the CRM lead's own address so the CRM logs the email (the client does not see it)."""
     msg = EmailMessage()
     msg["To"] = to
+    if bcc:
+        msg["Bcc"] = bcc
     if sender:
         msg["From"] = sender
     msg["Subject"] = subject
@@ -152,8 +155,8 @@ class GmailMail:
             self._me = (self._call("GET", "/profile") or {}).get("emailAddress", "")
         return self._me
 
-    def create_draft(self, to: str, subject: str, body: str, thread_id: str = "", reply_to_rfc_id: str = "") -> dict:
-        msg = {"raw": build_raw(to, subject, body, reply_to_rfc_id=reply_to_rfc_id), **({"threadId": thread_id} if thread_id else {})}
+    def create_draft(self, to: str, subject: str, body: str, thread_id: str = "", reply_to_rfc_id: str = "", bcc: str = "") -> dict:
+        msg = {"raw": build_raw(to, subject, body, reply_to_rfc_id=reply_to_rfc_id, bcc=bcc), **({"threadId": thread_id} if thread_id else {})}
         d = self._call("POST", "/drafts", json={"message": msg}) or {}
         return {"draft_id": d.get("id", ""), "thread_id": (d.get("message") or {}).get("threadId", "")}
 
@@ -163,8 +166,8 @@ class GmailMail:
             raise MailError("That Gmail draft no longer exists.")
         return {"message_id": d.get("id", ""), "thread_id": d.get("threadId", "")}
 
-    def send(self, to: str, subject: str, body: str, thread_id: str = "", reply_to_rfc_id: str = "") -> dict:
-        msg = {"raw": build_raw(to, subject, body, reply_to_rfc_id=reply_to_rfc_id), **({"threadId": thread_id} if thread_id else {})}
+    def send(self, to: str, subject: str, body: str, thread_id: str = "", reply_to_rfc_id: str = "", bcc: str = "") -> dict:
+        msg = {"raw": build_raw(to, subject, body, reply_to_rfc_id=reply_to_rfc_id, bcc=bcc), **({"threadId": thread_id} if thread_id else {})}
         d = self._call("POST", "/messages/send", json=msg) or {}
         return {"message_id": d.get("id", ""), "thread_id": d.get("threadId", "")}
 
@@ -210,17 +213,17 @@ class MockMail:
     def account(self) -> str:
         return self.me
 
-    def create_draft(self, to, subject, body, thread_id="", reply_to_rfc_id="") -> dict:
+    def create_draft(self, to, subject, body, thread_id="", reply_to_rfc_id="", bcc="") -> dict:
         tid = thread_id or self._id("t")
         self.threads.setdefault(tid, [])
         did = self._id("d")
-        self.drafts[did] = {"to": to, "subject": subject, "body": body, "thread_id": tid}
+        self.drafts[did] = {"to": to, "subject": subject, "body": body, "thread_id": tid, "bcc": bcc}
         return {"draft_id": did, "thread_id": tid}
 
-    def _deliver(self, to, subject, body, tid) -> dict:
+    def _deliver(self, to, subject, body, tid, bcc="") -> dict:
         mid = self._id("m")
         msg = {"id": mid, "from": self.me, "to": to, "subject": subject, "date": self.today().isoformat(), "rfc_id": f"<{mid}@mock>",
-               "ours": True, "text": body}
+               "ours": True, "text": body, "bcc": bcc}
         self.threads.setdefault(tid, []).append(msg)
         self.outbox.append(msg)
         return {"message_id": mid, "thread_id": tid}
@@ -229,10 +232,10 @@ class MockMail:
         d = self.drafts.pop(draft_id, None)
         if d is None:
             raise MailError("That Gmail draft no longer exists.")
-        return self._deliver(d["to"], d["subject"], d["body"], d["thread_id"])
+        return self._deliver(d["to"], d["subject"], d["body"], d["thread_id"], d.get("bcc", ""))
 
-    def send(self, to, subject, body, thread_id="", reply_to_rfc_id="") -> dict:
-        return self._deliver(to, subject, body, thread_id or self._id("t"))
+    def send(self, to, subject, body, thread_id="", reply_to_rfc_id="", bcc="") -> dict:
+        return self._deliver(to, subject, body, thread_id or self._id("t"), bcc)
 
     def draft_exists(self, draft_id) -> bool:
         return draft_id in self.drafts

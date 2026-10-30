@@ -190,7 +190,7 @@ def test_live_recommend_round(tmp_path):
     ardent = next(x for x in c if x["company"] == "Ardent Castings")
     assert ardent["person"] == "Maria Lopez" and ardent["sourceUrl"] == "https://news.example/ardent" and "Maria Lopez" in ardent["quote"]
     run = api.get("/api/agent-runs").json()[0]
-    assert run["agent"] == "Discovery agent" and run["prompt"] == "discovery-agent-1.0" and run["calls"] == ai.turns == 4
+    assert run["agent"] == "Discovery agent" and run["prompt"] == "discovery-agent-1.1" and run["calls"] == ai.turns == 4
     steps = api.get(f"/api/agent-runs/{run['id']}").json()["trace"]
     assert any(s.get("tool") == "nominate" and "Write the company exactly" in str(s) for s in steps)  # Phantom Corp's rejection
 

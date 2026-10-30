@@ -3,7 +3,7 @@
 整个过程只会发送虚构的演示文字，不会用到任何客户信息。
 
 第 1 步：解压
-  右键 AFP接力\backend\cgs-workspace-v2.zip，选“全部解压缩”。解压后会得到 cgs-workspace 文件夹。
+  右键 AFP-Relay\backend\cgs-workspace-v2.zip，选“全部解压缩”。解压后会得到 cgs-workspace 文件夹。
 
 第 2 步：确认电脑上有 Python（没有的话装一下）
   打开 https://www.python.org/downloads/ ，下载 3.12 或更新的版本。

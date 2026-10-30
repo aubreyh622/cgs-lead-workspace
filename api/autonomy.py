@@ -58,7 +58,8 @@ def agent_ctx(app, s) -> S.Ctx:
     from api.actions import demo_today, research_bridge
     return S.Ctx(s=s, actor=AGENTS_ACTOR, today=demo_today(s, app.state.settings), settings=app.state.settings,
                  provider_factory=getattr(app.state, "provider_factory", None), research_factory=lambda: research_bridge(app),
-                 search_factory=getattr(app.state, "search_factory", None), mail_factory=lambda: getattr(app.state, "mail", None))
+                 search_factory=getattr(app.state, "search_factory", None), mail_factory=lambda: getattr(app.state, "mail", None),
+                 crm_factory=lambda: getattr(app.state, "crm", None))
 
 
 def web(c: S.Ctx, agent: str = "Research agent"):
@@ -99,6 +100,9 @@ def patrol(c: S.Ctx) -> list[m.AgentJob]:
         add("manager_review", None, f"Daily review by the manager agent ({mode} mode)")
     if c.mail_factory and c.mail_factory() is not None and s.scalar(select(m.Outreach.opportunity_id).where(m.Outreach.mail_thread_id.is_not(None)).limit(1)):
         add("mail_sync", None, "Daily check of the email threads")
+    from api import crm_sync as CRM
+    if CRM.writes_on(c) and s.scalar(select(m.Opportunity.id).where(m.Opportunity.crm_sync.in_(("sync_pending", "sync_failed"))).limit(1)):
+        add("crm_sync", None, "Opportunities waiting to be synced to the CRM (Insightly)")
     for o in s.scalars(select(m.Opportunity)):
         if o.stage == "contacted":
             r = s.get(m.Outreach, o.id)
@@ -148,6 +152,16 @@ def stalled_triage(c: S.Ctx, opp_id: str, since: date) -> bool:
         if any(e.get("event") == "stalled" for e in (j.payload or {}).get("events", [])):
             return True
     return False
+
+
+def report(c: S.Ctx, job, o, title: str, body: str) -> str:
+    """An agent could not deliver what it was asked for. With the manager on, it reports back to the manager, which decides
+    what the owner hears (one voice); otherwise the owner gets a reminder. Returns who was told."""
+    if o is not None and o.stage in MA.OPEN_STAGES and J.manager_mode(c.s, not c.demo) == "on" \
+            and J.triage(c.s, c.today, o.id, "agent_result", f"{job.agent}: {title}. {body}"[:900], requested_by=job.agent):
+        return "the manager"
+    J.to_inbox(c.s, c.today, job, "reminder", title, body, opp=o)
+    return "the owner"
 
 
 # ---------- what each agent does with a job ----------
@@ -220,9 +234,9 @@ def do_research_refresh(c, job, o):
     pages = [p for p in company_pages(c, o.company.name, o.company.domain, "news", since) if p["url"] not in known]
     if not pages:
         S.record_run(c, job.agent, o, "refresh-rules", 0, subject=o.company.name, model="rules")
-        J.to_inbox(c.s, c.today, job, "reminder", f"Nurture review due for {o.company.name}: no news since {S.fmt(since)}",
-                   "The research agent found nothing new. Decide whether to reconnect anyway or set a new review date.", opp=o)
-        return "done", f"No news since {since.isoformat()}."
+        to = report(c, job, o, f"Nurture review due for {o.company.name}: no news since {S.fmt(since)}",
+                    "The research agent found nothing new. Decide whether to reconnect anyway or set a new review date.")
+        return "done", f"No news since {since.isoformat()}; told {to}."
 
     def demo():
         return [{"text": re.split(r"(?<=\.)\s", p["content"], 1)[0], "quote": re.split(r"(?<=\.)\s", p["content"], 1)[0],
@@ -240,9 +254,9 @@ def do_research_refresh(c, job, o):
     n = len(o.brief.facts or [])
     facts = [{"id": f"f{n + i + 1}", **f} for i, f in enumerate(found)]
     if not facts:
-        J.to_inbox(c.s, c.today, job, "reminder", f"Nurture review due for {o.company.name}: news found, but nothing usable",
-                   "The research agent read new pages, but no quote passed the checks.", opp=o)
-        return "done", "New pages, no usable facts."
+        to = report(c, job, o, f"Nurture review due for {o.company.name}: news found, but nothing usable",
+                    "The research agent read new pages, but no quote passed the checks.")
+        return "done", f"New pages, no usable facts; told {to}."
     J.to_inbox(c.s, c.today, job, "facts", f"{len(facts)} new fact{'s' if len(facts) != 1 else ''} about {o.company.name}",
                "\n".join(f"[{f['date']}] {f['text']}" for f in facts), {"facts": facts}, opp=o)
     if o.stage == "nurture":
@@ -281,9 +295,9 @@ def do_person_lookup(c, job, o):
                          subject=f"Find the {role} at {o.company.name}")
     if not res.get("found"):
         checked = f" What the agent checked: {res['notes']}" if res.get("notes") else ""
-        J.to_inbox(c.s, c.today, job, "reminder", f"Could not find the {role} at {o.company.name}",
-                   f"The notes say: \"{asked}\". No public page names the {role}. Ask the client contact who approves.{checked}", opp=o)
-        return "done", f"No page names the {role}."
+        to = report(c, job, o, f"Could not find the {role} at {o.company.name}",
+                    f"The notes say: \"{asked}\". No public page names the {role}. Ask the client contact who approves.{checked}")
+        return "done", f"No page names the {role}; told {to}."
     J.to_inbox(c.s, c.today, job, "contact", f"{role} at {o.company.name}: {res['name']} ({res['title']})",
                f"Why: the notes say \"{asked}\". Source: {res['url']}", {**res, "role": role}, opp=o)
     return "done", f"Found {res['name']} ({res['title']}); the owner confirms before it is added."
@@ -484,8 +498,23 @@ def fallback(c, job, o, requests: list[dict], events: list[dict], why: str) -> s
     return f" Carried out without the manager: {', '.join(done)}." if done else ""
 
 
+def do_crm_sync(c, job, o):
+    from api import crm_sync as CRM
+    res = CRM.sync(c)
+    if res.get("off"):
+        return "skipped", "Writing to the CRM is off."
+    text = f"Synced {res['synced']} opportunit{'y' if res['synced'] == 1 else 'ies'} to the CRM."
+    if res["failed"]:
+        text += f" {res['failed']} failed: " + "; ".join(res["errors"][:3])
+    return "done", text
+
+
 def do_mail_sync(c, job, o):
     res = S.sync_mail(c)
+    if c.crm_dirty:  # an email sent from Gmail moved a lead to Contacted: tell the CRM
+        from api import crm_sync as CRM
+        CRM.sync(c, sorted(c.crm_dirty))
+        c.crm_dirty.clear()
     if res.get("off"):
         return "skipped", "Email is off."
     n = res["replies"]
@@ -498,7 +527,8 @@ def do_mail_sync(c, job, o):
 HANDLERS = {"followup_draft": do_followup_draft, "reconnect_draft": do_reconnect_draft, "research_refresh": do_research_refresh,
             "person_lookup": do_person_lookup, "gap_actions": do_gap_actions, "defer_nurture": do_defer_nurture,
             "ready_reminder": do_ready_reminder, "discovery_round": do_discovery_round, "feedback_review": do_feedback_review,
-            "manager_review": do_manager_review, "manager_triage": do_manager_triage, "lessons_review": do_lessons_review, "mail_sync": do_mail_sync}
+            "manager_review": do_manager_review, "manager_triage": do_manager_triage, "lessons_review": do_lessons_review, "mail_sync": do_mail_sync,
+            "crm_sync": do_crm_sync}
 assert set(HANDLERS) == set(J.KINDS)
 
 
@@ -663,7 +693,7 @@ def check_still_valid(c: S.Ctx, it: m.InboxItem, o: m.Opportunity | None, seen_h
                             "Dismiss it; the agents prepare a new one when it is needed.", 409, "expired")
     if seen_hash is not None and it.payload_hash and seen_hash != it.payload_hash:
         raise S.ActionError("This item is not the version you saw. Reload the inbox and look again.", 409, "changed")
-    if o and it.kind in CHANGES and it.basis and it.basis.get("stage") != o.stage:
+    if o and it.kind in CHANGES and it.kind != "reply" and it.basis and it.basis.get("stage") != o.stage:
         raise S.ActionError(f"The opportunity moved from {it.basis['stage']} to {o.stage} after this was prepared. Dismiss it.", 409, "stale")
     if o and it.kind == "draft":  # every fact the draft cites must still mean the same thing in the brief
         brief = {f["id"]: f["text"] for f in (o.brief.facts or [])}
@@ -709,11 +739,18 @@ def apply_item(c: S.Ctx, item_id: str, action: str, seen_hash: str | None = None
             note = f"{len(it.data.get('facts', []))} new facts added to the brief"
         elif it.kind == "contact" and o:
             d = it.data
-            c.s.add(m.Contact(id=S.new_id("ct"), company_id=o.company_id, name=d["name"], title=d["title"]))
+            c.s.add(m.Contact(id=S.new_id("ct"), company_id=o.company_id, name=d["name"], title=d["title"], confirmed_by=c.actor))
             note = f"{d['name']} ({d['title']}) added as a contact at {o.company.name}; source {d['url']}"
         elif it.kind == "nurture" and o:
             S.to_nurture(c, o.id, date.fromisoformat(it.data["review_on"]), "Client deferred; suggested by the action agent")
             note = f"Moved to nurture until {it.data['review_on']}"
+        elif it.kind == "reply" and o and o.stage in S.QUAL_STAGES:  # a client email during qualification is evidence
+            on = min(date.fromisoformat(it.data["on"]), c.today)
+            try:
+                res = S.add_note(c, o.id, "Email reply", on, it.data["text"], analyze=True)
+                note = f"Email added to the notes; the evidence agent proposed {res['proposals']} item{'s' if res['proposals'] != 1 else ''}"
+            except S.ActionError as e:  # the email is saved; only the analysis failed
+                note = f"Email added to the notes; the analysis did not run ({e}). Run it again from Step 6"
         elif it.kind == "reply" and o:
             res = S.record_reply(c, o.id, it.data["text"], min(date.fromisoformat(it.data["on"]), c.today))
             note = f"Email reply recorded; stage set to Active; reply label {res['replyLabel']}"

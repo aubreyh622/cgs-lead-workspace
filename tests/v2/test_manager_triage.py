@@ -271,3 +271,24 @@ def test_orchestrator_check_runs_the_whole_story_offline(tmp_path, monkeypatch):
     assert code == 0, out
     assert "FAIL" not in out and "RESULT: the manager runs the agents as intended" in out
     assert (tmp_path / "runtime" / "orchestrator-check-result.txt").exists()
+
+
+@pytest.mark.parametrize("mode", ["on", "off"])
+def test_an_agent_that_cannot_deliver_reports_to_the_manager_when_it_is_on(make, mode):
+    """The manager accepted the request, so the result comes back to it (one voice); with the manager off the owner is told."""
+    from api import jobs as J
+    app, api = make(AI(), mode=mode)
+    with app.state.db.session() as s:
+        job = J.enqueue(s, AU.agent_ctx(app, s).today, "person_lookup", "meridian", "handoff", "Find the CFO",
+                        {"role": "CFO", "quote": CFO}, requested_by="Evidence agent")
+        s.commit()
+        jid = job.id
+    assert AU.run_job(app, jid) == "done"
+    result = next(j for j in board(api) if j["id"] == jid)["result"]
+    reminders = [i for i in api.get("/api/inbox?status=all").json() if i["kind"] == "reminder" and i["opportunityId"] == "meridian"]
+    triage = [j for j in board(api) if j["kind"] == "manager_triage"]
+    if mode == "on":
+        assert result.endswith("told the manager.") and not reminders
+        assert triage and "Could not find the CFO" in triage[0]["reason"]
+    else:
+        assert result.endswith("told the owner.") and reminders and not triage

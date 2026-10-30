@@ -1,6 +1,6 @@
 # The workspace database, in plain language
 
-The database is the workspace's ledger. It is one file, `runtime/workspace-v2.sqlite3`, made of 28 tables. Each table holds one kind of record, the way an Excel workbook has one sheet per topic.
+The database is the workspace's ledger. It is one file, `runtime/workspace-v2.sqlite3`, made of 29 tables. Each table holds one kind of record, the way an Excel workbook has one sheet per topic.
 
 Code reaches the file through SQLAlchemy, a translator layer. To move to a shared PostgreSQL database later (for several people at once), set `DATABASE_URL`. The code stays the same.
 
@@ -16,6 +16,7 @@ Code reaches the file through SQLAlchemy, a translator layer. To move to a share
 | `research_briefs` | the brief: dated facts, hypothesis, flags, priority | 3 | research agent; frozen at Step 4 |
 | `decisions` | a human decision at Step 4 or Step 8 | 4, 8 | person only |
 | `outreach` | the message draft and when it was sent and answered; with email on, the address used and the Gmail thread and waiting draft ids | 5 | Outreach agent drafts, person sends |
+| `crm_links` | which CRM (Insightly) records belong to an opportunity: lead (and its own BCC address), status last written, and after Qualification the organization, contact and opportunity; notes already copied; the last sync error | 4-8 | CRM sync, after a person acts |
 | `notes` | an email or meeting notes, in the original words | 6 | person |
 | `proposals` | an AI suggestion (a score, condition or blocker) with its quote | 6 | Evidence agent |
 | `evidence` | what a person confirmed, and how (accepted, edited, manual review) | 6–7 | person only |

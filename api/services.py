@@ -5,7 +5,7 @@ Each function checks the workflow rules, writes the change, and appends history.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 from datetime import date, datetime, timedelta, timezone
 import re
@@ -14,6 +14,7 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from api import crm_sync as CRM
 from api import demo_agents as A
 from api import jobs as J
 from api import knowledge
@@ -95,6 +96,8 @@ class Ctx:
     research_factory: Callable[[], Any] | None = None  # Steps 2-3 live research (Aubrey's pipeline)
     search_factory: Callable[[], Any] | None = None    # web search for Step 1 discovery
     mail_factory: Callable[[], Any] | None = None      # the mailbox (api/toolkit/mail.py); None = mail is off
+    crm_factory: Callable[[], Any] | None = None       # the CRM (api/toolkit/crm.py); None = the CRM is off
+    crm_dirty: set = field(default_factory=set)        # opportunities to sync to the CRM once this request is saved
 
     @property
     def demo(self) -> bool:
@@ -447,7 +450,8 @@ def recommend(c: Ctx, intent: str, budget=None) -> dict:
         search = TK.web_for("Discovery agent", c)
         result, usage, steps = D.discover_with_agent(p, search, direction, intent, known, c.today,
                                                      debug_file=ROOT / "runtime" / "discovery-last-round.json", config=search_config(),
-                                                     may_call=budget(p) if budget else None)
+                                                     may_call=budget(p) if budget else None,
+                                                     crm=TK.crm_if_allowed("Discovery agent", c))
         trace.extend(steps)
         return result, usage
 
@@ -613,6 +617,7 @@ def step4(c: Ctx, opp_id: str, b) -> None:
         feedback(c, o.company.name, 4, "Accepted", b.accept_reason or "Relevant signal", b.scope, o.direction_version, b.comment or "", b.minutes, o.id)
         c.s.add(m.Decision(opportunity_id=o.id, step=4, decision="Accepted", by=c.actor, note=f"Rating {b.rating}, owner {b.owner}", on=c.today))
         log(c, o.id, "h", f"Accepted by {c.actor}: rating {b.rating}, owner {b.owner}")
+        CRM.mark(c, o)
     elif b.decision == "return":
         q = need_text(b.questions, "What the agent should find out")
         o.stage = "researching"
@@ -649,6 +654,7 @@ def confirm_contact(c: Ctx, opp_id: str, name: str, title: str, note: str) -> No
         b.recommendation = {"decision": "accept", "reason": "Contact confirmed by a person. The rest of the brief is unchanged."}
     touch(c, o)
     log(c, o.id, "h", f"Contact confirmed by {c.actor}: {name}, {ct.title} ({note}). Confirms name and role, not buying authority.")
+    CRM.mark(c, o)
 
 
 def save_sibling(c: Ctx, opp_id: str, title: str, team: str, name: str, role: str) -> str:
@@ -748,6 +754,7 @@ def mark_sent(c: Ctx, opp_id: str, via: str, on: date | None, follow_days: int) 
     o.stage, o.next_action, o.next_due = "contacted", "Follow up if no reply", r.sent_on + timedelta(days=follow_days)
     touch(c, o)
     log(c, o.id, "h", f"{via} sent by {c.actor}. The workspace did not send it.")
+    CRM.mark(c, o)
 
 
 # ---------- Step 5: email through the mail connector (api/toolkit/mail.py) ----------
@@ -820,6 +827,7 @@ def record_mail_sent(c: Ctx, o: m.Opportunity, purpose: str, on: date | None = N
         o.next_action, o.next_due = "Follow up if no reply", on + timedelta(days=fd)
     touch(c, o)
     log(c, o.id, "h", f"{purpose.capitalize()} email sent through Gmail{how} to {r.to_email}.")
+    CRM.mark(c, o)
 
 
 def email_out(c: Ctx, opp_id: str, to: str, mode: str, seen_hash: str, item_id: str | None = None) -> dict:
@@ -848,10 +856,11 @@ def email_out(c: Ctx, opp_id: str, to: str, mode: str, seen_hash: str, item_id: 
         thread = r.mail_thread_id if p["purpose"] != "first" else ""
         earlier = box.thread(thread) if thread else []
         reply_to = earlier[-1]["rfc_id"] if earlier else ""
+        bcc = CRM.mail_bcc(c, o)  # the CRM lead's own address: the CRM logs the email on the lead
         if mode == "draft":
-            res = box.create_draft(p["to"], p["subject"], p["body"], thread, reply_to)
+            res = box.create_draft(p["to"], p["subject"], p["body"], thread, reply_to, bcc=bcc)
         else:
-            res = box.send(p["to"], p["subject"], p["body"], thread, reply_to)
+            res = box.send(p["to"], p["subject"], p["body"], thread, reply_to, bcc=bcc)
     except MailError as e:
         raise ActionError(str(e), 502, "mail_failed") from None
     r.to_email, r.mail_thread_id = p["to"], res.get("thread_id") or r.mail_thread_id
@@ -879,7 +888,7 @@ def sync_mail(c: Ctx) -> dict:
         return {**out, "off": True}
     for r in list(c.s.scalars(select(m.Outreach).where(m.Outreach.mail_thread_id.is_not(None)))):
         o = c.s.get(m.Opportunity, r.opportunity_id)
-        if not o or o.stage not in ("identified", "contacted", "nurture"):
+        if not o or o.stage not in ("identified", "contacted", "nurture", "active", "approval"):  # qualification too
             continue
         out["checked"] += 1
         try:
@@ -887,7 +896,10 @@ def sync_mail(c: Ctx) -> dict:
             if r.mail_draft_id and not box.draft_exists(r.mail_draft_id):
                 purpose, r.mail_draft_id = r.mail_draft_purpose or "first", None
                 mine = [x for x in msgs if x["ours"]]
-                if mine and (purpose != "first" or o.stage == "identified"):
+                if mine and o.stage in QUAL_STAGES:  # sent during qualification: the stage and next action stay as they are
+                    log(c, o.id, "a", f"{purpose.capitalize()} email sent through Gmail (seen in Gmail's Sent folder).")
+                    out["sent"] += 1
+                elif mine and (purpose != "first" or o.stage == "identified"):
                     record_mail_sent(c, o, purpose, on=min(date.fromisoformat(mine[-1]["date"]), c.today), how=" (seen in Gmail's Sent folder)")
                     out["sent"] += 1
                 else:
@@ -1060,6 +1072,7 @@ def to_nurture(c: Ctx, opp_id: str, review_on: date | None, reason: str) -> None
     o.stage, o.next_action, o.next_due = "nurture", "Revisit the opportunity", review_on or c.today + timedelta(days=60)
     touch(c, o)
     log(c, o.id, "h", f"Moved to nurture by {c.actor}: {need_text(reason, 'Reason')}")
+    CRM.mark(c, o)
 
 
 def record_reply(c: Ctx, opp_id: str, text: str, on: date | None) -> dict:
@@ -1072,6 +1085,7 @@ def record_reply(c: Ctx, opp_id: str, text: str, on: date | None) -> dict:
     o.next_action, o.next_due = "Hold the first conversation", r.reply_on + timedelta(days=7)
     touch(c, o)
     log(c, o.id, "h", f"Reply recorded by {c.actor}; stage set to Active")
+    CRM.mark(c, o)
     try:
         label, _ = run_agent(c, "Reply classifier", o, "reply-demo-1.4", lambda: A.label_reply(text),
                              live=lambda p: L.label_reply(p, text), live_prompt=L.LABEL_PROMPT_VERSION)
@@ -1094,6 +1108,7 @@ def add_note(c: Ctx, opp_id: str, type_: str, on: date | None, text: str, analyz
     c.s.add(note)
     touch(c, o)
     log(c, o.id, "h", f"{type_} added by {c.actor}")
+    CRM.mark(c, o)
     c.s.flush()
     if not analyze:
         notify_manager(c, o, "notes", f"New {type_.lower()} from {c.actor}")
@@ -1409,7 +1424,11 @@ def approve_pack(c: Ctx, o: m.Opportunity, pk: m.Pack, approver: str, role: str,
     clear_handover(pk)
     o.next_action, o.next_due = "Needs analysis meeting", c.today + timedelta(days=7)
     o.crm_sync = "sync_pending"
-    log(c, o.id, "s", f"Insightly sync pending (CRM mode: {c.settings.crm_mode}). Nothing was written to Insightly.")
+    if CRM.writes_on(c):
+        CRM.mark(c, o)
+        log(c, o.id, "s", "Insightly sync pending: the lead is converted to an opportunity at the qualification stage once this is saved.")
+    else:
+        log(c, o.id, "s", f"Insightly sync pending (CRM mode: {c.settings.crm_mode}). Nothing was written to Insightly.")
 
 
 def decide_pack(c: Ctx, pack_id: str, b) -> dict:
@@ -1461,6 +1480,7 @@ def decide_pack(c: Ctx, pack_id: str, b) -> dict:
         log(c, o.id, "h", f"Closed by {c.actor}: {b.reason}")
     if b.decision != "approve":
         clear_handover(pk)  # any other decision replaces an approval that was waiting for a handover
+        CRM.mark(c, o)
     o.revision += 1
     return out
 
