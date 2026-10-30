@@ -56,6 +56,10 @@ For real AI, set `APP_MODE=live`, `AI_PROVIDER` (`gemini`, `openai` or `claude`)
 real web search. Email and Insightly credentials live outside the project folder, in `%USERPROFILE%\.cgs-workspace\`
 (`gmail.env`, `insightly.env`); `.env.example` explains each setting.
 
+For **real public companies** instead of invented ones, `Get Real Companies.cmd` asks what to look for in plain words,
+lets the discovery agent find real companies on the web and researches a few into Step 4 briefs, in a separate database
+(email and CRM off). `Start Real Data Workspace.cmd` opens it on port 8801.
+
 To use Insightly: create the custom fields and statuses that `config/crm.json` names in your Insightly account, then
 set `CRM_MODE=write_approved` and `CRM_PROVIDER=insightly`. `Check CRM.cmd` checks the account (reads only);
 `Check CRM.cmd --write` runs one synthetic company through Steps 4–8 into Insightly.

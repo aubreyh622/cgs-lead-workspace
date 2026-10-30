@@ -650,3 +650,23 @@ Insightly's recycle bin and still count as using their status.
 Insightly account, and runs a duplicate check. With `--write` it runs one synthetic company ("CRM Check <time> (TEST)")
 through Step 4, email (mock mailbox, nothing sent), reply and an approved qualification, and checks Insightly after each
 step. Tests: `tests/v2/test_crm.py` (a fake Insightly over `httpx.MockTransport`, and the workflow on the MockCRM).
+
+## Real public company data
+
+The demo runs on invented companies. To show the agents on real ones, `Get Real Companies.cmd`
+(`python -m api.real_data --request "..." --pick 3`) fills a **separate database**, `runtime/real-public.sqlite3`:
+
+1. The discovery agent searches the real web (Tavily) for the request, written in plain words, within the research
+   direction (`config/problem_brief.json`). The same code checks apply to every nomination. Without `--request` it asks
+   for US manufacturers with a recent acquisition or a new digital, information or transformation leader.
+2. The first `--pick` candidates (those with a website first) are researched in parallel by the research agent into
+   Step 4 briefs: dated, quoted facts with their sources, from public pages only.
+3. `Start Real Data Workspace.cmd` opens that database on port 8801 (live mode, real web). The synthetic workspace keeps
+   port 8800 and its own database.
+
+Safety: public web only, no client data. In that database email and the CRM are off (`MAIL_PROVIDER=off`,
+`CRM_MODE=disabled`): the people are real, so nothing can be sent to them and no address is guessed. The background
+agents start paused, so they spend no search credits on their own (`PATCH /api/agents` resumes them). Cost: about 10
+Tavily credits for discovery and up to 22 per company, plus the AI calls. The result is saved in
+`runtime/real-data-result.txt`. The same natural-language request works in any workspace: `POST /api/candidates/recommend`
+with `{"intent": "..."}`.

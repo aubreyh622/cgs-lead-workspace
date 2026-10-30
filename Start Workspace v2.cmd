@@ -8,7 +8,7 @@ if not defined WORKSPACE_PYTHON (
   pause
   exit /b 1
 )
-echo CGS Lead Workspace v2 - synthetic data only, no emails sent, no CRM writes.
+echo CGS Lead Workspace v2 - synthetic data. Email and CRM follow MAIL_PROVIDER and CRM_MODE in .env; nothing goes out without a person's click.
 echo Open http://127.0.0.1:8800/ for the workspace and http://127.0.0.1:8800/docs for the API.
 "%WORKSPACE_PYTHON%" -B -m api.main
 if errorlevel 1 pause
