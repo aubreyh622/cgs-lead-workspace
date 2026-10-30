@@ -1,101 +1,93 @@
 # CGS Lead Workspace
 
-A local integration of the CGS public-research workflow and the qualification prototype.
-P0-P4 are approved. P5 adds a verified offline two-round rehearsal and operating handoff.
-Follow-up development requires a separate user instruction; stop after the authorized task.
+A prototype of AI agents that help CGS Advisors consultants find, contact and qualify new leads, built by Ivey MSc
+AFP Team 15. It covers the front of the sales funnel, **Identified → Contacted → Active → Qualification**, and keeps a
+person in charge of every decision that matters: agents research and prepare, people approve.
 
-## Desktop interface preview
+**Status: prototype, synthetic data only.** It is not connected to any CGS system. The Insightly connection is tested
+on the team's own Insightly test account with invented companies. Lead quality and CGS acceptance are not yet verified.
 
-Open [Modern Sales Workspace v4](design-explorations/CGS%20Modern%20Sales%20Workspace%20v4.html)
-in a desktop browser to explore the latest interaction prototype. It uses synthetic records
-and demonstrates discovery, evidence review, approvals, agent work items and human handoff.
-This standalone HTML preview is separate from the integrated Python application below;
-its agent activity and research results are simulated, and session edits reset on refresh.
+## The workflow
 
-The repository includes application code, synthetic examples, tests and engineering documentation.
-Local credentials, runtime databases and captured research runs are excluded. Client source
-documents and meeting transcripts from the parent project folder are not part of this repository.
+| Step | What happens | Who |
+|---|---|---|
+| 1 Discover | Finds companies in recent news that match CGS's research direction (the problems CGS solves) | Discovery agent, with a direction a person approves |
+| 2–3 Research | Writes a brief per company: dated, quoted facts with sources, why now, why CGS, unknowns, a contact only if a source names one | Research agent |
+| 4 Accept | A consultant accepts (owner, rating, next step), returns with questions, or rejects with a reason. Reasons feed back into the direction | Person |
+| 5 Contact | Drafts the first email, follow-ups and reconnect emails that cite the brief; the person sees the exact email and sends it | Outreach agent drafts, person sends |
+| 6 Converse | Labels replies; reads call notes and proposes BANTHE scores, conditions and blockers, each with a word-for-word quote | Reply classifier, evidence agent; person accepts or edits |
+| 7 Assess | The rules engine says whether the opportunity is Ready; the next-step agent suggests what to do about the gaps | Rules (no AI), next-step agent |
+| 8 Approve | The qualification pack goes to an approver; approved means Qualification | Person |
 
-## Run locally
+A **manager agent** watches the team: a daily look over every open opportunity, a close look at one when something
+happens to it, a memory per opportunity, and one message per owner. Agents also work on their own (a daily patrol,
+handoffs between agents), but everything they prepare goes to a person's inbox first.
 
-Use `Check Workspace.cmd` to inspect configuration without provider calls.
-Use `Start CGS Workspace.cmd`, then open http://127.0.0.1:8766/ .
-Keep the terminal running; Ctrl+C stops the backend.
+## Ground rules
 
-For the prepared **offline synthetic demonstration**, use **Start Offline Demo.cmd**, then open
-http://127.0.0.1:8767/ . No API keys are needed. The banner marks all demo output as fictional;
-four research tasks, four opportunities, two received cases and an approved direction change
-are prepared in separate databases under `runtime/offline-demo/`. Reopening preserves edits.
-Follow [the demo guide](docs/DEMO_GUIDE.md) for the click path and a fresh-session command.
+- **Agents only read and prepare.** Sending an email, changing a score or writing to the CRM happens only after a person
+  clicks. Agents never guess an email address.
+- **Code checks the AI.** Quotes must match the source word for word, cited facts must exist, drafts may not promise
+  prices or results, and a failed AI call is reported, never replaced by made-up results.
+- **One gate to the outside world.** Every outside system goes through `api/toolkit/`, with a permission table (which
+  agent may use what), a usage log and daily limits.
+- **Synthetic data for development.** A synthetic internet (`config/search.json`, provider `mock`) lets the whole
+  workflow run with real AI and no real company. Client data reaches an AI model only when `CLIENT_DATA_TO_AI=allowed`.
 
-This machine borrows the existing Python 3.12 environment selected by `.local-python`.
-No dependencies, keys or databases were copied into that environment. `.local-python`,
-`.env` and `runtime/` are ignored. On a new machine, run `Setup.cmd` to create a project
-virtual environment and install `requirements.lock`; fresh installation has not been verified.
+## Connected systems
 
-## Available workflow
+| Connector | Used for | Status |
+|---|---|---|
+| Web (Tavily, or the synthetic internet) | Discovery and research | In use |
+| CGS library (`knowledge/`) | Service fit and outreach; a synthetic demo library until CGS shares its own | In use |
+| Email (Gmail, or a mock mailbox) | Drafts, approve-and-send, reading client replies | In use |
+| CRM (Insightly, or a mock CRM) | Duplicate check; a lead from Step 4, statuses that follow the stages, notes, emails logged by BCC, conversion to an opportunity at Qualification | In use (team test account) |
+| Google Drive | Direction sources | Not built |
 
-1. Open **Lead research**, enter a consultant ID, and discover from the research direction
-   or explicitly investigate a known company. The live UI uses research v2.
-2. Inspect public facts, quotes, dates, contacts, hypotheses, alternatives and gaps.
-3. Save specific opportunities; one company may have several teams or problems.
-4. Record human feedback, its scope, reason and optional review time.
-5. Submit a worthwhile opportunity for explicit pipeline acceptance.
-6. Accept with an owner, next action, due date and relationship check. Unknown contacts are allowed.
-7. Work the received case from **Not contacted** through manually recorded outreach and replies.
-8. Use **Workflow manager** to inspect metrics, analyze eligible feedback or create a manual proposal.
-9. A named human approves or rejects the direction diff. Future tasks use the approved version;
-   existing tasks and accepted handoffs retain their snapshots.
+## Run it (Windows)
 
-Research priority never becomes BANTHE evidence automatically. A draft does not mean sent.
-A reply means Active under the inherited policy, not qualified. No email or CRM writes occur.
+1. `Setup.cmd` once: creates `.venv` and installs `requirements.lock`.
+2. Copy `.env.example` to `.env`. The defaults run the **demo** (`APP_MODE=demo`): seeded synthetic data, text rules
+   instead of AI, no keys needed.
+3. `Start Workspace v2.cmd`, then open http://127.0.0.1:8800/docs for the interactive API, or http://127.0.0.1:8800/
+   for the workspace page (the UI is still being merged with the v2 backend).
 
-## Provider configuration
+For real AI, set `APP_MODE=live`, `AI_PROVIDER` (`gemini`, `openai` or `claude`) and its key, and `TAVILY_API_KEY` for
+real web search. Email and Insightly credentials live outside the project folder, in `%USERPROFILE%\.cgs-workspace\`
+(`gmail.env`, `insightly.env`); `.env.example` explains each setting.
 
-Research uses server-side `GEMINI_API_KEY`, `TAVILY_API_KEY` and `GEMINI_MODEL`.
-AI feedback analysis uses Gemini only, with the same server-side Gemini settings.
-Qualification uses its separate `OPENAI_API_KEY` / `OPENAI_MODEL` and demo/live setting.
-Restart after changing `.env`. Configuration presence does not prove account connectivity.
+To use Insightly: create the custom fields and statuses that `config/crm.json` names in your Insightly account, then
+set `CRM_MODE=write_approved` and `CRM_PROVIDER=insightly`. `Check CRM.cmd` checks the account (reads only);
+`Check CRM.cmd --write` runs one synthetic company through Steps 4–8 into Insightly.
 
-Provider credentials stay in the ignored local `.env`. Isolated public-web trials test core
-connectivity and execution; they do not establish lead quality or CGS acceptance. Offline tests
-use explicit controlled providers. Failures never switch
-to synthetic results. Manual direction proposals are labeled manual and still require approval.
-Current settings preserve their **mock** approval basis; local approval does not imply CGS approval.
-The explicitly selected offline entry point uses deterministic adapters; it is never a fallback
-for main-workspace provider errors. It demonstrates functional integration, not lead quality.
+## Checks
 
-## Layout and documentation
+- Offline tests: `python -m pytest tests --ignore=tests/research/test_app_and_contract.py --ignore=tests/research/test_five_company_workflow.py`
+  (about 500 tests, no network).
+- Live checks with the real AI on the synthetic internet: `Check AI.cmd`, `Check Research.cmd`, `Check Workflow.cmd`,
+  `Check Agents.cmd`, `Check Orchestrator.cmd`; `AI Exam.cmd` grades the evidence agent on cases with known answers.
+- Connections: `Check Mail.cmd` (Gmail), `Check CRM.cmd` (Insightly).
 
-- `workspace.py`, `backend/workspace_*`: integrated startup, configuration and separate databases.
-- `demo.py`, `backend/demo_*`: isolated, credential-free synthetic rehearsal and preparation evidence.
-- `lead_agent/`: reused research worker, evidence validation and provider adapter.
-- `backend/opportunity_service.py`, `handoff_service.py`: opportunities, feedback and acceptance.
-- `backend/orchestrator_service.py`, `theme_store.py`: bounded manager and approved direction memory.
-- `server.py`, `backend/agents.py`, `backend/rules.py`, `dist/`: inherited qualification app plus integration.
-- `config/`: import baseline; approved direction versions are persisted in the research database.
-- `app.py`: historical Streamlit test entry, not the integrated application.
-- `docs/source_manifest.json`: upstream baselines and documented local adaptations.
+## Layout
 
-Read [the phase plan](docs/DEVELOPMENT_PLAN.md), [data contracts](docs/DATA_CONTRACTS.md),
-[research API](docs/RESEARCH_API.md), [review guide](docs/RESEARCH_REVIEW.md),
-[handoff guide](docs/HANDOFF.md), and [orchestrator guide](docs/ORCHESTRATOR.md).
-P5 results are in [functional acceptance](docs/PILOT_ACCEPTANCE.md) and
-[verification](docs/VERIFICATION_P5.md). Use [operations handoff](docs/OPERATIONS_HANDOFF.md)
-and the [real pilot checklist](docs/LIVE_PILOT_CHECKLIST.md) before a client trial.
-Discovery execution constraints and trial evidence are documented in
-[discovery verification](docs/VERIFICATION_DISCOVERY_GUARDS.md). The current integrated
-direction-led workflow is documented in [Research v2](docs/RESEARCH_V2.md), with measured
-results in [v2 verification](docs/VERIFICATION_RESEARCH_V2.md). CGS client acceptance remains unverified.
+| Path | What it is |
+|---|---|
+| `api/` | The v2 backend (FastAPI): workflow services, agents (`*_agent.py`), autonomy and the job board, CRM sync |
+| `api/toolkit/` | The connector gate, permissions and usage; `mail.py` (Gmail), `crm.py` (Insightly) |
+| `backend/rules.py` | The qualification rules engine (BANTHE weights, conditions, readiness) |
+| `config/` | Search settings, toolkit permissions, CRM mapping, the research problem brief and the scoring rubric |
+| `knowledge/` | The CGS library the agents may cite |
+| `frontend/` | The workspace page |
+| `tests/v2/` | Tests for the v2 backend; `tests/p0`–`p5`, `tests/research` cover the earlier components |
+| `lead_agent/`, `workspace.py`, `server.py`, `demo.py`, `dist/` | The earlier integrated app (research worker and qualification prototype), still used by the research pipeline |
+| `design-explorations/` | Standalone HTML interaction prototypes with simulated data |
 
-On this machine, `Start Live Research Results.cmd` opens isolated captured public-web
-results on port 8768, including a Reckitt brief pending human review. It does not automatically
-start research. Qualification retains its clearly marked sample cases. The original main
-workspace databases and offline synthetic demo remain separate.
+## Documentation
 
-Legacy staged core runs use `lead_agent.discovery.new_discovery_payload` and the existing Worker.
-They persist a candidate queue and advance through company verification, assessment and guarded
-saving. See [staged discovery](docs/STAGED_DISCOVERY.md) for the entry point, stages and boundaries.
+- [Backend v2 guide](docs/BACKEND_V2.md): decisions, agents, autonomy, manager, toolkit, email, CRM, endpoints.
+- [Database](docs/DATABASE.md) and [API](docs/API.md).
+- [Search integration](docs/SEARCH_INTEGRATION.md) and [Research v2](docs/RESEARCH_V2.md).
+- Earlier phases (P0–P5) and their verification: [development plan](docs/DEVELOPMENT_PLAN.md) and `docs/VERIFICATION_*.md`.
+  The repository's earlier front page and layout are on the `legacy-v1` branch.
 
-Maintained engineering documentation, comments and UI copy use English. Upstream originals in
-`docs/upstream/` remain unmodified source archives, including the original Chinese demo guide.
+Engineering documentation, comments and UI copy are in English. `docs/upstream/` keeps original source archives unchanged.
