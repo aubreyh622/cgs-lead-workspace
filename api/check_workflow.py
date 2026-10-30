@@ -159,7 +159,7 @@ def main(argv: list[str] | None = None, prepare=None) -> int:
         say(f"         {domain} has no simulated client conversation; using a neutral reply.")
         sim = {"reply": "Thanks for reaching out. Happy to have a short call next week.", "notes": "Short intro call. The client listened and asked for a follow-up note."}
     say("Step 6  Engage")
-    r = call("Client reply recorded; the reply classifier labels it", "post", f"/api/opportunities/{oid}/outreach/reply", json={"text": sim["reply"]})
+    r = call("Client reply recorded; the evidence agent labels it", "post", f"/api/opportunities/{oid}/outreach/reply", json={"text": sim["reply"]})
     label = r["replyLabel"] if r else "pending"
     if r:
         say(f"         Reply label: {label}  (stage is now Active)")
@@ -213,7 +213,7 @@ def main(argv: list[str] | None = None, prepare=None) -> int:
                 call("Director of Operations approves", "post", f"/api/packs/{pk['id']}/decision", actor="Person",
                      json={"decision": "approve", "role": "Director of Operations"})
         else:
-            call("Next-step agent suggests actions for the open gaps", "post", f"/api/opportunities/{oid}/suggestions")
+            call("Manager agent suggests actions for the open gaps", "post", f"/api/opportunities/{oid}/suggestions")
             sug = api.get(f"/api/opportunities/{oid}").json()["suggestions"]
             for x in sug:
                 say(f"         - {x['title']}")
@@ -233,7 +233,7 @@ def main(argv: list[str] | None = None, prepare=None) -> int:
         say(f"         {'Matches the story.' if match else 'Differs from the story. Look at the proposals above: the AI read the notes differently.'}")
 
     say("Learning loop")
-    fb = call("Feedback agent reviews recent decisions", "post", "/api/direction/analyze")
+    fb = call("Direction agent reviews recent decisions", "post", "/api/direction/analyze")
     if fb:
         say("         " + fb["summary"][:160])
     runs = [x for x in api.get("/api/agent-runs", params={"limit": 50}).json() if not x["model"].startswith("demo")]

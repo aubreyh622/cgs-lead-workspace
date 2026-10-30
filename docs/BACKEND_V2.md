@@ -42,20 +42,17 @@ The v2 backend joins three things into one product: the Step 1–8 prototype, Au
 
 ## Agent names
 
-Each agent is named after its job. The blueprint's ids (A1-A4) are kept here only to map older documents.
+Each agent is named after its job. The blueprint's ids (A1-A4) are kept here only to map older documents. Six agents since 30 Oct 2026: the reply classifier became part of the evidence agent, the next-step agent part of the manager (its next-actions step) and the feedback agent part of the direction agent, so each piece of work has one owner. Their prompts keep their version names; lessons approved for a former agent apply to the agent that took over.
 
 | Agent | Job | Step | Code | Blueprint id |
 |---|---|---|---|---|
 | Discovery agent | Finds companies in recent news that match the research direction | 1 | `api/discovery_agent.py` | |
-| Direction agent | Turns CGS's solutions into the problems discovery watches for (a proposal a person approves) | 1 | `api/direction_agent.py` | |
+| Direction agent | Owns the research direction: turns CGS's solutions into the problems discovery watches for, and reviews consultants' accept and reject reasons weekly to propose changes (each a proposal a person approves) | 1 | `api/direction_agent.py`, `api/live_agents.py` (feedback review) | |
 | Research agent | Everything looked up on the public web about one company: writes the brief for a picked company, finds the person in a role when another agent asks, and checks for news since the brief | 2-6 | `api/research_agent.py` | |
-| Outreach agent | Writes first emails, follow-ups and reconnect drafts | 5 | `api/outreach_agent.py` | A1 |
-| Reply classifier | Labels a client reply (meet, need, defer, decline ...) | 5-6 | `api/live_agents.py` | A2 (reply part) |
-| Evidence agent | Reads conversation notes and proposes scores, conditions and blockers with quotes | 6 | `api/evidence_agent.py` | A2 + A3 |
-| Next-step agent | Suggests up to three next actions for the open gaps (with the manager on: only the person's button and the fallback) | 7 | `api/next_step_agent.py` | A4 |
+| Outreach agent | Writes the first email on its own after Step 4, follow-ups and reconnect drafts; a person approves and sends | 5 | `api/outreach_agent.py` | A1 |
+| Evidence agent | Labels each client reply (meet, need, defer, decline ...), reads conversation notes and proposes scores, conditions and blockers with quotes | 5-6 | `api/evidence_agent.py`, `api/live_agents.py` (reply labels) | A2 + A3 |
 | Reminder rules | Not AI: reminds the owner when Ready, suggests nurture on the month the client named | 6-8 | `api/autonomy.py` | A4 (reminders) |
-| Feedback agent | Reviews accept and reject reasons weekly and may propose a direction change | 1 | `api/live_agents.py` | |
-| Manager agent | Runs the agent team: a daily look over every open opportunity, and a close look (triage) at one opportunity when something happens to it. Remembers each opportunity, decides on the agents' requests to each other, plans next actions, writes each owner one message | all | `api/manager_agent.py`, `api/manager_triage.py` | |
+| Manager agent | Runs the agent team: a daily look over every open opportunity, and a close look (triage) at one opportunity when something happens to it. Remembers each opportunity, decides on the agents' requests to each other, plans next actions (its next-actions step also answers the person's "suggest" button and stands in when the triage cannot run), writes each owner one message | all | `api/manager_agent.py`, `api/manager_triage.py`, `api/next_step_agent.py` | A4 |
 
 Prompt versions follow the same names (`outreach-agent-1.0`, `evidence-agent-1.0`, `next-step-agent-1.0`, `research-agent-1.1`). Agent runs saved before the rename keep their old names in the history.
 
@@ -82,8 +79,8 @@ Live checks with the real AI on the synthetic internet: `Check AI.cmd`, `Check R
 - `AI Exam.cmd` (`python -m api.ai_exam [models]`) grades the evidence agent on 6 synthetic notes with known answers (`api/seed/ai_exam.json`). It reports hits, misses, over-claims and wrong values, and can compare several models side by side.
 - Code checks for the other agents:
   - Outreach agent: every cited fact must exist in the brief, and the draft may not make prices, fees, percentages, guarantees or promises.
-  - Next-step agent: at most 3 actions, each tied to an open gap, with no owners or dates.
-  - Feedback agent: whitelisted fields only, and at least 3 supporting records.
+  - Manager agent, next actions: at most 3 actions, each tied to an open gap, with no owners or dates.
+  - Direction agent, feedback review: whitelisted fields only, and at least 3 supporting records.
 
 ## Autonomous agents (step 6g)
 
@@ -91,12 +88,13 @@ Agents work like employees: they notice work, do it, and hand the result to a pe
 
 | How | Example | Who acts |
 |---|---|---|
+| Event | A lead is accepted at Step 4 | Outreach agent writes the first email into the owner's inbox: approve and send (one click, the person gives the address), or apply it to edit in Step 5. Skipped when a person already wrote a draft |
 | Event | A reply says "not now" | Reminder rules suggest nurture until the month the client named |
-| Event | The approver returns a pack | Next-step agent suggests next actions, or passes on the approver's question (the manager's triage when the manager is on) |
+| Event | The approver returns a pack | The manager's next-actions step suggests next actions, or passes on the approver's question (the manager's triage when the manager is on) |
 | Event | The rules now say Ready | Reminder rules remind the owner to submit |
 | Patrol (daily) | No reply 7 days after the email | Outreach agent writes a follow-up draft |
 | Patrol (daily) | A nurture review date is reached | Research agent checks for news since the last brief |
-| Patrol (daily) | No progress for 14 days | Next-step agent suggests next actions (the manager's triage when the manager is on) |
+| Patrol (daily) | No progress for 14 days | The manager's next-actions step suggests next actions (the manager's triage when the manager is on) |
 | Patrol (daily) | A promise in the manager's memory is past its date | The manager's triage (shadow or on) |
 | Patrol (weekly) | — | Discovery agent runs a round; feedback agent reviews decisions |
 | Handoff | Notes say "the CEO would decide" and the CEO is not a contact | Evidence agent asks the research agent to find the CEO |
@@ -105,7 +103,7 @@ Agents work like employees: they notice work, do it, and hand the result to a pe
 
 - **Task board** (`agent_jobs`): every piece of work, with who does it, why, who asked, and the result.
 - **Inbox** (`inbox_items`): what agents prepared for each owner (or the team). A person applies, finishes or dismisses each item. Applying is the only way anything changes: facts join the brief, a contact is added, the opportunity moves to nurture. Drafts are never sent by the workspace.
-- **Worker**: started by `python -m api.main` when `AGENT_WORKER=on` (default). It patrols once a day after `patrol_hour` (or at once after time travel) and works through the board one job at a time, pausing between AI calls for the free tier. Each job is claimed in one database update, so the worker and a "run now" request never run the same job twice. While the day's AI budget is used up, AI jobs wait and jobs that need no AI still run. Temporary AI errors are retried up to 3 times, after 60 s and then 120 s.
+- **Worker**: started by `python -m api.main` when `AGENT_WORKER=on` (default). It patrols once a day after `patrol_hour` (or at once after time travel) and works through the board in **parallel lanes** (`AGENT_LANES`, default 3; 1 = one job at a time): while the outreach agent writes a draft for one opportunity, the discovery agent can search and another opportunity's job can run. Rules: never two jobs for the same opportunity at once, never two of the same company-wide job (two discovery rounds, two daily reviews); only lane 0 patrols and collects research; each lane pauses between jobs for the AI provider's rate limit. Each job is claimed in one database update, so two lanes (or a lane and a "run now" request) never run the same job. The daily AI budget is checked before every AI request, so parallel lanes can pass it by a request or two. A demo reset waits until every lane has finished its job. Live check (30 Oct): a discovery round, a first draft and a follow-up draft ran at once and finished in 30 s instead of 66 s one after another. While the day's AI budget is used up, AI jobs wait and jobs that need no AI still run. Temporary AI errors are retried up to 3 times, after 60 s and then 120 s.
 - **Budget counting**: each AI request counts toward the daily budget (discovery makes two), including requests that failed.
 - **Personal directions**: a consultant-scope proposal changes the proposer's own direction, whoever approves it. Versions are named `<shared>-<person>-p<n>` (for example `v4-alex-morgan-p2`). When a shared change is approved, each person's own changes are carried onto the new shared version, so shared exclusions always reach everyone.
 - **Brakes**: daily AI budget (`AGENT_AI_DAILY_BUDGET`, also `PATCH /api/agents`); at most 3 handoffs per opportunity per day and chains of 2; pause switch. Every job and AI call is logged.
@@ -267,7 +265,7 @@ weekly `discovery_round` job both use it. The agent picks its own searches inste
   what was checked before the stop is kept.
 - Every step is saved with the run (`GET /api/agent-runs/{id}`), and the last round is written to `runtime/discovery-last-round.json`.
 
-## Next-step agent (multi-agent step 5)
+## The manager's next-actions step (multi-agent step 5; was the next-step agent)
 
 `api/next_step_agent.py`, prompt version `next-step-agent-1.0`. Used in live mode by `POST /api/opportunities/{id}/suggestions` and by
 the `gap_actions` job (a stalled opportunity, or a pack the approver returned). Demo mode keeps the fixed list in
@@ -527,9 +525,7 @@ Permissions have three layers, strongest first:
    | Research agent | on | - | - | - | allowed |
    | Outreach agent | on | on | allowed | - | - |
    | Evidence agent | - | on | allowed | - | - |
-   | Next-step agent | - | on | - | - | - |
    | Manager agent | - | on | - | - | - |
-   | Feedback agent, Reply classifier | - | - | - | - | - |
 
 2. **Switches people set in the workspace** (for a management screen; stored in `connector_switches`, every change kept in
    `permission_changes` and the activity log):

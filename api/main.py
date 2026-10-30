@@ -138,7 +138,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.db = Database(settings.database_url)
-    app.state.work_lock = threading.Lock()  # the background worker holds it while it works; a demo reset waits for it
+    from api.jobs import WorkGate
+    app.state.work_lock = WorkGate()  # the background lanes share it while they work; a demo reset waits for all of them
     app.state.demo_data = check_database_mode(app.state.db, settings)
     if settings.app_mode == "demo":
         load_demo(app.state.db)  # only fills an empty database

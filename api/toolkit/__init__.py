@@ -58,10 +58,7 @@ CEILING: dict[str, dict[str, str]] = {
     "Research agent": {"web": "on", "crm": "allowed"},
     "Outreach agent": {"web": "on", "library": "on", "mail": "allowed"},
     "Evidence agent": {"library": "on", "mail": "allowed"},
-    "Next-step agent": {"library": "on"},
     "Manager agent": {"library": "on"},  # its triage plans next actions, including the service-fit gap
-    "Feedback agent": {},
-    "Reply classifier": {},
 }
 
 

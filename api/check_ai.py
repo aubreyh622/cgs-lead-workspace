@@ -100,7 +100,7 @@ def workflow(settings) -> bool:
     api = TestClient(create_app(Settings(app_mode="live", db_path=db, ai_provider=settings.ai_provider, ai_model=settings.ai_model)))
     me = {"X-User": "Alex Morgan"}
     steps = [
-        ("Reply classifier labels a reply (Bluegate)", lambda: api.post("/api/opportunities/bluegate/outreach/reply", json={"text": "Thanks Alex, happy to talk. Does Tuesday work?"}, headers=me),
+        ("Evidence agent labels a reply (Bluegate)", lambda: api.post("/api/opportunities/bluegate/outreach/reply", json={"text": "Thanks Alex, happy to talk. Does Tuesday work?"}, headers=me),
          lambda j: f"label '{j.get('replyLabel')}'"),
         ("Evidence agent reads call notes", lambda: api.post("/api/opportunities/bluegate/notes", json={"text": BLUEGATE_NOTE}, headers=me),
          lambda j: f"{j.get('proposals')} proposals, {j.get('droppedForInvalidQuote')} dropped for bad quotes"),
@@ -118,10 +118,10 @@ def workflow(settings) -> bool:
         a = api.get("/api/opportunities/bluegate").json()["assessment"]
         say(f"      {'Person accepts all; rules engine':<34} Q {a['ql']:g}-{a['qu']:g}, coverage {a['coverage']}%, {a['readiness']}")
     for name, call, show in [
-        ("Next-step agent suggests next actions", lambda: api.post("/api/opportunities/bluegate/suggestions", headers=me), lambda j: f"{j.get('suggestions')} suggestions"),
+        ("Manager agent suggests next actions", lambda: api.post("/api/opportunities/bluegate/suggestions", headers=me), lambda j: f"{j.get('suggestions')} suggestions"),
         ("Outreach agent drafts outreach (Halvorsen)", lambda: api.post("/api/opportunities/halvorsen/outreach/generate", json={"tone": "brief"}, headers=me),
          lambda j: f"subject '{j.get('subject', '')[:50]}'"),
-        ("Feedback agent reviews feedback", lambda: api.post("/api/direction/analyze", headers=me), lambda j: (j.get("summary") or "")[:70]),
+        ("Direction agent reviews feedback", lambda: api.post("/api/direction/analyze", headers=me), lambda j: (j.get("summary") or "")[:70]),
     ]:
         r = call()
         good = r.status_code == 200

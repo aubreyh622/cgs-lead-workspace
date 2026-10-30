@@ -116,7 +116,8 @@ def test_no_reply_for_a_week_gets_a_follow_up_draft_and_nothing_is_sent(live):
     assert any(j["kind"] == "followup_draft" and j["opportunityId"] == oid for j in found)
     assert {j["kind"] for j in found} >= {"discovery_round", "feedback_review"}  # weekly rounds
     ran = api.post("/api/agents/run", headers=ME).json()["ran"]
-    assert all(r["status"] == "done" for r in ran), ran
+    # the first email was already sent by hand, so the first-draft job queued at Step 4 skips itself
+    assert all(r["status"] == "done" or (r["kind"] == "first_draft" and r["status"] == "skipped") for r in ran), ran
     item = next(i for i in inbox(api, "draft") if i["opportunityId"] == oid)
     assert item["owner"] == "Alex Morgan" and item["data"]["purpose"] == "followup"
     o = api.get(f"/api/opportunities/{oid}").json()

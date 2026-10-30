@@ -9,6 +9,8 @@ from datetime import date, datetime, timedelta, timezone
 import hashlib
 import json
 import os
+import threading
+import time
 import uuid
 
 from sqlalchemy import func, select, update
@@ -17,15 +19,16 @@ from api import models as m
 
 # kind -> (agent, uses AI, what the agent does)
 KINDS = {
+    "first_draft": ("Outreach agent", True, "Writes the first email once a lead is accepted at Step 4; the owner approves and sends it"),
     "followup_draft": ("Outreach agent", True, "Writes a follow-up draft when a sent email has no reply"),
     "reconnect_draft": ("Outreach agent", True, "Writes a reconnect draft that cites the company's latest news"),
     "research_refresh": ("Research agent", True, "Checks a company again for news since the last brief"),
     "person_lookup": ("Research agent", True, "Looks for a person another agent needs (for example the CFO who approves)"),
-    "gap_actions": ("Next-step agent", True, "Suggests the next actions for an opportunity that has stalled or was returned"),
+    "gap_actions": ("Manager agent", True, "Suggests the next actions for an opportunity that has stalled or was returned"),
     "defer_nurture": ("Reminder rules", False, "Suggests moving a deferred opportunity to nurture on the month the client named"),
     "ready_reminder": ("Reminder rules", False, "Reminds the owner that the rules say Ready and the pack is not submitted"),
     "discovery_round": ("Discovery agent", True, "Finds new candidate companies once a week"),
-    "feedback_review": ("Feedback agent", True, "Reviews recent decisions once a week and may propose a direction change"),
+    "feedback_review": ("Direction agent", True, "Reviews recent decisions once a week and may propose a direction change"),
     "mail_sync": ("Mail rules", False, "Checks the email threads for client replies and for drafts a person sent from Gmail"),
     "crm_sync": ("CRM rules", False, "Writes what people changed to the CRM (Insightly) when that could not happen at once"),
     "manager_review": ("Manager agent", True, "Looks over every open opportunity once a day and decides which agent should do what"),
@@ -161,7 +164,7 @@ def carry_out_request(s, today: date, opp_id: str, request: dict, reason: str = 
 def ask_for_next_actions(s, today: date, opp_id: str, trigger: str, reason: str, requested_by: str = "", live: bool = False,
                          event: str = "stalled") -> m.AgentJob | None:
     """Next actions for an opportunity: with the manager on, its triage plans them (one message to the owner);
-    otherwise the next-step agent does."""
+    otherwise the manager's next-actions step does (api/next_step_agent.py)."""
     if manager_mode(s, live) == "on":
         return triage(s, today, opp_id, event, reason, trigger=trigger, requested_by=requested_by)
     return enqueue(s, today, "gap_actions", opp_id, trigger, reason, requested_by=requested_by)
@@ -226,3 +229,41 @@ def due(job_retry_at: datetime | None, now: datetime | None = None) -> bool:
 
 def finish(job: m.AgentJob, status: str, result: str = "", error: str | None = None) -> None:
     job.status, job.result, job.error, job.finished_at = status, result, error, datetime.now(timezone.utc)
+
+
+class WorkGate:
+    """The background lanes work side by side (shared); a demo reset needs them all stopped (exclusive).
+    A lane takes its shared turn with "with gate:"; the reset uses acquire(timeout) and release(), the same calls as a Lock."""
+
+    def __init__(self):
+        self._c = threading.Condition()
+        self._active, self._exclusive = 0, False
+
+    def __enter__(self):
+        with self._c:
+            while self._exclusive:
+                self._c.wait()
+            self._active += 1
+        return self
+
+    def __exit__(self, *exc):
+        with self._c:
+            self._active -= 1
+            self._c.notify_all()
+
+    def acquire(self, timeout: float = -1) -> bool:
+        end = None if timeout is None or timeout < 0 else time.monotonic() + timeout
+        with self._c:
+            while self._active or self._exclusive:
+                left = None if end is None else end - time.monotonic()
+                if left is not None and left <= 0:
+                    return False
+                self._c.wait(left)
+            self._exclusive = True
+            return True
+
+    def release(self) -> None:
+        with self._c:
+            self._exclusive = False
+            self._c.notify_all()
+

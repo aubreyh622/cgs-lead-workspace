@@ -181,7 +181,7 @@ def main(prepare=None) -> int:
         first = (msg[0]["data"].get("suggestions") or [{}])[0] if msg else {}
         check(first.get("gap_key") == "approver", "the first next action answers the approver", first.get("title", "no message"))
         check(not [j for j in api.get("/api/agents/jobs", params={"opportunity": "northstar"}).json() if j["kind"] == "gap_actions"],
-              "no fallback to the next-step agent was needed")
+              "no fallback to the next-actions step was needed")
     except Exception as e:
         check(False, "part 2 ran to the end", f"{type(e).__name__}: {e}")
 

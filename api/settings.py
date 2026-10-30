@@ -39,6 +39,7 @@ class Settings:
     directors: tuple[str, ...] = ()  # who may act as Director of Operations at Step 8; empty = anyone (until CGS names them)
     admins: tuple[str, ...] = ()     # who may change the agents' connector permissions; empty = any workspace user
     agent_worker: bool = False   # True = agents patrol and work in the background (the server turns it on; tests leave it off)
+    agent_lanes: int = 3         # background work in parallel: jobs for different opportunities at once (1 = one at a time)
     mail_provider: str = ""  # off | mock | gmail; empty = mock in demo mode, off in live mode (api/toolkit/mail.py)
     crm_provider: str = ""   # off | mock | insightly; empty = mock in demo mode, off in live mode (api/toolkit/crm.py)
     research_engine: str = "agent"  # Steps 2-3: agent (api/research_agent.py) | pipeline (Aubrey's pipeline, or one request on the synthetic web)
@@ -48,6 +49,8 @@ class Settings:
             raise ValueError(f"APP_MODE must be one of {APP_MODES}, not {self.app_mode!r}.")
         if self.crm_mode not in CRM_MODES:
             raise ValueError(f"CRM_MODE must be one of {CRM_MODES}, not {self.crm_mode!r}.")
+        if not 1 <= self.agent_lanes <= 8:
+            raise ValueError(f"AGENT_LANES must be 1 to 8, not {self.agent_lanes}.")
         if self.research_engine not in ("agent", "pipeline"):
             raise ValueError(f"RESEARCH_ENGINE must be agent or pipeline, not {self.research_engine!r}.")
         if self.mail_provider not in ("", "off", "mock", "gmail"):
@@ -72,6 +75,7 @@ def load_settings(env_file: Path | None = ROOT / ".env") -> Settings:
         ai_provider=os.environ.get("AI_PROVIDER", "gemini").strip().lower(),
         ai_model=os.environ.get("AI_MODEL", "").strip(),
         agent_worker=os.environ.get("AGENT_WORKER", "on").strip().lower() in ("on", "1", "true", "yes"),
+        agent_lanes=int(os.environ.get("AGENT_LANES", "3") or 3),
         research_engine=os.environ.get("RESEARCH_ENGINE", "agent").strip().lower() or "agent",
         mail_provider=os.environ.get("MAIL_PROVIDER", "").strip().lower(),
         crm_provider=os.environ.get("CRM_PROVIDER", "").strip().lower(),

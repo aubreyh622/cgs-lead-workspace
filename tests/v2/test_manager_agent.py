@@ -67,7 +67,7 @@ def test_shadow_mode_decides_and_compares_but_queues_nothing(app):
     assert ("followup_draft", "summit") in [(x["kind"], x["opportunityId"]) for x in cmp["rulesOnly"]]
     assert cmp["refused"][0]["kind"] == "gap_actions" and "stage contacted" in cmp["refused"][0]["refusal"]
     assert cmp["notes"][0]["opportunityId"] == "northstar"
-    run = next(r for r in api.get("/api/agent-runs").json() if r["agent"] == "Manager agent")
+    run = next(r for r in api.get("/api/agent-runs").json() if r["agent"] == "Manager agent" and r["prompt"].startswith("manager-agent"))
     assert run["prompt"] == "manager-agent-1.2" and run["steps"]
 
 

@@ -1,4 +1,6 @@
-"""Next-step agent, tool-using version (live mode, Step 7): suggests the next actions for an opportunity.
+"""The manager's next-actions step (once the next-step agent), tool-using (live mode, Step 7): suggests the next actions for
+an opportunity. It runs as the Manager agent: the patrol and a returned pack hand it to the manager's triage when the manager
+is on; this step is the person's "suggest" button and the fallback. Its prompt keeps its version name (next-step-agent-1.x).
 
 It looks at the situation (open gaps from the rules engine, open tasks, how long nothing has moved, and the approver's
 question when a pack came back), reads the conversation notes and the known contacts when they help, may look up the
@@ -150,7 +152,7 @@ def next_step_agent(c, o: m.Opportunity, rules: dict, approver_q: str = "", why:
             return {"notes": [], "note": "No conversation notes yet."}
         return {"notes": [{"id": n.id, "on": n.on.isoformat(), "type": n.type, "text": n.text[:3000]} for n in notes_rows]}
 
-    lib = toolkit.library_for("Next-step agent", c) if toolkit.allowed("Next-step agent", "library", c.s) else None
+    lib = toolkit.library_for("Manager agent", c) if toolkit.allowed("Manager agent", "library", c.s) else None
 
     def search_library(args):
         found = lib.search(str(args.get("query", "")), k=3)
@@ -187,7 +189,7 @@ def next_step_agent(c, o: m.Opportunity, rules: dict, approver_q: str = "", why:
                         ["gap_key", "title", "reason", "question"]), suggest),
     ]
     from api.lessons import block
-    spec = R.AgentSpec(name="Next-step agent", version=VERSION, system=SYSTEM + block(c.s, "Next-step agent", c.today), tools=tools,
+    spec = R.AgentSpec(name="Manager agent", version=VERSION, system=SYSTEM + block(c.s, "Manager agent", c.today), tools=tools,
                        finish=R.Tool("finish", "Done. One sentence on what you suggested.", R.params({"summary": s}), finish),
                        max_steps=8, max_tool_calls=16)
     return spec, record

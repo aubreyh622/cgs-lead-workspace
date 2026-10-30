@@ -1,4 +1,4 @@
-"""Real AI agents (live mode). Step 5: the evidence agent and the reply classifier.
+"""Real AI agents (live mode). Step 5: the evidence agent (including its reply labels).
 
 The model only proposes. Code checks every proposal before a person sees it:
   - every quote must appear word for word in the notes (no invented or altered quotes)
@@ -239,7 +239,7 @@ def write_outreach(provider: Provider, brief: dict, contact: dict, sender: str, 
     return {"subject": data["subject"].strip(), "body": data["body"].strip()}, usage
 
 
-# ---------- Next-step agent: next actions (Step 7) ----------
+# ---------- next actions (Step 7), the manager's next-actions step ----------
 ACTIONS_PROMPT_VERSION = "next-step-live-1.0"
 ACTIONS_SYSTEM = """You suggest up to three next actions for a consultant to close the most important open qualification gaps.
 Rules:
@@ -269,7 +269,7 @@ def next_actions(provider: Provider, gaps: list[dict], notes: list[str], existin
     return out, usage
 
 
-# ---------- feedback agent (learning loop) ----------
+# ---------- feedback review by the direction agent (learning loop) ----------
 FEEDBACK_PROMPT_VERSION = "feedback-live-1.0"
 FEEDBACK_SYSTEM = """You review why consultants accepted, returned or rejected research candidates, and decide whether the research direction should change.
 Rules:

@@ -234,7 +234,7 @@ def manager_agent(c, mode: str) -> tuple[R.AgentSpec, dict]:
             m.AgentJob.kind.in_(("gap_actions", "manager_triage")), m.AgentJob.opportunity_id == o.id, m.AgentJob.created_on == today,
             m.AgentJob.status.in_(("queued", "running", "done")))).first()
         if busy:
-            why = ("The next-step agent is sending this owner next actions for it today." if busy.kind == "gap_actions"
+            why = ("The next-actions step is sending this owner next actions for it today." if busy.kind == "gap_actions"
                    else "Your close look at this opportunity today (triage) writes to its owner.")
             decide("note", o, text[:600], "refused", why)
             raise R.ToolError(f"{why} Do not add a separate note. If it should consider something, delegate gap_actions with "

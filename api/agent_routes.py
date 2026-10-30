@@ -31,6 +31,7 @@ def agents(request: Request):
                 "aiCallsToday": J.ai_calls_today(s, today), "aiBudget": int(J.setting(s, "agent_ai_budget")),
                 "lastPatrol": J.setting(s, "last_patrol"), "patrolHour": int(J.setting(s, "patrol_hour")),
                 "queued": s.scalar(select(func.count()).select_from(m.AgentJob).where(m.AgentJob.status == "queued")), "worker": bool(getattr(request.app.state, "worker", None)),
+                "lanes": getattr(getattr(request.app.state, "worker", None), "lanes", 0),
                 "managerMode": J.setting(s, "manager_mode"), "agents": list(team.values())}
 
 
@@ -153,7 +154,7 @@ def lesson_findings(request: Request):
 
 
 class LessonIn(BaseModel):
-    agent: str = Field(..., description="Evidence agent, Outreach agent, Next-step agent or Manager agent")
+    agent: str = Field(..., description="Evidence agent, Outreach agent or Manager agent")
     text: str = Field(..., description="One or two sentences to the agent: in which situation, what to do")
     why: str = Field(..., description="What was seen that the lesson answers")
 

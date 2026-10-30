@@ -104,7 +104,7 @@ def test_live_suggestions_run_the_agent_and_save_its_steps(app):
     assert api.post("/api/opportunities/meridian/suggestions", headers=ME).json()["suggestions"] == 2
     o = api.get("/api/opportunities/meridian").json()
     assert len(o["suggestions"]) == 2 and all(x["title"].startswith("Ask about") and x["question"] for x in o["suggestions"])
-    run = next(r for r in api.get("/api/agent-runs").json() if r["agent"] == "Next-step agent")
+    run = next(r for r in api.get("/api/agent-runs").json() if r["agent"] == "Manager agent")
     assert run["prompt"] == "next-step-agent-1.0" and run["calls"] == app.state.ai.turns == 3
     assert [s["type"] for s in api.get(f"/api/agent-runs/{run['id']}").json()["trace"]][-1] == "finish"
 

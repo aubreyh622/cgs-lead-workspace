@@ -23,7 +23,9 @@ from sqlalchemy import select
 from api import models as m
 from api import scorecard as SC
 
-TARGETS = ("Evidence agent", "Outreach agent", "Next-step agent", "Manager agent")  # agents whose prompts take lessons
+TARGETS = ("Evidence agent", "Outreach agent", "Manager agent")  # agents whose prompts take lessons
+FORMER = {"Manager agent": ("Next-step agent",), "Evidence agent": ("Reply classifier",), "Direction agent": ("Feedback agent",)}
+# agents merged into another on 30 Oct 2026: lessons approved for them now apply to the agent that took over their work
 MAX_ACTIVE = 5          # approved lessons per agent
 MAX_PER_REVIEW = 3      # lessons the weekly review may propose
 TEXT_MIN, TEXT_MAX = 20, 400
@@ -177,7 +179,7 @@ def retire(s, today: date, lesson_id: int, reason: str, by: str) -> m.AgentLesso
 def block(s, agent: str, today: date | None = None) -> str:
     """The approved lessons for an agent, as a section for the end of its prompt ("" when there are none).
     Each use is counted, so a person can see which lessons are in play."""
-    rows = list(s.scalars(select(m.AgentLesson).where(m.AgentLesson.agent == agent, m.AgentLesson.status == "approved")
+    rows = list(s.scalars(select(m.AgentLesson).where(m.AgentLesson.agent.in_((agent, *FORMER.get(agent, ()))), m.AgentLesson.status == "approved")
                           .order_by(m.AgentLesson.id)))
     if not rows:
         return ""

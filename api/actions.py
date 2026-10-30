@@ -568,7 +568,7 @@ def problems(body: ProblemsIn, c: S.Ctx = Actor):
     return S.propose_problems(c, body.scope)
 
 
-@router.post("/direction/analyze", tags=["learning loop"], summary="Ask the feedback agent to review eligible feedback")
+@router.post("/direction/analyze", tags=["learning loop"], summary="Ask the direction agent to review eligible feedback")
 def analyze(scope: Literal["theme", "consultant"] = "theme", c: S.Ctx = Actor):
     return S.analyze_feedback(c, scope)
 

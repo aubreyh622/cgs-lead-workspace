@@ -222,7 +222,7 @@ def run_agent(c: Ctx, agent: str, o: m.Opportunity | None, prompt: str, fn, call
         c.s.commit()  # keep the failure record even though the request fails
         code = "agent_unavailable" if isinstance(e, A.AgentUnavailable) else f"ai_{e.kind}"
         raise ActionError(str(e), 503, code)
-    # the real number of AI requests (discovery makes two; the next-step agent with no open gaps makes none)
+    # the real number of AI requests (discovery makes two; the next-actions step with no open gaps makes none)
     rid = record_run(c, agent, o, prompt, getattr(p, "calls", 1), subject=subject, model=p.label, usage=usage)
     if trace:
         c.s.get(m.AgentRun, rid).trace = trace
@@ -618,6 +618,7 @@ def step4(c: Ctx, opp_id: str, b) -> None:
         c.s.add(m.Decision(opportunity_id=o.id, step=4, decision="Accepted", by=c.actor, note=f"Rating {b.rating}, owner {b.owner}", on=c.today))
         log(c, o.id, "h", f"Accepted by {c.actor}: rating {b.rating}, owner {b.owner}")
         CRM.mark(c, o)
+        J.enqueue(c.s, c.today, "first_draft", o.id, "event", f"Accepted at Step 4 by {c.actor}: write the first email", requested_by=c.actor)
     elif b.decision == "return":
         q = need_text(b.questions, "What the agent should find out")
         o.stage = "researching"
@@ -1087,7 +1088,7 @@ def record_reply(c: Ctx, opp_id: str, text: str, on: date | None) -> dict:
     log(c, o.id, "h", f"Reply recorded by {c.actor}; stage set to Active")
     CRM.mark(c, o)
     try:
-        label, _ = run_agent(c, "Reply classifier", o, "reply-demo-1.4", lambda: A.label_reply(text),
+        label, _ = run_agent(c, "Evidence agent", o, "reply-demo-1.4", lambda: A.label_reply(text),
                              live=lambda p: L.label_reply(p, text), live_prompt=L.LABEL_PROMPT_VERSION)
     except ActionError as e:
         o.reply_label = "pending"
@@ -1097,7 +1098,7 @@ def record_reply(c: Ctx, opp_id: str, text: str, on: date | None) -> dict:
     log(c, o.id, "a", f"Evidence agent labeled the reply: {label}")
     notify_manager(c, o, "reply", f"The client replied ({label})")
     if label == "defer":
-        J.enqueue(c.s, c.today, "defer_nurture", o.id, "event", "The client's reply says not now, but later", requested_by="Reply classifier")
+        J.enqueue(c.s, c.today, "defer_nurture", o.id, "event", "The client's reply says not now, but later", requested_by="Evidence agent")
     return {"replyLabel": label}
 
 
@@ -1297,7 +1298,7 @@ def update_need(c: Ctx, opp_id: str, fields: dict) -> None:
 
 # ---------- Step 7: actions, tasks, packs ----------
 def suggest_actions(c: Ctx, opp_id: str, why: str = "", budget=None) -> int:
-    """Step 7: up to 3 next actions. Demo: one per gap from a fixed list. Live: the next-step agent (api/next_step_agent.py).
+    """Step 7: up to 3 next actions. Demo: one per gap from a fixed list. Live: the manager's next-actions step (api/next_step_agent.py).
     why: what prompted the request (a stall, a returned pack). budget(provider) -> may_call, for work the agents start on their own."""
     from api import next_step_agent as NS
     from api import agent_runtime as R
@@ -1318,7 +1319,7 @@ def suggest_actions(c: Ctx, opp_id: str, why: str = "", budget=None) -> int:
             raise LLMError(f"The action agent suggested nothing that passes the checks ({out.reason or out.status}).", "invalid_output")
         return record["kept"], out.usage
 
-    items, _ = run_agent(c, "Next-step agent", o, "next-step-demo-1.0", lambda: A.next_actions(gaps, taken),
+    items, _ = run_agent(c, "Manager agent", o, "next-step-demo-1.0", lambda: A.next_actions(gaps, taken),
                          subject=o.company.name, live=live, live_prompt=NS.VERSION, trace=trace)
     save_suggestions(c, o, items, "Action agent")
     return len(items)
@@ -1576,7 +1577,7 @@ def analyze_feedback(c: Ctx, scope: str) -> dict:
     eligible = [f for f in latest.values() if f.direction_version == base.version and
                 (f.scope in ("theme", "cgs") if shared else f.scope == "consultant" and f.by == c.actor)]
     current = {f: getattr(base, f) for f in WHITELIST}
-    res, _ = run_agent(c, "Feedback agent", None, "manager-1.1", lambda: A.analyze_feedback(eligible, base.buyer_roles), subject=f"Direction {base.version}",
+    res, _ = run_agent(c, "Direction agent", None, "manager-1.1", lambda: A.analyze_feedback(eligible, base.buyer_roles), subject=f"Direction {base.version}",
                        live=lambda p: L.analyze_feedback(p, eligible, current), live_prompt=L.FEEDBACK_PROMPT_VERSION)
     created = None
     if res["proposal"]:

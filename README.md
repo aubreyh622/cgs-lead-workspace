@@ -14,14 +14,15 @@ on the team's own Insightly test account with invented companies. Lead quality a
 | 1 Discover | Finds companies in recent news that match CGS's research direction (the problems CGS solves) | Discovery agent, with a direction a person approves |
 | 2–3 Research | Writes a brief per company: dated, quoted facts with sources, why now, why CGS, unknowns, a contact only if a source names one | Research agent |
 | 4 Accept | A consultant accepts (owner, rating, next step), returns with questions, or rejects with a reason. Reasons feed back into the direction | Person |
-| 5 Contact | Drafts the first email, follow-ups and reconnect emails that cite the brief; the person sees the exact email and sends it | Outreach agent drafts, person sends |
-| 6 Converse | Labels replies; reads call notes and proposes BANTHE scores, conditions and blockers, each with a word-for-word quote | Reply classifier, evidence agent; person accepts or edits |
-| 7 Assess | The rules engine says whether the opportunity is Ready; the next-step agent suggests what to do about the gaps | Rules (no AI), next-step agent |
+| 5 Contact | Once a lead is accepted, drafts the first email on its own, then follow-ups and reconnect emails that cite the brief; the person approves the exact email and sends it in one click | Outreach agent drafts, person approves and sends |
+| 6 Converse | Labels replies; reads call notes and proposes BANTHE scores, conditions and blockers, each with a word-for-word quote | Evidence agent; person accepts or edits |
+| 7 Assess | The rules engine says whether the opportunity is Ready; the manager agent suggests what to do about the gaps | Rules (no AI), manager agent |
 | 8 Approve | The qualification pack goes to an approver; approved means Qualification | Person |
 
-A **manager agent** watches the team: a daily look over every open opportunity, a close look at one when something
+Six agents: discovery, direction, research, outreach, evidence and manager. The **manager agent** watches the team: a daily look over every open opportunity, a close look at one when something
 happens to it, a memory per opportunity, and one message per owner. Agents also work on their own (a daily patrol,
-handoffs between agents), but everything they prepare goes to a person's inbox first.
+handoffs between agents), in parallel lanes so one agent's work does not hold up another's, but everything they
+prepare goes to a person's inbox first.
 
 ## Ground rules
 
