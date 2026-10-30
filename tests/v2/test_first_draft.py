@@ -59,3 +59,25 @@ def test_no_second_first_draft_when_a_person_already_wrote_one(tmp_path):
     assert first_draft_item(api) is None
     job = next(j for j in api.get("/api/agents/jobs", params={"opportunity": "corvane"}).json() if j["kind"] == "first_draft")
     assert job["status"] == "skipped" and "already exists" in job["result"]
+
+
+def test_the_first_draft_warns_when_a_colleague_emailed_the_same_person_recently(tmp_path):
+    from datetime import timedelta
+    from api import models as m
+    from api.actions import demo_today
+    api = accepted(tmp_path)
+    app = api.app
+    with app.state.db.session() as s:
+        today = demo_today(s, app.state.settings)
+        name = s.get(m.Opportunity, "corvane").contact.name
+        s.add(m.Company(id="elsewhere", name="Elsewhere Ltd"))
+        s.flush()
+        s.add(m.Contact(id="ct-else", company_id="elsewhere", name=name, title="COO"))
+        s.flush()
+        s.add(m.Opportunity(id="else-1", company_id="elsewhere", contact_id="ct-else", title="Plant review", stage="contacted", owner="Sam Lee"))
+        s.flush()
+        s.add(m.Outreach(opportunity_id="else-1", status="sent", subject="Hello", sent_on=today - timedelta(days=12)))
+        s.commit()
+    api.post("/api/agents/run", headers=ME)
+    item = first_draft_item(api)
+    assert f"{name} (same name; check it is the same person) was already emailed 12 days ago by Sam Lee" in item["body"]

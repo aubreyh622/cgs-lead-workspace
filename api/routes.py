@@ -102,7 +102,8 @@ def agent_run(request: Request, run_id: str):
 def knowledge_search(q: str = Query(..., min_length=2), k: int = Query(5, le=20)):
     from api.knowledge import library
     lib = library()
-    return {"passages": lib.search(q, k), "librarySize": len(lib.passages), "synthetic": all(p.synthetic for p in lib.passages)}
+    found = lib.search(q, k)
+    return {"passages": found, "librarySize": len(lib.passages), "synthetic": all(p.synthetic for p in lib.passages), **lib.status()}
 
 
 @router.get("/stats", tags=["system"], summary="How many records of each kind are stored")

@@ -80,6 +80,7 @@ class Opportunity(Base):
     revenue_high: Mapped[Optional[int]] = mapped_column(Integer)
     need: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)   # team, process, problem, impact, target, service
     target_problem: Mapped[Optional[str]] = mapped_column(Text)  # the direction's problem discovery found it for (a hypothesis)
+    candidate_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)  # the Step 1 candidate it was picked from
     crm_sync: Mapped[str] = mapped_column(String(20), default="local_saved")  # local_saved | sync_pending | synced | sync_failed
     revision: Mapped[int] = mapped_column(Integer, default=1)          # guards against two people saving over each other
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
@@ -149,6 +150,7 @@ class Candidate(Base):
     evidence_quote: Mapped[Optional[str]] = mapped_column(Text)  # the sentence in that source that shows the signal
     problem_id: Mapped[Optional[str]] = mapped_column(String(20))  # which problem in the direction it was found for
     problem: Mapped[Optional[str]] = mapped_column(Text)
+    source_query: Mapped[Optional[str]] = mapped_column(String(200))  # the search that found it (discovery memory)
 
 
 class Outreach(Base):

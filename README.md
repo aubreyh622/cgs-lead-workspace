@@ -22,7 +22,8 @@ on the team's own Insightly test account with invented companies. Lead quality a
 Six agents: discovery, direction, research, outreach, evidence and manager. The **manager agent** watches the team: a daily look over every open opportunity, a close look at one when something
 happens to it, a memory per opportunity, and one message per owner. Agents also work on their own (a daily patrol,
 handoffs between agents), in parallel lanes so one agent's work does not hold up another's, but everything they
-prepare goes to a person's inbox first.
+prepare goes to a person's inbox first. Agents also remember across work: discovery learns which searches led to leads
+people accepted, and outreach and the manager see other CGS work with the same company or person.
 
 ## Ground rules
 
@@ -40,7 +41,7 @@ prepare goes to a person's inbox first.
 | Connector | Used for | Status |
 |---|---|---|
 | Web (Tavily, or the synthetic internet) | Discovery and research | In use |
-| CGS library (`knowledge/`) | Service fit and outreach; a synthetic demo library until CGS shares its own | In use |
+| CGS library (`knowledge/`) | Service fit and outreach. `python -m api.fetch_cgs_site` loads CGS's public website (not committed); keyword search, plus meaning search when an embeddings key is set | In use |
 | Email (Gmail, or a mock mailbox) | Drafts, approve-and-send, reading client replies | In use |
 | CRM (Insightly, or a mock CRM) | Duplicate check; a lead from Step 4, statuses that follow the stages, notes, emails logged by BCC, conversion to an opportunity at Qualification | In use (team test account) |
 | Google Drive | Direction sources | Not built |

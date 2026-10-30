@@ -128,7 +128,25 @@ Agents work like employees: they notice work, do it, and hand the result to a pe
   - use a person's name only when it appears word for word in that result; otherwise the contact is “contact to confirm”,
   - are not on an excluded domain and are not already in the workspace.
 - **Research agent** (`api/research_bridge.py`). Picking a candidate starts Aubrey's research v2 for that company in the background. That pipeline is Gemini + Tavily only, uses her `config/problem_brief.json`, and caps each company at 10 searches, 12 page reads, 18 model calls, 22 credits and 8 minutes. The background worker checks running research every 30 seconds (or press `POST /api/research/sync`) and turns a finished company card into the Step 4 brief: quoted, dated facts with source URLs; flags; and a contact only if the sources name one. A run that produces no brief stays visible as failed or paused. Research needs the company website; set it with `PATCH /api/opportunities/{id}/company`.
-- **CGS library** (`api/knowledge.py`, `GET /api/knowledge?q=`). A keyword (BM25) search over `knowledge/*.md|*.txt` and, while `KNOWLEDGE_DEMO=on`, a synthetic demo library.
+- **CGS library** (`api/knowledge.py`, `GET /api/knowledge?q=`). Searches `knowledge/**/*.md|*.txt` (subfolders too; files
+  and folders starting with `_` are skipped). Each paragraph is one passage the agents may quote word for word.
+  - **CGS's public website**: `python -m api.fetch_cgs_site` downloads 15 public pages of cgsadvisors.com (about, approach,
+    5 services, reports, 7 whitepaper summaries) into `knowledge/cgs-public/`, about 126 passages. Each file starts with
+    `Source: <url>` and `Type: service|whitepaper|...`; a search result carries that `source`. Text repeated on 3 or more
+    pages (menus, footers) is dropped. The folder is not committed (`.gitignore`): it is CGS's own text and the repository
+    is public, so each machine rebuilds it.
+  - `KNOWLEDGE_DEMO=auto` (default): the synthetic demo library is searched only while there are no real documents, so
+    with the public pages in place drafts cite real CGS text and are no longer blocked as "synthetic". `on` keeps the demo,
+    `off` never uses it. `KNOWLEDGE_DIR` moves the folder (the tests point it at an empty place).
+  - **Search** (`KNOWLEDGE_SEARCH`): `bm25` is keyword scoring. `hybrid` adds meaning search with embeddings
+    (`api/embeddings.py`) and merges both rankings by reciprocal-rank fusion, so "a company that just acquired a competitor"
+    also finds a passage about "integration after a merger". `auto` (default) is hybrid when `KNOWLEDGE_EMBEDDINGS` names
+    a provider (`gemini`, `openai` or `voyage`, with its key) and the library has at least 40 passages; otherwise bm25.
+    Results found by meaning carry `matched: "meaning"` or `"keyword+meaning"`. If the embeddings service fails (quota,
+    network), search falls back to keywords for 10 minutes (1 minute after a rate limit) and `GET /api/knowledge` shows `meaning_search_failed`. A repeated search reuses its query vector. Voyage without a payment method allows only a few requests a minute; tested live on 30 Oct 2026 with `voyage-3.5-lite`.
+  - Only public pages and synthetic text are sent to the embeddings service; private CGS documents stay keyword-only
+    until `KNOWLEDGE_EMBED_PRIVATE=allowed` (CGS must agree first). Vectors are cached in `runtime/embeddings-*.json`.
+  - Short acronyms count as search words: AI, ML, HR, BI, UX, and IT when written in capitals.
   - The evidence agent may use a library passage only for the “CGS service fit” condition, quoted word for word.
   - The outreach agent may cite one passage in a draft, but must still cite at least one brief fact.
 - `Check Research.cmd` runs one discovery round and one company's research live, on a throwaway copy of the demo data.
@@ -247,7 +265,7 @@ judgment.
 ## Discovery agent (multi-agent step 4)
 
 `discover_with_agent()` in `api/discovery_agent.py`, prompt version `discovery-agent-1.0`. Step 1 in live mode and the
-weekly `discovery_round` job both use it. The agent picks its own searches instead of running a fixed list.
+weekly `discovery_round` job both use it (now `discovery-agent-1.2`, see Discovery memory below). The agent picks its own searches instead of running a fixed list.
 
 | Tool | What it does |
 |---|---|
@@ -264,6 +282,34 @@ weekly `discovery_round` job both use it. The agent picks its own searches inste
 - Each round is capped at 10 nominations and 16 model turns. The weekly job also stops at the agents' daily AI budget;
   what was checked before the stop is kept.
 - Every step is saved with the run (`GET /api/agent-runs/{id}`), and the last round is written to `runtime/discovery-last-round.json`.
+
+### Discovery memory (prompt `discovery-agent-1.2`)
+
+The agent learns from earlier rounds without any AI summarising: `api/discovery_memory.py` counts it from the database.
+- Each nomination records the search that first found its source (`Candidate.source_query`), and picking a candidate
+  records it on the new opportunity (`Opportunity.candidate_id`).
+- Outcome per candidate: `skipped` at Step 1 (with the reason), `picked` (still being researched or reviewed),
+  `accepted` or `rejected` at Step 4. Candidates nobody has looked at are not counted.
+- Per search and per signal label (grouped ignoring case): nominated, picked, accepted, rejected at Step 4, skipped.
+  Plus the most common skip reasons.
+- Once at least 3 candidates are decided, the `direction` tool includes `what_worked_before`: searches that led to
+  accepted leads, searches that led to nothing (2 or more skips, no pick), the signals, and the skip reasons. The prompt
+  treats them as hints: lean towards what worked, do not repeat a dead search word for word, keep trying new ones.
+- `GET /api/discovery/memory` shows the full counts and exactly what the agent sees (`agentSees`).
+
+### Memory across opportunities
+
+`api/related.py` (no AI) finds other CGS opportunities with the same company, or with the same person: the same email,
+or the same full name (first name alone is not enough). People change jobs, so the person is matched across companies;
+a match by name is labelled so a person checks it is the same individual.
+- `GET /api/opportunities/{id}/related`: the other opportunities (stage, owner, contact, last email, reply label, why
+  related) and `warning` when the same person was emailed in the last 45 days.
+- The outreach agent's `brief` lists them as `other_cgs_opportunities` (prompt `outreach-agent-1.1`: do not repeat what a
+  colleague wrote, do not write as if CGS were new to them).
+- The manager's triage `case` lists them too (prompt `manager-triage-1.3`: tell the owner who else is talking to the
+  same person, do not delegate outreach that would cross it).
+- The first-email inbox item and a Step 5 draft carry the warning ("... was already emailed 12 days ago by Sam Lee
+  about ... Agree with them who writes before sending this one."). It is a warning, not a block.
 
 ## The manager's next-actions step (multi-agent step 5; was the next-step agent)
 
@@ -391,7 +437,7 @@ a promise nobody kept (for example "Daniel will talk to the CEO within two weeks
 | POST | `/api/opportunities/{id}/commitments/{cid}` | A person closes a promise: `{"status": "done" \| "dropped", "why": "..."}` |
 | GET | `/api/manager/decisions?scope=triage&opportunity=` | The triage's decisions (`scope=review` for the daily review's) |
 
-- The daily review's prompt is `manager-agent-1.2` (1.1: memory and triage; 1.2: scorecard); the triage's is `manager-triage-1.2` (1.1: scorecard; 1.2: after the live run, accepting a request is not followed by a second delegation of the same work, work waiting in the owner's inbox is not suggested again, and the message does not repeat the next actions).
+- The daily review's prompt is `manager-agent-1.2` (1.1: memory and triage; 1.2: scorecard); the triage's is `manager-triage-1.3` (1.1: scorecard; 1.2: after the live run, accepting a request is not followed by a second delegation of the same work, work waiting in the owner's inbox is not suggested again, and the message does not repeat the next actions; 1.3: other CGS work with the same company or person).
 - The other agents, reviewed once the manager existed (28 Oct 2026):
   - An agent that cannot deliver what it was asked for reports back with `report()` (`api/autonomy.py`): the research agent
     finding nobody in a role, or no usable news on a nurture review. With the manager on, this goes to the manager's triage

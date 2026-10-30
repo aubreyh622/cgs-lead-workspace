@@ -201,6 +201,9 @@ def do_first_draft(c, job, o):
     synthetic = sorted({x for x in re.findall(r"\[\[([^|\]]+)\|", draft["body"]) if x in lib and lib[x].synthetic})
     warning = (f"Cites a SYNTHETIC demo document ({', '.join(synthetic)}), so it cannot be sent as it is: apply it, replace that "
                "sentence in Step 5, then send." if synthetic else "")
+    from api import related as REL
+    crossing = REL.warning(REL.related(c.s, o, c.today))  # a colleague emailed the same person recently
+    warning = " ".join(x for x in (warning, crossing) if x)
     J.to_inbox(c.s, c.today, job, "draft", f"First email for {contact['name'] or 'the contact'} at {o.company.name}",
                (warning + "\n\n" if warning else "") + draft["body"],
                {"subject": draft["subject"], "body": draft["body"], "purpose": "first", "facts": draft.get("new_facts", []),

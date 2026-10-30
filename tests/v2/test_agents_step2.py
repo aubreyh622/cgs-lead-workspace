@@ -91,7 +91,7 @@ def test_outreach_agent_adds_a_newer_fact_from_a_page_it_read(tmp_path):
     errors = [json.dumps(ai.requests[i]["contents"][-1]) for i in (2, 5)]
     assert "Read the page" in errors[0] and "does not match its source" in errors[1]
     run = next(x for x in api.get("/api/agent-runs").json() if x["agent"] == "Outreach agent")
-    assert run["prompt"] == "outreach-agent-1.0" and run["calls"] == 6
+    assert run["prompt"] == "outreach-agent-1.1" and run["calls"] == 6
 
 
 # ---------- approval gate ----------

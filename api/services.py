@@ -414,6 +414,7 @@ def pick_candidate(c: Ctx, cand_id: str) -> list[str]:
                             team="Digital office", person=cand.person, role=cand.title, source_type="ai",
                             source_note=f"AI recommendation, round {cand.round}, direction {cand.direction_version}",
                             brief=A.candidate_brief(cand, c.actor, c.today), rating=4, company_id="corvane")
+        o.candidate_id = cand.id
         run_research(c, o)
         created.append(o.id)
         if c.demo and not c.s.get(m.Opportunity, "corvane-ops"):
@@ -429,7 +430,7 @@ def pick_candidate(c: Ctx, cand_id: str) -> list[str]:
                             title=f"{cand.signal}: planning support", team="", person=cand.person, role=cand.title, source_type="ai",
                             source_note=f"AI recommendation, round {cand.round}, direction {cand.direction_version}",
                             brief=A.candidate_brief(cand, c.actor, c.today))
-        o.target_problem = cand.problem
+        o.target_problem, o.candidate_id = cand.problem, cand.id
         run_research(c, o)
         created.append(o.id)
     return created
@@ -448,7 +449,8 @@ def recommend(c: Ctx, intent: str, budget=None) -> dict:
         from api.search import search_config
         from api.settings import ROOT
         search = TK.web_for("Discovery agent", c)
-        result, usage, steps = D.discover_with_agent(p, search, direction, intent, known, c.today,
+        from api import discovery_memory as DM
+        result, usage, steps = D.discover_with_agent(p, search, direction, intent, known, c.today, memory=DM.for_agent(c.s),
                                                      debug_file=ROOT / "runtime" / "discovery-last-round.json", config=search_config(),
                                                      may_call=budget(p) if budget else None,
                                                      crm=TK.crm_if_allowed("Discovery agent", c))
@@ -471,7 +473,7 @@ def recommend(c: Ctx, intent: str, budget=None) -> dict:
                             title=x.get("title", ""), why_person=x.get("why_person", "Matches a buyer role in the research direction" if x.get("person") else "No named person in the source"),
                             why=x["why"], signal=x["signal"], signal_date=x["signal_date"], flags=x.get("flags", []), status="new",
                             direction_version=d.version, source_url=x.get("source_url"), evidence_quote=x.get("quote"),
-                            problem_id=x.get("problem_id"), problem=x.get("problem")))
+                            problem_id=x.get("problem_id"), problem=x.get("problem"), source_query=x.get("source_query")))
     return {"round": rnd, "candidates": len(found), "checks": info}
 
 
@@ -723,11 +725,15 @@ def generate_draft(c: Ctx, opp_id: str, angle: str | None, tone: str) -> dict:
         draft["newFacts"] = new_facts
     lib = knowledge.library().by_id
     synthetic = sorted({m.group(1) for m in re.finditer(r"\[\[([^|\]]+)\|", draft["body"]) if m.group(1) in lib and lib[m.group(1)].synthetic})
+    warnings = []
     if synthetic:
-        warning = f"The draft cites a SYNTHETIC demo document ({', '.join(synthetic)}). Replace or remove that sentence before sending."
-        log(c, o.id, "s", warning)
-        return {**draft, "warnings": [warning]}
-    return draft
+        warnings.append(f"The draft cites a SYNTHETIC demo document ({', '.join(synthetic)}). Replace or remove that sentence before sending.")
+        log(c, o.id, "s", warnings[-1])
+    from api import related as REL
+    crossing = REL.warning(REL.related(c.s, o, c.today))
+    if crossing:
+        warnings.append(crossing)
+    return {**draft, "warnings": warnings} if warnings else draft
 
 
 def alerts(c: Ctx, follow_days: int) -> list[dict]:

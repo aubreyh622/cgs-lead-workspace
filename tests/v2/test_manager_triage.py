@@ -99,7 +99,7 @@ def test_on_mode_a_new_note_builds_memory_and_sends_one_message(make):
     decisions = api.get("/api/manager/decisions", params={"scope": "triage"}).json()
     assert {(d["kind"], d["outcome"]) for d in decisions} >= {("gap_actions", "suggested"), ("note", "sent")}
     run = next(r for r in api.get("/api/agent-runs").json() if r["agent"] == "Manager agent")
-    assert run["prompt"] == "manager-triage-1.2"
+    assert run["prompt"] == "manager-triage-1.3"
     trace = api.get(f"/api/agent-runs/{run['id']}").json()["trace"]
     refused = [t for t in trace if t["type"] == "tool" and t.get("tool") == "add_commitment" and "word for word" in str(t.get("result", ""))]
     assert refused  # the model was told why, in the trace a person can read

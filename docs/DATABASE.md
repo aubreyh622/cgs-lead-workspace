@@ -10,8 +10,8 @@ Code reaches the file through SQLAlchemy, a translator layer. To move to a share
 |---|---|---|---|
 | `companies` | a company | 1–3 | research agent, person |
 | `contacts` | a person at a company; the name can be empty ("contact to confirm"); `email` only as a person entered it | 2, 4 | research agent, person confirms |
-| `opportunities` | one possible piece of work at one company; a company can have several | all | everyone |
-| `candidates` | a Step 1 recommendation not yet picked | 1 | discovery agent |
+| `opportunities` | one possible piece of work at one company; a company can have several; `candidate_id` is the Step 1 candidate it was picked from | all | everyone |
+| `candidates` | a Step 1 recommendation not yet picked; `source_query` is the search that found it (discovery memory) | 1 | discovery agent |
 | `research_tasks` | progress of one research run (running, paused, failed, done) | 2–3 | research agent |
 | `research_briefs` | the brief: dated facts, hypothesis, flags, priority | 3 | research agent; frozen at Step 4 |
 | `decisions` | a human decision at Step 4 or Step 8 | 4, 8 | person only |

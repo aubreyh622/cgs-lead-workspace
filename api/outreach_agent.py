@@ -21,7 +21,7 @@ from api.agent_tools import Pages
 from api.demo_agents import quote_in_text
 from api.llm import LLMError, Usage
 
-VERSION = "outreach-agent-1.0"
+VERSION = "outreach-agent-1.1"  # 1.1: brief lists other CGS work with the same company or person
 AGENT = "Outreach agent"
 MAX_NEW_FACTS = 3
 SUPPORT = 0.75  # share of a cited phrase's words that must appear in its source (and every number must)
@@ -34,6 +34,9 @@ How to work with your tools:
   with read_page and add the sentence with add_fact (word for word). It gets a fact id you can cite.
 - You may look up one relevant CGS service or case with search_library and cite it by its passage id.
 - If you have mail_thread, read it for a follow-up: answer what the client said and do not repeat what CGS already wrote.
+- brief may list other_cgs_opportunities: other CGS work with the same company or the same person. Do not repeat what a
+  colleague already wrote to this person and do not write as if CGS were new to them; never mention the other work by
+  name unless the brief's facts do.
 - Keep each cited phrase close to the source's own words.
 - Submit with submit_draft. It is checked; if it is rejected, fix what the message says and submit again."""
 
@@ -70,9 +73,11 @@ def outreach_agent(c, o: m.Opportunity, *, purpose: str, angle: str | None, tone
     contact = {"name": o.contact.name if o.contact else None, "title": o.contact.title if o.contact else "", "company": o.company.name}
 
     def brief(_args):
+        from api import related as REL
+        others = REL.for_agent(c.s, o, c.today)
         return {"purpose": purpose, "angle": angle, "tone": tone, "sender": sender, "contact": contact,
                 "facts": [{"id": f["id"], "text": f["text"], "date": f.get("date"), "source": f.get("src")} for f in facts],
-                "hypothesis": b.hypothesis, "cgs_relevance": b.relevance}
+                "hypothesis": b.hypothesis, "cgs_relevance": b.relevance, **({"other_cgs_opportunities": others} if others else {})}
 
     def history(_args):
         r = c.s.get(m.Outreach, o.id)

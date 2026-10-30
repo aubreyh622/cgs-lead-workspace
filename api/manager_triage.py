@@ -29,7 +29,7 @@ from api import scorecard as SC
 from api.manager_agent import DELEGABLE, RECENT_DAYS, _days, delegation_refusal
 from backend.rules import calculate
 
-VERSION = "manager-triage-1.2"
+VERSION = "manager-triage-1.3"  # 1.3: case lists other CGS work with the same company or person
 DELEGABLE_HERE = {k: v for k, v in DELEGABLE.items() if k != "gap_actions"}  # the triage plans next actions itself
 MAX_DELEGATIONS = 3
 MESSAGE_MAX = 800
@@ -66,6 +66,8 @@ How to work:
   closing one gap, with the question for the next conversation. If the approver returned the pack, the first answers the
   approver's question (gap_key "approver"). Do not repeat an open task, or an open suggestion that still fits.
 - Other work: delegate only with a concrete reason from the case.
+- other_cgs_opportunities: other CGS work with the same company or person. When a colleague is already talking to the same
+  person, tell the owner who it is so they agree who writes; do not delegate outreach that would cross it.
 - how_the_owner_received_agent_work says which kinds of work this owner used, dismissed or left unread lately. Do not hand
   them more of what they keep dismissing or ignoring without a strong reason; tell them what you noticed instead.
   delegate and answer_request warn you (caution) when that is the case.
@@ -108,6 +110,7 @@ def triage_agent(c, o: m.Opportunity, mode: str, events: list[dict], requests: l
         record["decisions"].append({"kind": kind, "opportunity_id": o.id, "reason": reason[:600], "outcome": outcome, "detail": detail[:600]})
 
     def case(_args):
+        from api import related as REL
         r = c.s.get(m.Outreach, o.id)
         work = c.s.scalars(select(m.AgentJob).where(m.AgentJob.opportunity_id == o.id, m.AgentJob.created_on >= today - timedelta(days=RECENT_DAYS),
                                                     m.AgentJob.kind != "manager_triage").order_by(m.AgentJob.created_at.desc()).limit(10))
@@ -134,6 +137,7 @@ def triage_agent(c, o: m.Opportunity, mode: str, events: list[dict], requests: l
                 "recent_agent_work": [{"agent": j.agent, "kind": j.kind, "status": j.status, "on": j.created_on.isoformat(),
                                        "result": (j.result or "")[:200]} for j in work],
                 "your_memory": MEM.view(MEM.get(c.s, o.id), today),
+                "other_cgs_opportunities": REL.for_agent(c.s, o, today),
                 "how_the_owner_received_agent_work": SC.for_owner(c.s, today, o.owner),
                 "requests": [{"request_id": q["id"], "from": q.get("requested_by", ""), "for": J.KINDS[q["kind"]][0], "kind": q["kind"],
                               "reason": q.get("reason", ""), "details": {k: v for k, v in (q.get("payload") or {}).items() if k != "facts"}}

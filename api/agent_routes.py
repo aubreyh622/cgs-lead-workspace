@@ -133,6 +133,13 @@ def manager_scorecard(request: Request, days: int = Query(60, ge=1, le=365), own
         return SC.build(s, demo_today(s, request.app.state.settings), days, owner)
 
 
+@router.get("/discovery/memory", summary="What earlier discovery rounds taught: searches and signals that led to accepted leads, and skip reasons")
+def discovery_memory(request: Request):
+    from api import discovery_memory as DM
+    with request.app.state.db.session() as s:
+        return {**DM.summary(s), "agentSees": DM.for_agent(s)}
+
+
 @router.get("/lessons", summary="Lessons for the agents: proposed, approved, rejected and retired, with their effect since approval")
 def lessons(request: Request, status: str | None = None, agent: str | None = None):
     from api import lessons as LS
@@ -227,6 +234,17 @@ def memory(opp_id: str, request: Request):
         if not s.get(m.Opportunity, opp_id):
             raise S.ActionError("Opportunity not found.", 404, "not_found")
         return MEM.view(MEM.get(s, opp_id), demo_today(s, request.app.state.settings))
+
+
+@router.get("/opportunities/{opp_id}/related", summary="Other CGS opportunities with the same company or the same person, and whether that person was emailed recently")
+def related(opp_id: str, request: Request):
+    from api import related as REL
+    with request.app.state.db.session() as s:
+        o = s.get(m.Opportunity, opp_id)
+        if not o:
+            raise S.ActionError("Opportunity not found.", 404, "not_found")
+        rel = REL.related(s, o, demo_today(s, request.app.state.settings))
+        return {**rel, "warning": REL.warning(rel) or None}
 
 
 class CloseCommitment(BaseModel):
