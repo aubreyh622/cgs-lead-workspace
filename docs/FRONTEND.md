@@ -17,7 +17,13 @@ integrated app, which has its own interface.
 | `#/qualification` | Qualification | 6-8 | Notes and evidence proposals, scores and conditions, tasks, the pack, the Step 8 decision |
 | `#/agents` | Agents | All | The six agent cards and their suggestions; each agent's own page (`?agent=research`) with its pause switch, instructions and, for the research agent, Try it on a company; the records: controls, task board, AI runs, permissions, lessons, scorecard |
 
-Tabs and selections live in the URL (`#/companies?tab=review&id=ostrander`), so a link opens the same view.
+Tabs and selections live in the URL (`#/companies?tab=review&id=ostrander`), so a link opens the same view. Picking another item on
+the page you are on shows it at once: Companies already holds every brief in Ready to decide, and Outreach and
+Qualification fetch the other items of the open list in the background (kept for a minute). The full load follows and
+fills in what was still being checked (the Insightly duplicate check says "Checking…" until then, and is kept for five
+minutes) and draws again only if something changed. After any change the person makes, the next view loads fresh. An
+item not held yet keeps the page on screen, not clickable, until it is ready; there is no loading skeleton, and focus
+stays on the item picked.
 
 Every page also has the agent dock at the bottom: a pill with the number of agent tasks running or queued (or
 "paused") and how many items the agents prepared that wait for this person, which opens a panel with each agent's
@@ -35,6 +41,11 @@ and the email's page shows when it goes out with Undo and Send now; a send that 
 Accepting or rejecting at Step 4 can be undone from its toast for 10 seconds, before anything reaches the CRM or the
 agents (returning to research starts at once, so it has no undo). Skipping a candidate offers Undo in its toast, and the
 Skipped candidates list keeps an Undo button.
+
+Qualification keeps one lead's first screen short: the six conditions with what the rules say and what is still
+missing, evidence waiting for review, and the next step with Add notes (Send for approval when the rules say Ready; for
+an approver, the quick decision). Scores and their reviews, the client need, tasks, the manager agent's memory, the
+pack and the history are folded sections; a section stays open or closed while the person moves between leads.
 
 The page supports windows from 1024px wide. Below 1400px the header hides the brand text and the CRM sync time (a
 failed or waiting count stays); below 1200px it also hides the navigation icons and the avatar.
@@ -73,6 +84,9 @@ Each page module exports:
   event, ctx)` on click; `data-on="submit input change"` chooses other events. The nearest element listening for the
   event type wins, so a button inside a form can have its own handler.
 - `after(root, ctx, data)` (optional): runs after drawing, for example to poll running research.
+- `instant(ctx, params, data on screen)`, `slots(data, ctx)`, `changed(early, data)` (optional): draw a picked item at
+  once from data the page already holds; `slots` names parts (`data-slot`) the full load replaces in place; `changed`
+  says whether the full load differs enough to draw again.
 
 `ctx` carries the person acting (`ctx.me`), the workspace users, the configuration, the workspace date
 (`ctx.today`, which is the simulated date in demo mode), the API client, `toast`, `go(page, params)` and `refresh()`

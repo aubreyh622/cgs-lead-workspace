@@ -34,6 +34,18 @@ REFUSED_SHARE = 0.3     # manager decisions the code refused, as a share of at l
 LOOSENS = re.compile(r"\b(ignore|ignoring|override|bypass|skip|skipping|disregard)\b", re.I)
 
 
+def current_agent(name: str | None) -> str | None:
+    """The agent's name today, for records saved under an older name: "Feedback agent" is now the Direction agent, and
+    early databases saved "Evidence agent (A2 + A3)" with the prototype's step codes. The stored record is not changed."""
+    if not name:
+        return name
+    base = re.sub(r"\s*\([^)]*\)\s*$", "", name)  # a trailing note in brackets
+    for now, old in FORMER.items():
+        if base in old:
+            return now
+    return base if base in TARGETS else name
+
+
 class Invalid(ValueError):
     """A lesson change that does not pass the checks; the message says why."""
 

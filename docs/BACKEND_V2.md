@@ -232,6 +232,8 @@ keeps the text rule).
 - Demo mode keeps the text rules for all three agents. The single-step `extract_evidence` and `write_outreach` remain for
   `Check AI.cmd` and the AI exam.
 - `GET /api/agent-runs/{id}` shows every step: what the model said, which tools it called with which arguments, and what they returned.
+- A run saved under an older agent name (“Feedback agent”, “Reply classifier”, “Evidence agent (A2 + A3)” in early
+  databases) is listed under today's agent; `recordedAs` keeps the stored name, which is never rewritten.
 - Each AI request counts toward the daily budget; the loop stops when the budget is used up.
 - Tests run behind an offline guard (`tests/offline_guard/`, from the MVP in cgs-lead-workspace): no internet, no real keys, no `.env`.
 

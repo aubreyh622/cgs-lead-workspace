@@ -142,12 +142,14 @@ def test_whole_workflow_in_the_browser(server, page):
 
     # Step 6-7: close Meridian's two gaps by hand, then send the pack
     go(page, base, "qualification?tab=active&id=meridian")
+    page.wait_for_selector(".cond-list")  # the first screen: conditions, evidence, next step
+    page.click("summary[data-fold=scores]")  # the score and condition reviews are in a folded section
     page.click("[data-open='score:A']")
     page.select_option("form[data-act=reviewForm] select[name=value]", "4")
     page.fill("form[data-act=reviewForm] textarea[name=reason]", "The CFO approves spend and joins the next call.")
     page.click("form[data-act=reviewForm] [type=submit]")
     page.wait_for_selector(".notice:has-text('Saved')")
-    page.click("[data-open='cond:commercial']")
+    page.click("[data-open='cond:commercial']")  # the section stayed open after the redraw
     page.select_option("form[data-act=reviewForm] select[name=value]", "true")
     page.fill("form[data-act=reviewForm] textarea[name=reason]", "Budget approved and the CFO decides.")
     page.click("form[data-act=reviewForm] [type=submit]")

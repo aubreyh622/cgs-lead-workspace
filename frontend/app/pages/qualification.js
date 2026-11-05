@@ -17,7 +17,7 @@ const DIMS = ["B", "A", "N", "T", "H", "E"];
 const READINESS_TAG = { Ready: "good", "More evidence needed": "warn", "Not ready": "bad" };
 
 let rules = null; // GET /api/rules, loaded once
-const ui = { key: null, open: null, error: null, notice: null };
+const ui = { key: null, open: null, error: null, notice: null, folds: new Map() };  // folds: kept while moving between leads
 
 function resetUi(key = null) {
   ui.key = key; ui.open = null; ui.error = null; ui.notice = null;
@@ -48,10 +48,43 @@ export async function load(ctx, params) {
   if (list.length) {
     const cur = list.find((o) => o.id === params.id) || list[0];
     if (ui.key !== cur.id) resetUi(cur.id);
-    [data.detail, data.memory] = await Promise.all([ctx.api.get(`/opportunities/${enc(cur.id)}`),
-      ctx.api.get(`/opportunities/${enc(cur.id)}/memory`).catch(() => null)]);
+    Object.assign(data, await leadData(ctx, cur.id));
   }
   return data;
+}
+
+// One lead's details and the manager agent's memory of it. Kept for a minute, so picking a lead already fetched
+// shows at once; the full load then checks it again.
+const leads = new Map();
+const LEAD_TTL = 60 * 1000;
+
+async function leadData(ctx, id) {
+  const [detail, memory] = await Promise.all([ctx.api.get(`/opportunities/${enc(id)}`),
+    ctx.api.get(`/opportunities/${enc(id)}/memory`).catch(() => null)]);
+  leads.set(id, { at: Date.now(), value: { detail, memory } });
+  return { detail, memory };
+}
+
+export function instant(ctx, params, last) {
+  if (!last || params.tab !== last.tab || (params.team === "1") !== last.team) return null;
+  if (!(last.lists[last.tab] || []).some((o) => o.id === params.id)) return null;
+  const hit = leads.get(params.id);
+  if (!hit || Date.now() - hit.at > LEAD_TTL) return null;
+  if (ui.key !== params.id) resetUi(params.id);
+  return { ...last, ...hit.value };
+}
+
+export function changed(early, d) {
+  const pick = (x) => JSON.stringify([x.tab, x.detail, x.memory, (x.lists[x.tab] || []).map((o) => o.id)]);
+  return pick(early) !== pick(d);
+}
+
+// After drawing: fetch the other leads in this list, so picking one shows it at once.
+export function after(root, ctx, d) {
+  for (const o of (d.lists[d.tab] || []).slice(0, 12)) {
+    const hit = leads.get(o.id);
+    if (!hit || Date.now() - hit.at > LEAD_TTL) leadData(ctx, o.id).catch(() => null);
+  }
 }
 
 // ---------- words for values ----------
@@ -132,24 +165,93 @@ function pickCard(o, d, ctx) {
   </a>`;
 }
 
+// The first screen holds what a person acts on: the conditions, evidence waiting for review, and the next step.
+// Everything else is in folded sections below; a section stays open or closed while they move between leads.
 function detail(d, ctx) {
   const o = d.detail;
   const live = ["active", "approval"].includes(o.stage);
+  const ready = o.assessment && o.assessment.readiness === "Ready";
+  const tasks = taskCounts(o, ctx);
+  const promises = d.memory ? d.memory.commitments.filter((c) => c.status === "open").length : 0;
+  const a = o.assessment;
   return html`
   ${headerBlock(o, ctx)}
   ${noticeBlock()}
-  ${o.stage === "approval" ? approvalBlock(o, ctx) : ""}
-  ${live ? readinessBlock(o, ctx) : ""}
+  ${o.stage === "approval" ? approvalBlock(o, ctx, "card") : ""}
+  ${conditionsSummary(o, live && o.stage === "active")}
   ${live ? proposalsBlock(o, ctx) : ""}
-  ${memoryBlock(o, d.memory, ctx)}
-  ${live ? notesFormBlock(o, ctx) : ""}
-  ${scoresBlock(o, ctx, live)}
-  ${conditionsBlock(o, ctx, live)}
-  ${revenueBlock(o, ctx, live)}
-  ${needBlock(o, ctx, live)}
-  ${live ? actionsBlock(o, ctx) : ""}
-  ${o.stage === "active" ? packBlock(o, ctx) : ""}
+  ${o.stage === "active" ? nextBlock(o, ctx, tasks) : ""}
+  ${o.stage === "active" && ready ? packBlock(o, ctx) : ""}
+  ${o.stage === "approval" ? approvalBlock(o, ctx, "pack") : ""}
+  ${fold("scores", "Scores, conditions and revenue", html`${scoresBlock(o, ctx, live)}${conditionsBlock(o, ctx, live)}${revenueBlock(o, ctx, live)}`,
+    { note: a ? `Qualification ${a.ql === a.qu ? a.ql : `${a.ql} to ${a.qu}`}, priority ${a.priority}` : "" })}
+  ${fold("need", "Client need", needBlock(o, ctx, live), { note: NEED_FIELDS.some(([k]) => (o.need || {})[k]) ? "" : "Not written yet" })}
+  ${live ? fold("tasks", "Next actions and tasks", actionsBlock(o, ctx), { note: tasks.text }) : ""}
+  ${fold("memory", "What the manager agent remembers", memoryBlock(o, d.memory, ctx), { note: promises ? plural(promises, "open promise") : "" })}
+  ${o.stage === "active" && !ready ? fold("exception", "Send for approval with an exception", packBlock(o, ctx), { note: a ? `The rules say ${a.readiness}` : "" }) : ""}
   ${historyBlock(o, ctx)}`;
+}
+
+// A folded section. Its summary records the person's choice, so a redraw keeps it.
+function fold(key, title, body, { open = false, note = "" } = {}) {
+  if (!body) return "";
+  const shown = ui.folds.has(key) ? ui.folds.get(key) : open;
+  return html`<details class="fold" ${shown ? "open" : ""}>
+    <summary data-act="fold" data-fold="${key}"><span class="fold-title">${title}</span>${note ? html`<span class="meta-3">${note}</span>` : ""}</summary>
+    <div class="fold-body">${body}</div>
+  </details>`;
+}
+
+function taskCounts(o, ctx) {
+  const open = o.tasks.filter((t) => t.status !== "done");
+  const late = open.filter((t) => daysBetween(ctx.today, t.due) < 0).length;
+  const parts = [open.length ? `${open.length} open` : "", late ? `${late} overdue` : "", o.suggestions.length ? plural(o.suggestions.length, "suggestion") : ""].filter(Boolean);
+  return { open: open.length, late, text: parts.join(", ") };
+}
+
+// The six conditions at a glance, what the rules say, and what is still missing.
+function conditionsSummary(o, live) {
+  const a = o.assessment;
+  if (!a) return "";
+  const entries = Object.entries(rules.conditions);
+  const met = entries.filter(([k]) => o.conditions[k] === true).length;
+  const q = a.ql === a.qu ? `${a.ql}` : `${a.ql} to ${a.qu}`;
+  return html`
+  <div class="block stack">
+    <div class="row-flex"><h3 class="sub-title" style="margin:0">Conditions</h3><span class="meta">${met} of ${entries.length} met</span>
+      <span class="tag ${READINESS_TAG[a.readiness] || ""}" style="margin-left:auto">${a.readiness}</span></div>
+    <ul class="cond-list">${entries.map(([k, label]) => {
+      const v = o.conditions[k];
+      return html`<li class="${v === true ? "met" : v === false ? "not" : ""}"><span class="cond-dot" aria-hidden="true">${v === true ? icon("check", 13) : ""}</span>
+        <span>${label}</span>${v === true ? html`<span class="sr-only">Met</span>` : html`<span class="meta-3">${v === false ? "Not met" : "Needs evidence"}</span>`}</li>`;
+    })}</ul>
+    ${o.blocker ? html`
+    <div class="notice bad">${icon("alert")}<span><b>Blocker: ${rules.reasons[o.blocker] || o.blocker}.</b> The rules say Not ready while it stands.</span></div>
+    ${!live ? "" : isOpen("blocker") ? html`
+    <form class="panel-form" data-act="reviewForm" data-on="submit input" data-kind="blocker_clear" data-id="${o.id}" data-revision="${o.revision}">
+      <label class="field">Why the blocker no longer applies<textarea name="reason" rows="2" required></textarea></label>
+      <div class="actions"><button type="submit" class="btn primary" disabled>Clear the blocker</button>${cancelBtn}<span class="missing" data-missing>Give a reason.</span></div>
+      ${err("review")}
+    </form>` : html`<div>${openBtn("blocker", "Clear the blocker…")}</div>`}` : ""}
+    ${live && a.gaps.length ? html`
+    <div>
+      <p class="sub-title">Still missing</p>
+      <ul class="gaps compact">${a.gaps.map((g) => html`<li><b>${g.label}</b><span class="meta">Ask: ${g.question}</span></li>`)}</ul>
+    </div>` : ""}
+    <p class="meta-3">${a.coverage ? `Qualification score ${q} of 100, with ${a.coverage}% of the evidence weight confirmed.` : "No score is confirmed yet."} Priority ${a.priority}. Rules ${a.ruleVersion}; no AI calculates these numbers.</p>
+  </div>`;
+}
+
+// The next step, and the way new evidence comes in: notes from a call or email.
+function nextBlock(o, ctx, tasks) {
+  const late = o.next.due && daysBetween(ctx.today, o.next.due) < 0;
+  return html`
+  <div class="block stack">
+    <div><h3 class="sub-title" style="margin:0">Next step</h3>
+      <p>${o.next.action || "None set."}${o.next.due ? html` <span class="${late ? "bad-text" : "meta"}">${late ? "Overdue since" : "Due"} ${day(o.next.due, ctx.today)}</span>` : ""}</p>
+      ${tasks.late ? html`<p class="meta bad-text">${plural(tasks.late, "agreed task")} overdue: see Next actions and tasks below.</p>` : ""}</div>
+    ${o.stage === "active" ? notesForm(o, ctx) : ""}
+  </div>`;
 }
 
 function headerBlock(o, ctx) {
@@ -164,7 +266,7 @@ function headerBlock(o, ctx) {
       <span class="tag">Revenue ${revenueText(o.revenue)}</span>
       ${crmLinks(o.crm)}
     </div>
-    ${o.next.action ? html`<p class="meta" style="margin-top:10px">Next step: ${o.next.action}${o.next.due ? `, due ${day(o.next.due, ctx.today)}` : ""}.</p>` : ""}
+    ${o.next.action && !["active", "approval"].includes(o.stage) ? html`<p class="meta" style="margin-top:10px">Next step: ${o.next.action}${o.next.due ? `, due ${day(o.next.due, ctx.today)}` : ""}.</p>` : ""}
     ${o.crm && o.crm.conflicts && o.crm.conflicts.length ? html`<div style="margin-top:12px">${crmConflicts(o.id, o.crm)}</div>` : ""}
   </div>`;
 }
@@ -182,31 +284,6 @@ const isOpen = (name) => ui.open === name;
 const openBtn = (name, label, cls = "btn small", aria = "") => html`<button type="button" class="${cls}" data-act="open" data-open="${name}" ${aria ? html`aria-label="${aria}"` : ""}>${label}</button>`;
 const cancelBtn = html`<button type="button" class="btn ghost" data-act="open" data-open="">Cancel</button>`;
 
-// ----- the rules engine's result -----
-function readinessBlock(o) {
-  const a = o.assessment;
-  if (!a) return "";
-  const q = a.ql === a.qu ? `${a.ql}` : `${a.ql} to ${a.qu}`;
-  return html`
-  <div class="block stack">
-    <div class="row-flex"><h3 class="sub-title" style="margin:0">Readiness</h3><span class="tag ${READINESS_TAG[a.readiness] || ""}">${a.readiness}</span></div>
-    <p class="meta">${a.coverage ? `Qualification score ${q} out of 100, with ${a.coverage}% of the evidence weight confirmed.` : "No score is confirmed yet, so the qualification score could be anywhere from 0 to 100."} Priority ${a.priority}. Rules ${a.ruleVersion}; no AI calculates these numbers.</p>
-    ${o.blocker ? html`
-    <div class="notice bad">${icon("alert")}<span><b>Blocker: ${rules.reasons[o.blocker] || o.blocker}.</b> The rules say Not ready while it stands.</span></div>
-    ${isOpen("blocker") ? html`
-    <form class="panel-form" data-act="reviewForm" data-on="submit input" data-kind="blocker_clear" data-id="${o.id}" data-revision="${o.revision}">
-      <label class="field">Why the blocker no longer applies<textarea name="reason" rows="2" required></textarea></label>
-      <div class="actions"><button type="submit" class="btn primary" disabled>Clear the blocker</button>${cancelBtn}<span class="missing" data-missing>Give a reason.</span></div>
-      ${err("review")}
-    </form>` : html`<div>${openBtn("blocker", "Clear the blocker…")}</div>`}` : ""}
-    ${a.gaps.length ? html`
-    <div>
-      <p class="sub-title">What is still missing</p>
-      <ul class="gaps">${a.gaps.map((g) => html`<li><b>${g.label}</b><span class="meta">Ask: ${g.question}</span></li>`)}</ul>
-    </div>` : html`<p class="meta">Nothing is missing.</p>`}
-  </div>`;
-}
-
 // ----- the manager agent's memory of this opportunity -----
 function memoryBlock(o, mem, ctx) {
   if (!mem || (!mem.summary && !mem.commitments.length)) return "";
@@ -214,8 +291,7 @@ function memoryBlock(o, mem, ctx) {
   const closed = mem.commitments.filter((c) => c.status !== "open");
   return html`
   <div class="block stack">
-    <div><h3 class="sub-title" style="margin:0">What the manager agent remembers</h3>
-      ${mem.updatedOn ? html`<p class="meta-3">Updated ${day(mem.updatedOn, ctx.today)}</p>` : ""}</div>
+    ${mem.updatedOn ? html`<p class="meta-3">Updated ${day(mem.updatedOn, ctx.today)}</p>` : ""}
     ${mem.summary ? html`<p>${mem.summary}</p>` : ""}
     ${open.length ? html`<ul class="history">${open.map((c) => html`<li>
       <b>${c.who}: ${c.what}</b>
@@ -309,13 +385,12 @@ function parseValue(kind, raw) {
 }
 
 // ----- notes -----
-function notesFormBlock(o, ctx) {
+function notesForm(o, ctx) {
   if (!isOpen("note")) {
-    return html`<div class="block"><div class="actions">${openBtn("note", "Add notes from a call or email…", "btn")}
-      <span class="meta">The evidence agent reads them and proposes scores and conditions for you to review.</span></div></div>`;
+    return html`<div class="actions">${openBtn("note", "Add notes from a call or email…", "btn")}
+      <span class="meta">The evidence agent reads them and proposes scores and conditions for you to review.</span></div>`;
   }
   return html`
-  <div class="block">
     <form class="panel-form" data-act="noteForm" data-on="submit input" data-id="${o.id}">
       <h3 class="sub-title">Add conversation notes</h3>
       <div class="form-grid">
@@ -327,8 +402,7 @@ function notesFormBlock(o, ctx) {
       <label class="check"><input type="checkbox" name="analyze" checked>Ask the evidence agent for proposals</label>
       <div class="actions"><button type="submit" class="btn primary" disabled>Save notes</button>${cancelBtn}<span class="missing" data-missing>Write the notes.</span></div>
       ${err("note")}
-    </form>
-  </div>`;
+    </form>`;
 }
 
 // ----- scores, conditions, revenue, need -----
@@ -407,7 +481,7 @@ function needBlock(o, ctx, live) {
   const filled = NEED_FIELDS.some(([k]) => need[k]);
   return html`
   <div class="block">
-    <div class="row-flex"><h3 class="sub-title" style="margin:0">Client need</h3>${live && !isOpen("need") ? openBtn("need", "Edit…", "btn ghost small", "Edit the client need") : ""}</div>
+    ${live && !isOpen("need") ? html`<div>${openBtn("need", "Edit…", "btn ghost small", "Edit the client need")}</div>` : ""}
     ${isOpen("need") ? html`
     <form class="panel-form" style="margin-top:10px" data-act="needForm" data-on="submit" data-id="${o.id}">
       <div class="form-grid">${NEED_FIELDS.map(([k, label]) => html`<label class="field">${label}<input name="${k}" value="${need[k] || ""}"></label>`)}</div>
@@ -425,8 +499,7 @@ function actionsBlock(o, ctx) {
   const today = ctx.today;
   return html`
   <div class="block stack">
-    <div class="row-flex"><h3 class="sub-title" style="margin:0">Next actions and tasks</h3>
-      <button type="button" class="btn small" data-act="suggest" data-id="${o.id}">Suggest next actions</button></div>
+    <div><button type="button" class="btn small" data-act="suggest" data-id="${o.id}">Suggest next actions</button></div>
     ${err("suggest")}
     ${o.suggestions.length ? html`<div class="stack">${o.suggestions.map((s) => html`
       <div class="suggestion">${icon("bulb", 20)}<div style="flex:1;min-width:0">
@@ -477,9 +550,10 @@ function packBlock(o, ctx) {
 }
 
 // ----- Step 8 -----
-function approvalBlock(o, ctx) {
+// part "card": the quick decision for an approver (first screen); part "pack": the pack and every other decision.
+function approvalBlock(o, ctx, part) {
   const pk = o.packs.filter((p) => p.status === "open").slice(-1)[0];
-  if (!pk) return html`<div class="block"><p class="meta">No open pack. The owner can send one again from In conversation.</p></div>`;
+  if (!pk) return part === "card" ? html`<div class="block"><p class="meta">No open pack. The owner can send one again from In conversation.</p></div>` : "";
   const s = pk.snapshot || {};
   const owner = o.owner === ctx.me;
   const roles = owner ? ["Lead owner"] : ["Another consultant", "Director of Operations"];
@@ -487,8 +561,7 @@ function approvalBlock(o, ctx) {
   const decide = (kind) => isOpen(`decide:${kind}`);
   const a = o.assessment || {};
   const quick = !owner && !pk.staleReason && !pk.handoverTo && !String(ui.open || "").startsWith("decide:");
-  return html`
-  ${quick ? html`
+  if (part === "card") return quick ? html`
   <div class="block">
     <div class="approval-card">
       <b>${o.owner} asks for your approval</b>
@@ -500,14 +573,16 @@ function approvalBlock(o, ctx) {
         <div class="actions">
           <button type="submit" class="btn primary" name="decision" value="approve">Approve</button>
           <button type="submit" class="btn" name="decision" value="return" data-needs-comment disabled>Send back with comment</button>
-          <span class="meta-3">Other decisions are below the pack.</span>
+          <span class="meta-3">Other decisions are in the pack below.</span>
         </div>
         ${err("decide")}
       </form>
     </div>
-  </div>` : ""}
+  </div>` : "";
+  return html`
+  ${fold("pack", "The qualification pack and other decisions", html`
   <div class="block stack">
-    <div class="row-flex"><h3 class="sub-title" style="margin:0">Qualification pack</h3><span class="meta">Sent by ${pk.submittedBy}, ${day(pk.submittedOn, ctx.today)}. Rules ${pk.ruleVersion}.</span></div>
+    <p class="meta-3">Rules ${pk.ruleVersion}.</p>
     ${pk.exception ? html`<div class="notice warn">${icon("alert")}<span><b>Exception requested:</b> ${pk.exception}</span></div>` : ""}
     ${pk.staleReason ? html`<div class="notice bad">${icon("alert")}<span><b>Out of date:</b> ${pk.staleReason}. It cannot be approved; ${owner ? "resubmit it" : "send it back so the owner can resubmit"}.</span></div>` : ""}
     ${pk.handoverTo ? html`<div class="notice info">${icon("clock")}<span>Approved by ${pk.handoverBy} with a handover to ${pk.handoverTo}. ${o.owner} stays responsible until ${pk.handoverTo} accepts.</span></div>` : ""}
@@ -567,7 +642,7 @@ function approvalBlock(o, ctx) {
       ${pk.staleReason ? html`<span class="missing">An out-of-date pack cannot be approved.</span>`
         : pk.handoverTo ? html`<span class="missing">Already approved; waiting for ${pk.handoverTo} to accept the handover.</span>` : ""}
     </div>` : ""}
-  </div>`;
+  </div>`, { open: !quick, note: `Sent by ${pk.submittedBy}, ${day(pk.submittedOn, ctx.today)}` })}`;
 }
 
 // ----- history -----
@@ -640,6 +715,9 @@ export const actions = {
     ctx.focusAfter = `#${tabs[n].id}`;
     resetUi();
     ctx.go("qualification", { tab: tabs[n].dataset.tab, team: ctx.route.params.team });
+  },
+  fold(t) {  // the click comes before the browser opens or closes the section
+    ui.folds.set(t.dataset.fold, !t.parentElement.open);
   },
   open(t, e, ctx) {
     ui.open = t.dataset.open || null;

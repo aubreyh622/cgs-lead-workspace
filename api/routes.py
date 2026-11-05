@@ -82,7 +82,8 @@ def feedback(request: Request):
 @router.get("/agent-runs", tags=["agents"], summary="Recent AI calls")
 def agent_runs(request: Request, limit: int = Query(20, le=200)):
     with db(request).session() as s:
-        return [{"id": r.id, "agent": r.agent, "subject": r.subject, "model": r.model, "prompt": r.prompt_version, "status": r.status,
+        from api.lessons import current_agent
+        return [{"id": r.id, "agent": current_agent(r.agent), "recordedAs": r.agent, "subject": r.subject, "model": r.model, "prompt": r.prompt_version, "status": r.status,
                  "calls": r.calls, "error": r.error, "on": views.iso(r.on), "steps": len(r.trace) if r.trace else None}
                 for r in s.scalars(select(m.AgentRun).order_by(m.AgentRun.on.desc(), m.AgentRun.id.desc()).limit(limit)).all()]
 
@@ -93,7 +94,8 @@ def agent_run(request: Request, run_id: str):
         r = s.get(m.AgentRun, run_id)
         if not r:
             raise HTTPException(404, "Agent run not found.")
-        return {"id": r.id, "agent": r.agent, "subject": r.subject, "model": r.model, "prompt": r.prompt_version, "status": r.status,
+        from api.lessons import current_agent
+        return {"id": r.id, "agent": current_agent(r.agent), "recordedAs": r.agent, "subject": r.subject, "model": r.model, "prompt": r.prompt_version, "status": r.status,
                 "calls": r.calls, "tokensIn": r.tokens_in, "tokensOut": r.tokens_out, "error": r.error, "on": views.iso(r.on),
                 "trace": r.trace or []}
 

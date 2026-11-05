@@ -216,3 +216,22 @@ def test_research_discovery_and_direction_prompts_take_their_lessons(tmp_path):
         assert mine and all(f"] {text}" in x for x in mine), agent
         assert not any(text in x for x in seen if x not in mine), agent  # never in another agent's prompt
     assert all(x["uses"] >= 1 for x in api.get("/api/lessons").json())
+
+
+def test_runs_saved_under_an_older_agent_name_show_under_todays_agent(tmp_path):
+    from datetime import date
+    from api import models as m
+    assert LS.current_agent("Evidence agent (A2 + A3)") == "Evidence agent"
+    assert LS.current_agent("Feedback agent") == "Direction agent" and LS.current_agent("Reply classifier") == "Evidence agent"
+    assert LS.current_agent("Research agent") == "Research agent" and LS.current_agent("Mail rules") == "Mail rules"
+    from api.main import create_app
+    from api.settings import Settings
+    app = create_app(Settings(db_path=tmp_path / "names.sqlite3"))
+    with app.state.db.session() as s:
+        s.add(m.AgentRun(id="run-old", agent="Evidence agent (A2 + A3)", subject="x", model="demo-rules", prompt_version="v1",
+                         status="completed", calls=1, on=date(2026, 11, 1)))
+        s.commit()
+    api = TestClient(app)
+    [r] = [r for r in api.get("/api/agent-runs?limit=200").json() if r["id"] == "run-old"]
+    assert r["agent"] == "Evidence agent" and r["recordedAs"] == "Evidence agent (A2 + A3)"
+    assert api.get("/api/agent-runs/run-old").json()["agent"] == "Evidence agent"

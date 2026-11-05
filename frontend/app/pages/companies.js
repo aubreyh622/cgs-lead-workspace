@@ -32,6 +32,13 @@ function resetForms() {
 }
 
 // ---------- data ----------
+// Checks already made for a company in this session, so picking it again shows them at once. The CRM check asks
+// Insightly, so it is kept for a few minutes and not fetched ahead; the check for other CGS work reads the workspace.
+const checks = { crm: new Map(), related: new Map() };
+const CHECK_TTL = 5 * 60 * 1000;
+const known = (map, id) => { const x = map.get(id); return x && Date.now() - x.at < CHECK_TTL ? x.value : null; };
+const keep = (map, id, value) => { if (value && !value.error) map.set(id, { at: Date.now(), value }); };
+
 export async function load(ctx, params) {
   const [cands, opps] = await Promise.all([ctx.api.get("/candidates"), ctx.api.get("/opportunities")]);
   const review = opps.filter((o) => o.stage === "review");
@@ -44,6 +51,7 @@ export async function load(ctx, params) {
   if (tab === "review" && review.length) {
     // the research agent's suggestion for each company in the list (DESIGN: "Suggested: accept" on each item)
     const briefs = await Promise.all(review.map((o) => ctx.api.get(`/opportunities/${enc(o.id)}`).catch(() => null)));
+    data.briefs = Object.fromEntries(briefs.filter(Boolean).map((b) => [b.id, b]));
     data.suggested = Object.fromEntries(briefs.filter(Boolean).map((b) => [b.id, b.brief && b.brief.recommendation ? b.brief.recommendation.decision : null]));
     const id = review.some((o) => o.id === params.id) ? params.id : review[0].id;
     const [detail, crm, related] = await Promise.all([
@@ -54,10 +62,31 @@ export async function load(ctx, params) {
     data.current = detail;
     data.crm = crm;
     data.related = related;
+    keep(checks.crm, id, crm);
+    keep(checks.related, id, related);
     if (ui.modeFor !== id) resetForms();
   }
   if (tab === "aside") data.feedback = await ctx.api.get("/feedback");
   return data;
+}
+
+// Another company in Ready to decide: its brief is already here, so it is drawn at once. Checks not made yet say so,
+// and the full load fills them in (slots).
+export function instant(ctx, params, last) {
+  if (!last || last.tab !== "review" || params.tab !== "review" || !last.briefs) return null;
+  const id = params.id;
+  if (!id || !last.briefs[id] || !last.review.some((o) => o.id === id)) return null;
+  if (ui.modeFor !== id) resetForms();
+  return { ...last, current: last.briefs[id], crm: known(checks.crm, id) || { pending: true }, related: known(checks.related, id) || { pending: true } };
+}
+
+export function slots(d, ctx) {
+  return d.tab === "review" && d.current ? { checks: html`${crmCheck(d.crm)}${relatedCheck(d.related, ctx)}` } : {};
+}
+
+export function changed(early, d) {
+  const ids = (x) => x.review.map((o) => o.id).join(",");
+  return early.tab !== d.tab || ids(early) !== ids(d) || JSON.stringify(early.current) !== JSON.stringify(d.current);
 }
 
 function counts(d) {
@@ -304,8 +333,7 @@ function brief(o, d, ctx) {
   </div>
   <div class="block stack">
     <h3 class="sub-title">Checks</h3>
-    ${crmCheck(d.crm)}
-    ${relatedCheck(d.related, ctx)}
+    <div class="stack" data-slot="checks">${crmCheck(d.crm)}${relatedCheck(d.related, ctx)}</div>
     ${b.usage ? html`<p class="meta-3">Research used ${plural(b.usage.searches || 0, "search", "searches")}, ${plural(b.usage.pages || 0, "page")} and ${plural(b.usage.calls || 0, "AI call")}.</p>` : ""}
   </div>`;
 }
@@ -316,6 +344,7 @@ function metric(label, value, why) {
 
 function crmCheck(crm) {
   if (!crm) return "";
+  if (crm.pending) return html`<div class="notice" role="status">${icon("clock")}<span>Checking the CRM for this company and person…</span></div>`;
   if (crm.error) return html`<div class="notice bad">${icon("alert")}<span>The CRM could not be checked: ${crm.error}</span></div>`;
   if (crm.off) return html`<div class="notice">${icon("alert")}<span>The CRM is off in this workspace (${crm.mode}), so no duplicate check ran. Check Insightly yourself before accepting.</span></div>`;
   const found = ["leads", "contacts", "organizations", "opportunities"].some((k) => (crm[k] || []).length);
@@ -328,6 +357,7 @@ function crmCheck(crm) {
 
 function relatedCheck(rel, ctx) {
   if (!rel) return "";
+  if (rel.pending) return html`<div class="notice" role="status">${icon("clock")}<span>Checking other CGS work with this company or person…</span></div>`;
   if (rel.error) return html`<div class="notice bad">${icon("alert")}<span>Other CGS work could not be checked: ${rel.error}</span></div>`;
   const items = rel.other_opportunities || [];
   if (!items.length) return html`<div class="notice good">${icon("check")}<span>No other CGS opportunity with this company or person.</span></div>`;
@@ -489,6 +519,11 @@ function asideView(d, ctx) {
 // ---------- after drawing: keep research status fresh ----------
 export function after(root, ctx, d) {
   clearTimeout(ui.pollTimer);
+  if (d.tab === "review") {
+    for (const o of d.review) {
+      if (!known(checks.related, o.id)) ctx.api.get(`/opportunities/${enc(o.id)}/related`).then((r) => keep(checks.related, o.id, r)).catch(() => null);
+    }
+  }
   const running = d.tab === "research" && (d.researching || []).some((o) => o.research && ["running", "queued"].includes(o.research.status));
   if (!running) return;
   const route = location.hash;

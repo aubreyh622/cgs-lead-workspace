@@ -70,21 +70,58 @@ export async function load(ctx, params) {
   if (tab !== "talking" && list.length) {
     const cur = list.find((x) => x.key === wanted) || list[0];
     if (ui.key !== cur.key) resetUi(cur.key);
-    const id = cur.opp.id;
-    const [detail, related] = await Promise.all([
-      ctx.api.get(`/opportunities/${enc(id)}`),
-      ctx.api.get(`/opportunities/${enc(id)}/related`).catch(() => null),
-    ]);
     data.cur = cur;
-    data.detail = detail;
-    data.related = related;
-    const hasFirstDraft = cur.kind === "first" && detail.outreach.status === "draft";
-    if (cur.kind === "draft" || hasFirstDraft) {
-      const q = cur.kind === "draft" ? `?itemId=${enc(cur.item.id)}` : "";
-      data.preview = await ctx.api.get(`/opportunities/${enc(id)}/outreach/email${q}`).catch((e) => ({ error: e.message }));
-    }
+    Object.assign(data, await itemData(ctx, cur));
   }
   return data;
+}
+
+// One item's details: the opportunity, other CGS work with it, and the email preview when there is a draft.
+// Kept for a minute, so picking an item already fetched shows at once; the full load then checks it again.
+const items = new Map();
+const ITEM_TTL = 60 * 1000;
+
+async function itemData(ctx, cur) {
+  const id = cur.opp.id;
+  const [detail, related] = await Promise.all([
+    ctx.api.get(`/opportunities/${enc(id)}`),
+    ctx.api.get(`/opportunities/${enc(id)}/related`).catch(() => null),
+  ]);
+  const out = { detail, related, preview: undefined };
+  const hasFirstDraft = cur.kind === "first" && detail.outreach.status === "draft";
+  if (cur.kind === "draft" || hasFirstDraft) {
+    const q = cur.kind === "draft" ? `?itemId=${enc(cur.item.id)}` : "";
+    out.preview = await ctx.api.get(`/opportunities/${enc(id)}/outreach/email${q}`).catch((e) => ({ error: e.message }));
+  }
+  items.set(cur.key, { at: Date.now(), value: out });
+  return out;
+}
+
+function wantedKey(params) {
+  return params.item ? `item-${params.item}` : params.id ? `opp-${params.id}` : null;
+}
+
+export function instant(ctx, params, last) {
+  if (!last || params.tab !== last.tab || (params.team === "1") !== last.team || !last.lists[last.tab] || last.tab === "talking") return null;
+  const cur = last.lists[last.tab].find((x) => x.key === wantedKey(params));
+  const hit = cur && items.get(cur.key);
+  if (!hit || Date.now() - hit.at > ITEM_TTL) return null;
+  if (ui.key !== cur.key) resetUi(cur.key);
+  return { ...last, cur, ...hit.value };
+}
+
+export function changed(early, d) {
+  const pick = (x) => JSON.stringify([x.tab, x.cur && x.cur.key, x.detail, x.preview, (x.lists[x.tab] || []).map((i) => i.key)]);
+  return pick(early) !== pick(d);
+}
+
+// After drawing: fetch the other items in this list, so picking one shows it at once.
+export function after(root, ctx, d) {
+  if (d.tab === "talking") return;
+  for (const cur of (d.lists[d.tab] || []).slice(0, 12)) {
+    const hit = items.get(cur.key);
+    if (!hit || Date.now() - hit.at > ITEM_TTL) itemData(ctx, cur).catch(() => null);
+  }
 }
 
 // ---------- view ----------

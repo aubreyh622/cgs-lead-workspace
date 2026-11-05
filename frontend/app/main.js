@@ -1,5 +1,5 @@
 // Starts the workspace page: who is acting, the header, and the page the URL names.
-import { api, person } from "./api.js";
+import { api, person, writeCount } from "./api.js";
 import { readRoute, href } from "./lib.js";
 import { header, chooser, toast, loadingCard, errorCard } from "./shell.js";
 import * as home from "./pages/home.js";
@@ -105,34 +105,84 @@ document.addEventListener("click", async (event) => {
 });
 
 let showSeq = 0;
+let shown = null; // the page and tab on screen, and the data drawn there
+
+// Picking another item on the page you are on draws it at once when the page already holds its data
+// (page.instant(ctx, params, data on screen)); the full load then fills in what was still being checked
+// (page.slots: parts that are replaced in place) and draws again only if something else changed meanwhile.
+// Without an instant view the page stays as it is, not clickable, until the next item is ready. No skeleton either way.
 async function show({ quiet = false } = {}) {
   const seq = ++showSeq;
   ctx.route = readRoute();
   const page = PAGES[ctx.route.page] || PAGES.home;
   document.title = `${page.title || "Home"} | CGS Lead Workspace`;
   drawHeader();
-  if (!quiet) el.main.innerHTML = String(loadingCard(4));
+  const samePage = !quiet && shown && shown.page === ctx.route.page;
+  const sameTab = samePage && shown.tab === (ctx.route.params.tab || "");
+  const used = samePage ? usedLink() : null;
+  let early = null;
+  if (samePage && page.instant && shown.writes === writeCount()) early = page.instant(ctx, ctx.route.params, shown.data);
+  if (early) {
+    draw(page, early, { scroll: sameTab ? window.scrollY : 0, used, quiet });
+  } else if (samePage) {
+    el.main.querySelectorAll(".detail").forEach((d) => { d.inert = true; });  // the old item can no longer be acted on
+  } else if (!quiet) {
+    el.main.innerHTML = String(loadingCard(4));
+  }
   let data;
   try {
     data = await page.load(ctx, ctx.route.params);
   } catch (err) {
     if (seq !== showSeq) return;
+    shown = null;
     el.main.innerHTML = String(errorCard(err));
     return;
   }
   if (seq !== showSeq) return; // a newer navigation started while this one loaded
-  const scroll = quiet && !ctx.scrollTop ? window.scrollY : 0;
+  if (early) {
+    if (page.slots) patchSlots(page.slots(data, ctx));
+    if (page.changed && page.changed(early, data) && !typing()) draw(page, data, { scroll: window.scrollY, used: usedLink(), quiet: true });
+    else shown.data = data;
+  } else {
+    const scroll = (quiet || sameTab) && !ctx.scrollTop ? window.scrollY : 0;
+    draw(page, data, { scroll, used, quiet });
+  }
+  if (page.after) page.after(el.main, ctx, data);
+  refreshCounts();
+}
+
+function draw(page, data, { scroll, used, quiet }) {
+  if (ctx.scrollTop) scroll = 0;
   ctx.scrollTop = false;
   el.main.innerHTML = String(page.view(data, ctx, ctx.route.params));
+  shown = { page: ctx.route.page, tab: ctx.route.params.tab || "", data, writes: writeCount() };
   window.scrollTo(0, scroll);
-  if (!quiet) el.main.focus({ preventScroll: true });
+  // Picking another item on the same page: focus stays on the link that was used, not the top of the page.
+  const back = used ? [...el.main.querySelectorAll("a[href]")].find((a) => a.getAttribute("href") === used) : null;
+  if (back) back.focus({ preventScroll: true });
+  else if (!quiet) el.main.focus({ preventScroll: true });
   if (ctx.focusAfter) {
     const target = el.main.querySelector(ctx.focusAfter);
     ctx.focusAfter = null;
     if (target) target.focus();
   }
-  if (page.after) page.after(el.main, ctx, data);
-  refreshCounts();
+}
+
+function usedLink() {
+  const a = document.activeElement;
+  return a && el.main.contains(a) ? a.getAttribute("href") : null;
+}
+
+function typing() {
+  const a = document.activeElement;
+  return !!a && el.main.contains(a) && a.matches("input, textarea, select");
+}
+
+function patchSlots(parts) {
+  for (const [name, part] of Object.entries(parts || {})) {
+    const slot = el.main.querySelector(`[data-slot="${name}"]`);
+    if (slot) slot.innerHTML = String(part);
+  }
 }
 
 // One listener per event type; pages name their handlers with data-act="name".

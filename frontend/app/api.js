@@ -26,7 +26,12 @@ function messageFrom(body, status) {
   return `The server answered ${status}.`;
 }
 
+// Counts the person's changes, so a page drawn from data held from before a change is never shown as current.
+let writes = 0;
+export const writeCount = () => writes;
+
 async function call(method, path, body) {
+  if (method !== "GET") writes += 1;
   const headers = { Accept: "application/json" };
   const who = person.get();
   if (who) headers["X-User"] = who;

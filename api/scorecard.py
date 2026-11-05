@@ -153,10 +153,11 @@ def evidence(s, today: date, days: int = WINDOW_DAYS) -> dict:
 
 
 def reliability(s, today: date, days: int = WINDOW_DAYS) -> dict:
+    from api.lessons import current_agent
     since = today - timedelta(days=days)
     runs: dict[str, dict] = defaultdict(lambda: {"runs": 0, "failed": 0, "aiCalls": 0})
     for r in s.scalars(select(m.AgentRun).where(m.AgentRun.on >= since)):
-        x = runs[r.agent]
+        x = runs[current_agent(r.agent)]
         x["runs"] += 1
         x["failed"] += r.status == "failed"
         x["aiCalls"] += (r.calls or 0) if not (r.model or "").startswith("demo") else 0
