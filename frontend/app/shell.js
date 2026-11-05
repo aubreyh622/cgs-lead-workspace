@@ -139,6 +139,6 @@ export function dock(state, open, data, me) {
   </section>` : ""}
   <button type="button" class="dock-pill" data-shell="dock" aria-expanded="${open ? "true" : "false"}">
     <span class="dot ${state.running ? "run" : state.paused ? "" : "done"}" aria-hidden="true"></span>
-    <span><b>${summary}</b>${state.waiting ? ` · ${state.waiting} waiting for you` : ""}</span>
+    <span><b>${summary}</b>${state.waiting ? `, ${state.waiting} waiting for you` : ""}</span>
   </button>`;
 }

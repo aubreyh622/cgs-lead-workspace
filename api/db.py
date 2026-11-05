@@ -33,15 +33,24 @@ def make_engine(db_url: str) -> Engine:
 
 
 def add_missing_columns(engine: Engine) -> None:
-    """A small migration: when a newer version adds an optional column, add it to an existing database file."""
+    """A small migration: when a newer version adds a column, add it to an existing database file. Optional columns are
+    added empty; a required column is added only when it has a plain default, which older rows then take."""
     from sqlalchemy import inspect, text
     insp = inspect(engine)
     with engine.begin() as conn:
         for table in Base.metadata.sorted_tables:
             have = {c["name"] for c in insp.get_columns(table.name)}
             for col in table.columns:
-                if col.name not in have and col.nullable:
-                    conn.execute(text(f'ALTER TABLE {table.name} ADD COLUMN {col.name} {col.type.compile(engine.dialect)}'))
+                if col.name in have:
+                    continue
+                kind = col.type.compile(engine.dialect)
+                if col.nullable:
+                    conn.execute(text(f'ALTER TABLE {table.name} ADD COLUMN {col.name} {kind}'))
+                elif col.default is not None and col.default.is_scalar and isinstance(col.default.arg, (str, int, float, bool)):
+                    # a required column with a plain default (manager_decisions.scope): older rows get the default
+                    v = col.default.arg
+                    lit = str(int(v)) if isinstance(v, bool) else repr(v) if isinstance(v, (int, float)) else "'" + v.replace("'", "''") + "'"
+                    conn.execute(text(f'ALTER TABLE {table.name} ADD COLUMN {col.name} {kind} NOT NULL DEFAULT {lit}'))
 
 
 class Database:
