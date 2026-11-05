@@ -130,3 +130,18 @@ authorized on its own; F1 approval does not authorize F2.
 | F4 | Sources (direction, problems, proposals, discovery memory, add a lead, recommend) and Agents (team, task board, runs with traces, permissions, lessons, scorecard, CRM status) | Complete; awaiting user review (VERIFICATION_F4.md) |
 | F5 | Accessibility pass, end-to-end browser checks of the whole workflow, documentation, retire the old prototype launchers | Complete; awaiting user review (VERIFICATION_F5.md) |
 | F6 | Design fidelity: bring the pages back to the Version 2 design where the backend already has the data. Agents as six agent cards with status, suggestions from agents and an agent detail page; the agent dock on every page; Qualification list with evidence and next columns, accept all, the manager's memory and an approval card; Companies, Outreach and Home details from the design. Items the backend cannot supply yet are listed, not faked | Complete; awaiting user review (VERIFICATION_F6.md) |
+
+## Backend phases for the design gaps
+
+Authorized by the user on 2026-11-05: B1 ("开始改后端", then choosing B1), then B2 ("做B2"). These phases fill the gaps that
+`VERIFICATION_F6.md` lists between the Version 2 design and what the backend records. Each phase changes the
+backend and the page together, is authorized on its own, and stops after its report.
+
+| Phase | Scope | Status |
+| --- | --- | --- |
+| B1 | Pause one agent: its jobs stay on the task board and wait while the rest run. Instructions for every AI agent: the existing lessons (a person writes, an admin approves, code checks the text, at most five per agent) extended from the evidence, outreach and manager agents to the research, discovery and direction agents. Links to the Insightly lead and opportunity, which the backend already records, shown on the page | Complete; awaiting user review (VERIFICATION_B1.md) |
+| B2 | "How many" on Ask now; automatic searches as designed (the main search replaces the fixed weekly round; people add their own with how often, a weekday and companies per run, and switch them on or off), run at the daily check; "Try it on a company" for the research agent: the brief is shown and nothing is saved to the workflow (live mode) | Complete; awaiting user review (VERIFICATION_B2.md) |
+| B3 (proposed) | More than one contact per opportunity: schema migration, choosing whom outreach goes to, CRM sync of each contact | Not authorized |
+
+Not planned: watching for company news beyond the research agent's refresh (needs a news provider and a cost
+decision) and email open tracking (tracking pixels; a privacy decision for CGS).

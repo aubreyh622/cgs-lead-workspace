@@ -133,6 +133,7 @@ class ManualLead(BaseModel):
 
 class Recommend(BaseModel):
     intent: str = Field("", description="What to look for, in your own words. Empty = the research direction only.")
+    count: int = Field(10, ge=1, le=10, description="How many companies this round may find (1-10)")
 
 
 @router.get("/search/settings", tags=["step 1"], summary="Which search provider and queries discovery uses (config/search.json)")
@@ -143,7 +144,81 @@ def search_settings():
 
 @router.post("/candidates/recommend", tags=["step 1"], summary="Recommend up to 10 new candidates (live: web search + AI, checked by code)")
 def recommend(body: Recommend, c: S.Ctx = Actor):
-    return S.recommend(c, body.intent)
+    return S.recommend(c, body.intent, count=body.count)
+
+
+# ---------- automatic searches (api/discovery_searches.py) ----------
+class SearchIn(BaseModel):
+    name: str = Field("", description="A short name, for example New Chief Digital Officers (not for the main search)")
+    query: str = Field("", description="What to look for, as you would tell a researcher (not for the main search)")
+    freq: Literal["day", "3days", "week", "2weeks", "4weeks"] = "week"
+    weekday: int | None = Field(None, ge=0, le=4, description="0 Monday .. 4 Friday; only for week, 2weeks, 4weeks")
+    per_run: int = Field(5, ge=1, le=10, description="Companies per run")
+
+
+class SearchPatch(BaseModel):
+    name: str | None = None
+    query: str | None = None
+    freq: Literal["day", "3days", "week", "2weeks", "4weeks"] | None = None
+    weekday: int | None = Field(None, ge=-1, le=4, description="-1 clears the weekday")
+    per_run: int | None = Field(None, ge=1, le=10)
+    on: bool | None = None
+
+
+def _search(c: S.Ctx, search_id: str):
+    from api import discovery_searches as DS
+    DS.ensure_main(c.s, c.today)
+    x = c.s.get(m.DiscoverySearch, search_id)
+    if not x:
+        raise S.ActionError("Automatic search not found.", 404, "not_found")
+    return x
+
+
+@router.get("/discovery/searches", tags=["step 1"], summary="Automatic searches: what the discovery agent looks for on its own, how often, how many")
+def searches(request: Request):
+    from sqlalchemy import select
+    from api import discovery_searches as DS
+    with request.app.state.db.session() as s:
+        today = demo_today(s, request.app.state.settings)
+        DS.ensure_main(s, today)
+        rows = s.scalars(select(m.DiscoverySearch).order_by(m.DiscoverySearch.main.desc(), m.DiscoverySearch.created_on)).all()
+        return [DS.view(s, x, today) for x in rows]
+
+
+@router.post("/discovery/searches", tags=["step 1"], summary="Add an automatic search; it runs with your own research direction")
+def add_search(body: SearchIn, c: S.Ctx = Actor):
+    from api import discovery_searches as DS
+    try:
+        x = DS.create(c.s, c.today, c.actor, body.name, body.query, body.freq, body.weekday, body.per_run)
+    except DS.Invalid as e:
+        raise S.ActionError(str(e))
+    S.log(c, None, "h", f"{c.actor} added the automatic search {x.name} ({DS.FREQ_LABEL[x.freq].lower()}, {x.per_run} per run)")
+    return DS.view(c.s, x, c.today)
+
+
+@router.patch("/discovery/searches/{search_id}", tags=["step 1"], summary="Change an automatic search, or switch it on or off")
+def edit_search(search_id: str, body: SearchPatch, c: S.Ctx = Actor):
+    from api import discovery_searches as DS
+    x = _search(c, search_id)
+    fields = body.model_dump(exclude_unset=True)
+    if fields.get("weekday") == -1:
+        fields["weekday"] = None
+    try:
+        DS.update(c.s, x, fields)
+    except DS.Invalid as e:
+        raise S.ActionError(str(e))
+    S.log(c, None, "h", f"{c.actor} changed the automatic search {x.name}: " + ", ".join(sorted(fields)))
+    return DS.view(c.s, x, c.today)
+
+
+@router.delete("/discovery/searches/{search_id}", tags=["step 1"], summary="Delete an automatic search (the main search can only be switched off)")
+def delete_search(search_id: str, c: S.Ctx = Actor):
+    x = _search(c, search_id)
+    if x.main:
+        raise S.ActionError("The main search cannot be deleted. Switch it off instead.", 409, "main_search")
+    c.s.delete(x)
+    S.log(c, None, "h", f"{c.actor} deleted the automatic search {x.name}")
+    return {"ok": True}
 
 
 @router.post("/research/sync", tags=["steps 2-3"], summary="Live mode: collect finished research and move briefs to Step 4")

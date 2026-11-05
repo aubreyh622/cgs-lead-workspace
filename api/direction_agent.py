@@ -122,7 +122,8 @@ def direction_agent(direction: dict, c=None) -> tuple[R.AgentSpec, dict]:
                          "passage_id": s, "quote": {"type": "string", "description": "The supporting sentence, word for word"}}),
                add_problem),
     ]
-    spec = R.AgentSpec(name="Direction agent", version=VERSION, system=SYSTEM, tools=tools,
+    from api.lessons import block
+    spec = R.AgentSpec(name="Direction agent", version=VERSION, system=SYSTEM + (block(c.s, "Direction agent", c.today) if c else ""), tools=tools,
                        finish=R.Tool("finish", "Done. One sentence on what you chose and why.", R.params({"summary": s}), finish),
                        max_steps=14, max_tool_calls=40)
     return spec, record

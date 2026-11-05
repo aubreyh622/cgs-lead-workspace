@@ -23,7 +23,8 @@ from sqlalchemy import select
 from api import models as m
 from api import scorecard as SC
 
-TARGETS = ("Evidence agent", "Outreach agent", "Manager agent")  # agents whose prompts take lessons
+# agents whose prompts take lessons: every AI agent (research, discovery and direction since B1, 5 Nov 2026)
+TARGETS = ("Evidence agent", "Outreach agent", "Manager agent", "Research agent", "Discovery agent", "Direction agent")
 FORMER = {"Manager agent": ("Next-step agent",), "Evidence agent": ("Reply classifier",), "Direction agent": ("Feedback agent",)}
 # agents merged into another on 30 Oct 2026: lessons approved for them now apply to the agent that took over their work
 MAX_ACTIVE = 5          # approved lessons per agent

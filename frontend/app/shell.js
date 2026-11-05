@@ -1,5 +1,5 @@
 // The frame around every page: header with navigation and counts, the person picker, toasts.
-import { html, icon, href, initials, plural } from "./lib.js";
+import { html, icon, href, initials, plural, safeUrl } from "./lib.js";
 import { AGENTS, agentState } from "./pages/team.js";
 
 export const NAV = [
@@ -53,6 +53,17 @@ export function header({ page, counts, config, users, me }) {
       </label>` : ""}
     </div>
   </div>`;
+}
+
+// Links to the records the CRM sync made for an opportunity (o.crm from the API). Only http(s) links are shown, so the
+// test CRM's mock:// addresses never become links.
+export function crmLinks(crm) {
+  if (!crm) return "";
+  const where = crm.provider === "insightly" ? "Insightly" : "the CRM";
+  const links = [[crm.leadUrl, `Lead in ${where}`], [crm.opportunityUrl, `Opportunity in ${where}`]]
+    .map(([u, text]) => [safeUrl(u), text]).filter(([u]) => u);
+  return html`${links.map(([u, text]) => html`<a class="tag link-tag" href="${u}" target="_blank" rel="noopener noreferrer">${icon("link", 14)}${text}</a>`)}
+    ${crm.lastError ? html`<span class="tag bad" title="${crm.lastError}">CRM sync failed</span>` : ""}`;
 }
 
 export function chooser(users, problem) {

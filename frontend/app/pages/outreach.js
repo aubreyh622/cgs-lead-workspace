@@ -3,7 +3,7 @@
 import { html, icon, day, addDays, href, plural, initials } from "../lib.js";
 import { enc } from "../api.js";
 import { STAGE_LABELS } from "../options.js";
-import { emptyState, inlineError } from "../shell.js";
+import { emptyState, inlineError, crmLinks } from "../shell.js";
 
 export const title = "Outreach";
 
@@ -187,7 +187,7 @@ function contactBlock(o) {
   const panel = ui.mode === "contact";
   return html`
   <div class="block stack">
-    <div class="row-flex"><h3 class="sub-title" style="margin:0">Contact</h3>${confirmed}</div>
+    <div class="row-flex"><h3 class="sub-title" style="margin:0">Contact</h3>${confirmed}${crmLinks(o.crm)}</div>
     <p>${c.name || "No person named yet"}${c.name ? html`, <span class="meta">${c.title}</span>` : ""}</p>
     <p class="meta">${c.email ? `Email: ${c.email}` : "No email address on file. Agents never guess one; add it when you send."}</p>
     ${panel ? html`

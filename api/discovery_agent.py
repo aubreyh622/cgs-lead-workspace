@@ -205,8 +205,8 @@ def two_companies(name: str) -> bool:
 
 
 def discovery_agent(search, direction: dict, intent: str, known: set[str], today: date, config: dict | None = None, crm=None,
-                    memory: dict | None = None):
-    """Returns (spec, record). record: found {url: result}, queries, query_of {url: first query}, kept, dropped {reason: n}, reads.
+                    memory: dict | None = None, lessons: str = "", limit: int = MAX_CANDIDATES):
+    """Returns (spec, record). limit: how many companies this round may nominate (at most MAX_CANDIDATES). record: found {url: result}, queries, query_of {url: first query}, kept, dropped {reason: n}, reads.
     crm: the CRM as the discovery agent may read it (api/toolkit crm_if_allowed), or None.
     memory: what earlier rounds taught (api/discovery_memory.for_agent), or None."""
     from api import agent_runtime as R
@@ -294,8 +294,8 @@ def discovery_agent(search, direction: dict, intent: str, known: set[str], today
         r = record["found"].get(url)
         if r is None:
             drop("no_source", "Nominate only from a result search_news returned (give its url).")
-        if len(record["kept"]) >= MAX_CANDIDATES:
-            drop("over_limit", f"{MAX_CANDIDATES} nominations is the limit. Call finish.")
+        if len(record["kept"]) >= limit:
+            drop("over_limit", f"{limit} nomination{'s are' if limit != 1 else ' is'} the limit for this round. Call finish.")
         source = (r.get("title") or "") + " " + (r.get("content") or "")
         text = _norm(source)
         if not name or _norm(name) not in text:
@@ -359,7 +359,7 @@ def discovery_agent(search, direction: dict, intent: str, known: set[str], today
                          "problem_id": {"type": "string", "description": "When the direction lists problems: the id of the one this company may have"}},
                         ["company", "url", "why", "signal", "quote"]), nominate),
     ]
-    spec = R.AgentSpec(name="Discovery agent", version=AGENT_VERSION, system=AGENT_SYSTEM, tools=tools,
+    spec = R.AgentSpec(name="Discovery agent", version=AGENT_VERSION, system=AGENT_SYSTEM + lessons, tools=tools,
                        finish=R.Tool("finish", "Done with this round. A short summary of what you searched and nominated.",
                                      R.params({"summary": s}), finish),
                        max_steps=16, max_tool_calls=MAX_AGENT_SEARCHES + MAX_READS + MAX_CANDIDATES + 12)
@@ -367,11 +367,14 @@ def discovery_agent(search, direction: dict, intent: str, known: set[str], today
 
 
 def discover_with_agent(provider: Provider, search, direction: dict, intent: str, known: set[str], today: date,
-                        debug_file: Path | None = None, config: dict | None = None, may_call=None, crm=None, memory: dict | None = None):
+                        debug_file: Path | None = None, config: dict | None = None, may_call=None, crm=None, memory: dict | None = None,
+                        lessons: str = "", limit: int = MAX_CANDIDATES):
     """One discovery round by the agent. Returns ((kept, info), usage, trace): discover()'s result plus the trace."""
     from api import agent_runtime as R
-    spec, record = discovery_agent(search, direction, intent, known, today, config, crm=crm, memory=memory)
-    task = f"Find companies for a new discovery round (today is {today.isoformat()}). Start with direction."
+    limit = max(1, min(int(limit), MAX_CANDIDATES))
+    spec, record = discovery_agent(search, direction, intent, known, today, config, crm=crm, memory=memory, lessons=lessons, limit=limit)
+    task = (f"Find companies for a new discovery round (today is {today.isoformat()}). Start with direction."
+            + (f" This round, nominate at most {limit}." if limit < MAX_CANDIDATES else ""))
     out = R.run(spec, provider, task, **({"may_call": may_call} if may_call else {}))
     if debug_file is not None:
         debug_file.parent.mkdir(parents=True, exist_ok=True)

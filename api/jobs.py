@@ -40,7 +40,14 @@ TRIGGERS = ("event", "patrol", "handoff", "person", "manager")
 MAX_DEPTH = 2          # a handoff may lead to one more handoff, no further
 HANDOFF_CAP = 3        # handoffs per opportunity per day
 INBOX_DAYS = 14        # what an agent prepared expires after two weeks: news and drafts go out of date
-DEFAULTS = {"agents_paused": False, "patrol_hour": 8, "follow_days": 7, "stall_days": 14}
+DEFAULTS = {"agents_paused": False, "paused_agents": [], "patrol_hour": 8, "follow_days": 7, "stall_days": 14}
+# Agents a person can pause one at a time. Their jobs stay on the board and wait; the rest of the board keeps running.
+# The evidence agent has no jobs on the board (it runs when a person saves notes), and the rules are paused with everything.
+PAUSABLE = ("Research agent", "Outreach agent", "Manager agent", "Discovery agent", "Direction agent")
+
+
+def paused_agents(s) -> set[str]:
+    return {a for a in (setting(s, "paused_agents") or []) if a in PAUSABLE}
 DEFAULT_AI_BUDGET = 60
 RETRY_SECONDS = 60     # wait before retrying a temporary AI error; doubles with each attempt
 

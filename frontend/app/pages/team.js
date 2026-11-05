@@ -1,6 +1,6 @@
 // The Agents page as designed: six agent cards with what each is doing, the controls, suggestions from the agents,
 // and a page per agent. Everything shown is computed from the backend's jobs, inbox, runs, proposals and scorecard.
-import { html, icon, day, addDays, href, plural } from "../lib.js";
+import { html, icon, day, addDays, href, plural, safeUrl } from "../lib.js";
 import { enc } from "../api.js";
 import { emptyState } from "../shell.js";
 import { tabBar, cancelButton, openButton } from "../forms.js";
@@ -46,8 +46,9 @@ export const AGENTS = [
   },
 ];
 const BY_SLUG = Object.fromEntries(AGENTS.map((a) => [a.slug, a]));
-const DETAIL_TABS = [["overview", "Overview"], ["work", "Work"], ["runs", "AI runs"], ["permissions", "Permissions"], ["lessons", "Lessons"]];
-const LESSON_AGENTS = ["Evidence agent", "Outreach agent", "Manager agent"];
+const DETAIL_TABS = [["overview", "Overview"], ["work", "Work"], ["runs", "AI runs"], ["permissions", "Permissions"], ["lessons", "Instructions"]];
+// Agents a person can pause one at a time (api/jobs.py PAUSABLE): the evidence agent has no jobs on the task board.
+const PAUSABLE = ["Research agent", "Outreach agent", "Manager agent", "Discovery agent", "Direction agent"];
 const JOB_TAG = { queued: "", running: "info", done: "good", failed: "bad", skipped: "", cancelled: "" };
 const STATE_LABEL = { on: "On", off: "Off", forbidden: "Never (code)", "not built": "Not built", "connector off": "Connector off" };
 
@@ -69,7 +70,8 @@ export async function loadAgent(ctx, params) {
   const agent = BY_SLUG[params.agent] || AGENTS[0];
   const tab = DETAIL_TABS.some(([t]) => t === params.dtab) ? params.dtab : "overview";
   const [b, runs, perms] = await Promise.all([base(ctx), ctx.api.get("/agent-runs?limit=200"), ctx.api.get("/toolkit/permissions")]);
-  return { mode: "agent", agent, tab, ...b, runs: runs.filter((r) => r.agent === agent.name), perms };
+  const trials = agent.slug === "research" ? await ctx.api.get("/agents/research/try").catch((e) => ({ error: e.message })) : null;
+  return { mode: "agent", agent, tab, ...b, runs: runs.filter((r) => r.agent === agent.name), perms, trials };
 }
 
 // ---------- what each agent is doing now ----------
@@ -82,6 +84,9 @@ export function agentState(a, d, me) {
   if (a.slug === "manager") waiting += d.lessons.filter((l) => l.status === "proposed" && l.proposedBy === "Manager agent").length;
   const lastDone = mine.find((j) => j.status === "done");
   if (d.overview.paused) return { label: "Paused", cls: "", dot: "", now: queued.length ? `${plural(queued.length, "job")} waiting until the agents resume` : "Nothing new starts while paused" };
+  if ((d.overview.pausedAgents || []).includes(a.name)) {
+    return { label: "Paused", cls: "", dot: "", now: queued.length ? `${plural(queued.length, "job")} waiting until a person resumes it` : "Paused by a person; the other agents keep working" };
+  }
   if (running.length) return { label: "Working", cls: "info", dot: "run", now: running[0].reason };
   if (waiting) return { label: "Waiting for you", cls: "warn", dot: "wait", now: `${plural(waiting, "item")} waiting for ${me}` };
   if (queued.length) return { label: "Queued", cls: "", dot: "", now: `Next: ${queued[0].reason}` };
@@ -239,7 +244,8 @@ export function detail(d, ctx, st) {
   const a = d.agent;
   const s = agentState(a, d, ctx.me);
   const last = d.runs[0];
-  const tabs = DETAIL_TABS.filter(([t]) => t !== "lessons" || LESSON_AGENTS.includes(a.name));
+  const tabs = DETAIL_TABS;
+  const paused = (d.overview.pausedAgents || []).includes(a.name);
   return html`
   <a class="back" href="${href("agents")}">${icon("back", 16)}Agents</a>
   <div class="page-head" style="margin-top:12px">
@@ -251,13 +257,63 @@ export function detail(d, ctx, st) {
         <p class="meta-3">${last ? `Last AI run ${day(last.on, ctx.today)}: ${last.model}, prompt ${last.prompt}.` : "No AI run recorded yet."}</p>
       </div>
     </div>
+    ${PAUSABLE.includes(a.name) ? html`
+    <div class="row-flex" style="flex-wrap:nowrap;gap:12px">
+      ${d.trials && st.ui.open !== "try" ? openButton("try", "Try it on a company", "btn") : ""}
+      <span class="meta" style="text-align:right">${paused ? "Paused. Its jobs wait on the task board." : "Pause this agent only. Its jobs wait; the others keep working."}</span>
+      <button type="button" class="switch" role="switch" aria-checked="${paused ? "true" : "false"}" aria-label="Pause the ${a.name.toLowerCase()}" data-act="pauseAgent" data-agent="${a.name}" data-paused="${paused ? "" : "1"}"><span></span></button>
+    </div>` : html`<p class="meta" style="max-width:280px">Not on the task board: it runs when a person saves notes or a reply is recorded, so it has no pause switch.</p>`}
   </div>
   ${st.err("top")}
   ${st.notices()}
+  ${d.trials ? trialsBlock(d, ctx, st) : ""}
   ${tabBar(a.name, tabs, d.tab, {}, { act: "dtab", keys: "dtabkeys" })}
   <div id="panel" role="tabpanel" aria-labelledby="tab-${d.tab}">
     ${{ overview: agentOverview, work: agentWork, runs: agentRuns, permissions: agentPerms, lessons: agentLessons }[d.tab](d, ctx, st)}
   </div>`;
+}
+
+// ----- "Try it on a company" (research agent): the brief is shown here and saved nowhere else -----
+function trialsBlock(d, ctx, st) {
+  const list = d.trials.error ? [] : d.trials;
+  const live = ctx.config && ctx.config.appMode === "live";
+  if (st.ui.open !== "try" && !list.length && !d.trials.error) return "";
+  return html`
+  <section class="card" aria-labelledby="try-h" style="margin-bottom:24px">
+    <div class="card-head"><div><h2 id="try-h">Try it on a company</h2>
+      <p class="meta">The research agent researches a company you name, with its usual tools, limits, checks and approved instructions. You see the brief here. Nothing else is saved: no company, lead, CRM record or email. The AI run is logged under AI runs.</p></div></div>
+    ${st.ui.open === "try" ? html`<div class="card-body">${live ? html`
+      <form class="panel-form" data-act="tryForm" data-on="submit input">
+        <div class="form-grid">
+          <label class="field">Company<input name="company" required></label>
+          <label class="field">Website <span class="hint">For example arbor-fiberworks.com</span><input name="domain" required></label>
+        </div>
+        <div class="actions"><button type="submit" class="btn primary" disabled>Research it</button>${cancelButton}<span class="missing" data-missing>Give the company and its website.</span></div>
+        ${st.err("try")}
+      </form>` : html`
+      <div class="notice">${icon("alert")}<span>Try it runs the real research agent, so it needs live mode. In this demo, briefs come from prepared examples.</span></div>
+      <div class="actions" style="margin-top:12px">${cancelButton}</div>`}</div>` : ""}
+    ${d.trials.error ? html`<div class="card-body"><div class="notice bad">${icon("alert")}<span>${d.trials.error}</span></div></div>` : ""}
+    ${list.length ? html`<ul class="rows">${list.map((t) => trialRow(t, ctx))}</ul>` : ""}
+  </section>`;
+}
+
+export function trialRow(t, ctx) {
+  const b = t.brief;
+  return html`<li style="align-items:flex-start">
+    <span class="what"><b>${t.company}</b><span class="meta">${t.domain}, ${day(t.on, ctx.today)}</span>
+      ${t.status === "running" ? html`<span class="meta">Researching. This takes up to about 8 minutes; the page checks again on its own.</span>` : ""}
+      ${t.status === "failed" ? html`<span class="bad-text">${t.error || "No brief was produced."}</span>` : ""}
+      ${b ? html`<div class="trial-brief">
+        ${b.hypothesis ? html`<p><b>Possible problem:</b> ${b.hypothesis}</p>` : ""}
+        ${b.facts && b.facts.length ? html`<ol class="sources">${b.facts.map((f) => html`<li>${f.text} <span class="meta-3">${safeUrl(f.src)
+          ? html`<a href="${safeUrl(f.src)}" target="_blank" rel="noopener noreferrer">${f.src}</a>` : f.src}${f.date ? `, ${f.date}` : ""}</span></li>`)}</ol>` : html`<p class="meta">No facts were kept.</p>`}
+        ${b.flags && b.flags.length ? html`<ul class="bullets">${b.flags.map((x) => html`<li><b>${x.type}:</b> ${x.text}</li>`)}</ul>` : ""}
+        ${t.person ? html`<p class="meta">Contact named by a source: ${t.person.name}${t.person.title ? `, ${t.person.title}` : ""}</p>` : ""}
+        ${b.recommendation ? html`<p class="meta">The agent would suggest: ${b.recommendation.decision}. ${b.recommendation.reason}</p>` : ""}
+      </div>` : ""}</span>
+    <span class="tag ${t.status === "completed" ? "good" : t.status === "failed" ? "bad" : "info"}">${t.status === "completed" ? "Brief ready" : t.status === "failed" ? "Failed" : "Running"}</span>
+  </li>`;
 }
 
 function agentOverview(d, ctx) {
@@ -332,12 +388,36 @@ function agentPerms(d, ctx, st) {
   </section>`;
 }
 
-function agentLessons(d, ctx) {
-  const list = d.lessons.filter((l) => l.agent === d.agent.name);
-  return html`<section class="card">${list.length ? html`<ul class="rows">${list.map((l) => html`<li style="align-items:flex-start">
-    <span class="what"><b>${l.label}: ${l.text}</b><span class="meta">${l.status}. Proposed by ${l.proposedBy}, ${day(l.proposedOn, ctx.today)}. ${l.why}</span>
-    ${l.sinceApproved ? html`<span class="meta-3">In use for ${plural(l.sinceApproved.days, "day")}, used ${plural(l.uses, "time")}.</span>` : ""}</span></li>`)}</ul>`
-    : emptyState("No lessons for this agent", "Lessons are proposed on the Records, Lessons tab or by the manager agent's weekly review.")}</section>`;
+// Instructions are lessons: a person writes one, an admin approves it, and only then it joins the agent's prompt (at most five).
+function agentLessons(d, ctx, st) {
+  const a = d.agent;
+  const list = d.lessons.filter((l) => l.agent === a.name);
+  const active = list.filter((l) => l.status === "approved");
+  return html`
+  <div class="two-col">
+    <section class="card main" aria-labelledby="ins-h">
+      <div class="card-head"><div><h2 id="ins-h">Instructions in its prompt</h2>
+        <p class="meta">${plural(active.length, "approved instruction")} of at most five. They come after the rules and never loosen them. Approve, reject or retire them under <a href="${href("agents", { tab: "lessons" })}">Records, Lessons</a>.</p></div></div>
+      ${list.length ? html`<ul class="rows">${list.map((l) => html`<li style="align-items:flex-start">
+        <span class="what"><b>${l.label}: ${l.text}</b><span class="meta">${l.status}. Proposed by ${l.proposedBy}, ${day(l.proposedOn, ctx.today)}. ${l.why}</span>
+        ${l.sinceApproved ? html`<span class="meta-3">In use for ${plural(l.sinceApproved.days, "day")}, used ${plural(l.uses, "time")}.</span>` : ""}</span>
+        <span class="tag ${l.status === "approved" ? "good" : l.status === "proposed" ? "warn" : ""}">${l.status}</span></li>`)}</ul>`
+        : emptyState("No instructions yet", "Write one here. The manager agent's weekly review may also propose some.")}
+    </section>
+    <aside class="side">
+      <section class="card card-body stack">
+        <h2 class="section-title" style="margin:0">Write an instruction</h2>
+        <p class="meta">One or two sentences to the ${a.name.toLowerCase()}: in which situation, what to do. Code refuses text that tells it to ignore or skip a rule, or that mentions fees.</p>
+        <form class="panel-form" data-act="lessonForm" data-on="submit input">
+          <input type="hidden" name="agent" value="${a.name}">
+          <label class="field">The instruction<textarea name="text" rows="3" required></textarea></label>
+          <label class="field">What you saw that it answers<textarea name="why" rows="2" required></textarea></label>
+          <div class="actions"><button type="submit" class="btn primary" disabled>Propose</button><span class="missing" data-missing>Write the text and why.</span></div>
+          ${st.err("lesson")}
+        </form>
+      </section>
+    </aside>
+  </div>`;
 }
 
 // ---------- actions specific to these views ----------

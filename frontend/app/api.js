@@ -49,6 +49,7 @@ export const api = {
   post: (path, body = {}) => call("POST", path, body),
   put: (path, body = {}) => call("PUT", path, body),
   patch: (path, body = {}) => call("PATCH", path, body),
+  del: (path) => call("DELETE", path),
 };
 
 export const enc = encodeURIComponent;

@@ -496,6 +496,44 @@ class AgentLesson(Base):
     last_used_on: Mapped[Optional[date]] = mapped_column(Date)
 
 
+class DiscoverySearch(Base):
+    """A search the discovery agent runs on its own (Sources, Automatic searches; api/discovery_searches.py). The main
+    search uses the research direction alone; the others add what a person asked to look for."""
+    __tablename__ = "discovery_searches"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    query: Mapped[str] = mapped_column(Text, default="")              # what to look for; empty for the main search
+    freq: Mapped[str] = mapped_column(String(10), default="week")     # day | 3days | week | 2weeks | 4weeks
+    weekday: Mapped[Optional[int]] = mapped_column(Integer)            # 0 Monday .. 4 Friday; only for week, 2weeks, 4weeks
+    per_run: Mapped[int] = mapped_column(Integer, default=10)          # companies per run, 1-10
+    on: Mapped[bool] = mapped_column(Boolean, default=True)
+    main: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_by: Mapped[str] = mapped_column(String(80), default="")   # its own direction applies (empty: the team's)
+    created_on: Mapped[date] = mapped_column(Date)
+    last_run_on: Mapped[Optional[date]] = mapped_column(Date)
+    rounds: Mapped[list] = mapped_column(JSON, default=list)          # [{round, on, found}], newest last, at most 12
+    last_error: Mapped[Optional[str]] = mapped_column(Text)
+
+
+class TrialRun(Base):
+    """"Try it on a company" (B2): the research agent runs on a company a person names, and the brief is shown to them.
+    Nothing else is written: no company, candidate, opportunity, CRM record or email. The AI run is logged like any other."""
+    __tablename__ = "trial_runs"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    agent: Mapped[str] = mapped_column(String(40), default="Research agent")
+    company: Mapped[str] = mapped_column(String(200))
+    domain: Mapped[str] = mapped_column(String(200), default="")
+    requested_by: Mapped[str] = mapped_column(String(80))
+    on: Mapped[date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(20), default="running")    # running | completed | failed
+    external_run_id: Mapped[Optional[str]] = mapped_column(String(80))
+    brief: Mapped[Optional[dict]] = mapped_column(JSON)                    # the brief in the Step 4 format, never saved to a company
+    person: Mapped[Optional[dict]] = mapped_column(JSON)                   # a contact the sources named, if any
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    run_id: Mapped[Optional[str]] = mapped_column(String(64))              # the AgentRun with its trace
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class OpportunityMemory(Base):
     """The manager agent's notebook for one opportunity: a running summary, and what each side promised to do, by when.
     Every commitment carries the sentence from a note that states it, word for word (checked by code, api/memory.py)."""

@@ -213,6 +213,59 @@ def test_brakes_budget_pause_and_handoff_cap(live):
                          parent=type("P", (), {"depth": J.MAX_DEPTH, "id": "x"})())
     assert made == J.HANDOFF_CAP and deep is None
 
+def test_one_paused_agent_waits_while_the_others_work(live):
+    ai = SchemaAI()
+    app, api = live(ai)
+    lead(api, "Ardent Castings", ai)
+    api.post("/api/demo/advance-days?days=8", headers=ME)
+    assert api.post("/api/agents/pause", json={"agent": "Outreach agent", "paused": True}).status_code == 401  # needs a person
+    assert api.post("/api/agents/pause", headers=ME, json={"agent": "Evidence agent", "paused": True}).status_code == 422  # not on the board
+    res = api.post("/api/agents/pause", headers=ME, json={"agent": "Outreach agent", "paused": True}).json()
+    assert res["pausedAgents"] == ["Outreach agent"]
+    api.post("/api/agents/patrol", headers=ME)
+    with app.state.db.session() as s:
+        waiting = [j.id for j in s.query(m.AgentJob).filter_by(agent="Outreach agent", status="queued")]
+    assert waiting, "the patrol should still queue the follow-up"
+    ran = AU.run_pending(app)
+    assert all(r["agent"] != "Outreach agent" for r in ran)
+    assert AU.run_job(app, waiting[0]) == "queued"  # asked directly, it still waits and says why
+    job = next(j for j in api.get("/api/agents/jobs", params={"status": "queued"}).json() if j["id"] == waiting[0])
+    assert "paused" in job["result"]
+    status = api.get("/api/agents").json()
+    out = next(a for a in status["agents"] if a["agent"] == "Outreach agent")
+    assert out["paused"] and out["pausable"] and status["pausedAgents"] == ["Outreach agent"] and status["paused"] is False
+    assert not next(a for a in status["agents"] if a["agent"] == "Mail rules")["pausable"]
+    api.post("/api/agents/pause", headers=ME, json={"agent": "Outreach agent", "paused": False})
+    ran = AU.run_pending(app)
+    assert set(waiting) <= {r["id"] for r in ran}, ran  # resumed: every job that waited has run
+    assert any(r["kind"] == "followup_draft" and r["status"] == "done" for r in ran), ran
+    assert inbox(api, "draft")
+
+
+def test_try_it_shows_a_brief_and_saves_nothing_to_the_workflow(live, tmp_path):
+    ai = SchemaAI()
+    app, api = live(ai)
+    tables = (m.Company, m.Opportunity, m.Candidate, m.InboxItem, m.ResearchTask)
+
+    def counts():
+        with app.state.db.session() as s:
+            return {t.__name__: s.query(t).count() for t in tables}
+    before = counts()
+    assert api.post("/api/agents/research/try", headers=ME, json={"company": "Ardent Castings", "domain": "x"}).status_code == 400
+    t = api.post("/api/agents/research/try", headers=ME, json={"company": "Ardent Castings", "domain": "https://www.ardentcastings.example/"}).json()
+    assert t["domain"] == "ardentcastings.example" and t["status"] == "completed", t  # the test runs research in the foreground
+    assert t["brief"]["facts"] and t["requestedBy"] == "Alex Morgan"
+    assert counts() == before  # no company, lead, candidate, inbox item or research task
+    run = next(r for r in api.get("/api/agent-runs").json() if r["id"] == t["runId"])
+    assert run["agent"] == "Research agent" and run["subject"] == "Try it: Ardent Castings" and run["status"] == "completed"
+    assert run["steps"]  # the trace is kept, as for any research run
+    assert [x["id"] for x in api.get("/api/agents/research/try", headers=ME).json()] == [t["id"]]
+    assert api.get("/api/agents/research/try", headers={"X-User": "Sarah Patel"}).json() == []  # each person sees their own
+    demo = create_app(Settings(app_mode="demo", db_path=tmp_path / "demo-try.sqlite3"))
+    r = TestClient(demo).post("/api/agents/research/try", headers=ME, json={"company": "Ardent Castings", "domain": "ardentcastings.example"})
+    assert r.status_code == 409 and "live mode" in r.json()["error"]
+
+
 def test_returned_pack_and_ready_are_picked_up_without_a_click(tmp_path):
     app = create_app(Settings(app_mode="demo", db_path=tmp_path / "d.sqlite3"))
     api = TestClient(app)

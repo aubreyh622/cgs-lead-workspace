@@ -12,10 +12,10 @@ integrated app, which has its own interface.
 | --- | --- | --- | --- |
 | `#/home` | Home | All | The queue of things waiting for them, their next steps, their pipeline by stage |
 | `#/companies` | Companies | 1-4 | Pick or skip candidates, watch research, decide on each brief |
-| `#/sources` | Sources | 1 | Ask the discovery agent, add a company, set and approve the research direction, see what searches taught |
+| `#/sources` | Sources | 1 | Ask the discovery agent (and how many), automatic searches, add a company, set and approve the research direction, see what searches taught |
 | `#/outreach` | Outreach | 5 and the first reply | Approve and send email drafts, record what was sent, follow-ups, replies, nurture |
 | `#/qualification` | Qualification | 6-8 | Notes and evidence proposals, scores and conditions, tasks, the pack, the Step 8 decision |
-| `#/agents` | Agents | All | The six agent cards and their suggestions; each agent's own page (`?agent=research`); the records: controls, task board, AI runs, permissions, lessons, scorecard |
+| `#/agents` | Agents | All | The six agent cards and their suggestions; each agent's own page (`?agent=research`) with its pause switch, instructions and, for the research agent, Try it on a company; the records: controls, task board, AI runs, permissions, lessons, scorecard |
 
 Tabs and selections live in the URL (`#/companies?tab=review&id=ostrander`), so a link opens the same view.
 

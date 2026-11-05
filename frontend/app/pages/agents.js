@@ -17,7 +17,7 @@ const TABS = [
   ["lessons", "Lessons"],
   ["scorecard", "Scorecard"],
 ];
-const LESSON_AGENTS = ["Evidence agent", "Outreach agent", "Manager agent"];
+const LESSON_AGENTS = ["Research agent", "Outreach agent", "Evidence agent", "Manager agent", "Discovery agent", "Direction agent"];
 const JOB_TAG = { queued: "", running: "info", done: "good", failed: "bad", skipped: "", cancelled: "" };
 const STATE_LABEL = { on: "On", off: "Off", forbidden: "Never (code)", "not built": "Not built", "connector off": "Connector off" };
 
@@ -53,6 +53,19 @@ export async function load(ctx, params) {
   if (tab === "lessons") [data.lessons, data.findings] = await Promise.all([ctx.api.get("/lessons"), opt(ctx.api.get("/lessons/findings"))]);
   if (tab === "scorecard") [data.scorecard, data.decisions, data.rules] = await Promise.all([ctx.api.get("/manager/scorecard"), opt(ctx.api.get("/manager/decisions?limit=50")), ctx.api.get("/rules")]);
   return data;
+}
+
+// While a "Try it" research run is going, check again every few seconds (the GET collects a finished run).
+let pollTimer = null;
+export function after(root, ctx, d) {
+  clearTimeout(pollTimer);
+  if (d.mode !== "agent" || !Array.isArray(d.trials) || !d.trials.some((t) => t.status === "running")) return;
+  const route = location.hash;
+  pollTimer = setTimeout(() => {
+    if (location.hash !== route) return;
+    if (root.contains(document.activeElement) && document.activeElement.matches("input, textarea, select")) return after(root, ctx, d);
+    ctx.refresh();
+  }, 8000);
 }
 
 export function view(d, ctx) {
@@ -342,7 +355,7 @@ function lessonsView(d, ctx) {
           <label class="field">For<select name="agent">${LESSON_AGENTS.map((a) => html`<option>${a}</option>`)}</select></label>
           <label class="field">The lesson<textarea name="text" rows="3" required></textarea></label>
           <label class="field">What you saw that it answers<textarea name="why" rows="2" required></textarea></label>
-          <div class="actions"><button type="submit" class="btn primary" disabled>Propose</button><span class="missing" data-missing>Write the lesson and why.</span></div>
+          <div class="actions"><button type="submit" class="btn primary" disabled>Propose</button><span class="missing" data-missing>Write the text and why.</span></div>
           ${st.err("lesson")}
         </form>
       </section>
@@ -449,6 +462,19 @@ export const actions = {
       st.ui.notice = [{ text: `Ran ${plural(ran.length, "job")}${failed ? `; ${failed} failed (see the task board)` : ""}.`, cls: failed ? "warn" : "good" }];
     });
   },
+  tryForm(form, e, ctx) {
+    const f = form.elements;
+    const why = f.company.value.trim() && f.domain.value.trim() ? "" : "Give the company and its website.";
+    if (e.type !== "submit") return missing(form, why);
+    if (why) return;
+    st.write("try", form.querySelector("[type=submit]"), ctx, () => ctx.api.post("/agents/research/try", { company: f.company.value.trim(), domain: f.domain.value.trim() }),
+      (res) => { st.ui.notice = [{ text: res.status === "completed" ? `Brief ready for ${res.company}. Nothing was saved to the workflow.` : `The research agent is researching ${res.company}. The brief appears below when it is done.`, cls: "good" }]; });
+  },
+  pauseAgent(t, e, ctx) {
+    const paused = t.dataset.paused === "1";
+    st.write("top", t, ctx, () => ctx.api.post("/agents/pause", { agent: t.dataset.agent, paused }),
+      () => { st.ui.notice = [{ text: `${t.dataset.agent} ${paused ? "paused. Its jobs wait on the task board." : "resumed."}`, cls: "good" }]; });
+  },
   pause(t, e, ctx) {
     st.write("top", t, ctx, () => ctx.api.patch("/agents", { paused: t.dataset.paused === "1" }));
   },
@@ -496,11 +522,11 @@ export const actions = {
 
   lessonForm(form, e, ctx) {
     const f = form.elements;
-    const why = f.text.value.trim() && f.why.value.trim() ? "" : "Write the lesson and why.";
+    const why = f.text.value.trim() && f.why.value.trim() ? "" : "Write the text and why.";
     if (e.type !== "submit") return missing(form, why);
     if (why) return;
     st.write("lesson", form.querySelector("[type=submit]"), ctx, () => ctx.api.post("/lessons", { agent: f.agent.value, text: f.text.value.trim(), why: f.why.value.trim() }),
-      (res) => { st.ui.notice = [{ text: `Lesson ${res.label} proposed. It needs approval before the agent uses it.`, cls: "good" }]; });
+      (res) => { st.ui.notice = [{ text: `${res.label} proposed for the ${res.agent.toLowerCase()}. The agent uses it only after an admin approves it.`, cls: "good" }]; });
   },
   lessonDecide(form, e, ctx) {
     if (e.type !== "submit") return;

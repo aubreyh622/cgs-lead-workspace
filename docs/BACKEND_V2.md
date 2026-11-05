@@ -106,14 +106,15 @@ Agents work like employees: they notice work, do it, and hand the result to a pe
 - **Worker**: started by `python -m api.main` when `AGENT_WORKER=on` (default). It patrols once a day after `patrol_hour` (or at once after time travel) and works through the board in **parallel lanes** (`AGENT_LANES`, default 3; 1 = one job at a time): while the outreach agent writes a draft for one opportunity, the discovery agent can search and another opportunity's job can run. Rules: never two jobs for the same opportunity at once, never two of the same company-wide job (two discovery rounds, two daily reviews); only lane 0 patrols and collects research; each lane pauses between jobs for the AI provider's rate limit. Each job is claimed in one database update, so two lanes (or a lane and a "run now" request) never run the same job. The daily AI budget is checked before every AI request, so parallel lanes can pass it by a request or two. A demo reset waits until every lane has finished its job. Live check (30 Oct): a discovery round, a first draft and a follow-up draft ran at once and finished in 30 s instead of 66 s one after another. While the day's AI budget is used up, AI jobs wait and jobs that need no AI still run. Temporary AI errors are retried up to 3 times, after 60 s and then 120 s.
 - **Budget counting**: each AI request counts toward the daily budget (discovery makes two), including requests that failed.
 - **Personal directions**: a consultant-scope proposal changes the proposer's own direction, whoever approves it. Versions are named `<shared>-<person>-p<n>` (for example `v4-alex-morgan-p2`). When a shared change is approved, each person's own changes are carried onto the new shared version, so shared exclusions always reach everyone.
-- **Brakes**: daily AI budget (`AGENT_AI_DAILY_BUDGET`, also `PATCH /api/agents`); at most 3 handoffs per opportunity per day and chains of 2; pause switch. Every job and AI call is logged.
+- **Brakes**: daily AI budget (`AGENT_AI_DAILY_BUDGET`, also `PATCH /api/agents`); at most 3 handoffs per opportunity per day and chains of 2; a pause switch for all agents and, since B1, one per agent (research, outreach, manager, discovery, direction: their jobs stay queued and the rest of the board runs). Every job and AI call is logged.
 - **Time travel** (`POST /api/demo/advance-days`) works with demo data and, in live mode, on the synthetic internet. The synthetic internet hides news dated after the simulated day, so a research refresh after time travel finds it.
 - `Check Agents.cmd` (`python -m api.check_agents`): three leads, then 8 days and 5 months of simulated time, with the real AI.
 
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/agents` | The team, what each agent does, paused or not, today's AI calls and budget, queue size |
-| PATCH | `/api/agents` | Pause or resume; change the AI budget or patrol hour |
+| PATCH | `/api/agents` | Pause or resume all agents; change the AI budget or patrol hour |
+| POST | `/api/agents/pause` | Pause or resume one agent (`{"agent": "Outreach agent", "paused": true}`); `GET /api/agents` lists `pausedAgents` |
 | GET | `/api/agents/jobs` | The task board (filter by status or opportunity) |
 | POST | `/api/agents/patrol` | Patrol now (`run=true` also works through the queue) |
 | POST | `/api/agents/run` | Work through the queue now |
@@ -266,6 +267,31 @@ judgment.
 
 `discover_with_agent()` in `api/discovery_agent.py`, prompt version `discovery-agent-1.0`. Step 1 in live mode and the
 weekly `discovery_round` job both use it (now `discovery-agent-1.2`, see Discovery memory below). The agent picks its own searches instead of running a fixed list.
+
+**Automatic searches and how many (B2, 5 Nov 2026).** `POST /api/candidates/recommend` takes `count` (1-10, default 10):
+the agent is told the round's limit and code refuses nominations past it. The fixed weekly round became the main
+**automatic search** (`api/discovery_searches.py`, table `discovery_searches`): every week, 10 per run, research direction
+alone. People add their own searches with a name, what to look for, how often (every day, 3 days, week, 2 weeks or
+4 weeks), an optional weekday for weekly or less often, and companies per run (1-10). A person's search runs with that
+person's own direction, and its candidates go to that person's inbox. The daily check queues one `discovery_round` job
+when any search is due, and the job runs each due search as its own round. One search failing does not stop the
+others; the job fails only when all of them did. Searches run at the daily check, not at a set hour. The main search
+can be switched off but not deleted. The setting `last_discovery` still counts as the main search's last run.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/discovery/searches` | The searches with their schedule, next and last run, and how many companies they found, people picked and skipped |
+| POST | `/api/discovery/searches` | Add a search (`name`, `query`, `freq`, `weekday`, `per_run`) |
+| PATCH | `/api/discovery/searches/{id}` | Change it, or switch it on or off (`weekday: -1` clears the weekday) |
+| DELETE | `/api/discovery/searches/{id}` | Delete a search (not the main one) |
+
+**Try it on a company (B2).** `POST /api/agents/research/try` (`company`, `domain`) runs the research agent on a company a
+person names, with the same tools, limits, checks, approved lessons and connector permissions as Steps 2-3
+(`api/trials.py`, table `trial_runs`). The brief is kept with the trial and shown to that person
+(`GET /api/agents/research/try`, which also collects a finished run). Nothing else is written: no company, candidate,
+opportunity, research task, inbox item, CRM record or email. The AI run is logged under AI runs as "Try it: <company>",
+with its trace, and its web searches are metered as usual. It needs live mode (409 in demo mode, where research comes
+from fixtures).
 
 | Tool | What it does |
 |---|---|
@@ -449,7 +475,7 @@ a promise nobody kept (for example "Daniel will talk to the CEO within two weeks
     first had made the lead Active. A follow-up sent from Gmail during qualification is logged without resetting the stage.
   - A contact the owner applies from the inbox is recorded as confirmed by that person.
   - Not changed: the reminder rules (Ready, nurture), the weekly discovery and feedback rounds, and agents' deliveries to the
-    inbox. The research and discovery agents do not take lessons yet.
+    inbox. (Since B1, 5 Nov 2026, the research, discovery and direction agents take lessons too.)
   - Whole team with the manager on (`MANAGER_MODE=on` + `Check Agents.cmd`, Claude, 28 Oct 2026): 17 jobs done, 0 failed,
     24 AI runs. Both handoffs went through the manager (evidence -> research for Orchard Lane's CEO; research -> outreach for
     Kessler's reconnect draft); the overdue promise came back after five months; each owner had one manager message per
@@ -502,7 +528,7 @@ system learns, with a person in the loop:
 | 1. Findings | code | From the scorecard: an evidence key reviewers often raise, lower or reject, or enter by hand (`evidence:N`); a kind of work owners mostly dismiss or ignore (`work:followup_draft`); manager decisions the code often refuses (`manager:refused`, at least 30% of 5+). Each comes with its numbers and the reviewers' own words (edit and reject reasons, refusal details) | Only judged rows (5+ decisions) |
 | 2. Proposal | the manager, weekly (job `lessons_review`, prompt `manager-lessons-1.0`), or a person (`POST /api/lessons`) | At most 3 lessons per review: one or two sentences to one agent, saying what to do in which situation. No findings: no AI request | The lesson rests on a listed finding and addresses that finding's agent; 20-400 characters; no "ignore, override, bypass, skip, disregard"; no fees or promises; not a near-copy of an approved or waiting lesson |
 | 3. Approval | a person (only `CGS_ADMINS` when set) | Approve, or reject with a reason the manager reads next week | At most 5 approved lessons per agent: retire one first |
-| 4. Prompt | code | Approved lessons are added at the end of the agent's prompt, after every rule, as "[L3] ...", under a line saying the rules come first. Each use is counted (`uses`, `lastUsedOn`) | Only approved lessons; only the evidence, outreach and next-step agents and the manager (daily review and triage) take lessons |
+| 4. Prompt | code | Approved lessons are added at the end of the agent's prompt, after every rule, as "[L3] ...", under a line saying the rules come first. Each use is counted (`uses`, `lastUsedOn`) | Only approved lessons. Every AI agent takes them: evidence, outreach, manager (daily review and triage) and, since B1, research (brief, contact and refresh), discovery and direction. The page calls them instructions |
 | 5. Effect | code, then a person | `sinceApproved` shows the finding's numbers over the days since approval, next to the numbers it was proposed on (`basis`). A person retires a lesson that no longer helps | Retiring needs a reason |
 
 - The patrol queues the review once a week when the manager is shadow or on (live mode only); `POST /api/lessons/review`

@@ -19,6 +19,10 @@ const FIELDS = [
 const SIZE = [["min_employees", "Fewest employees"], ["max_employees", "Most employees"], ["min_revenue_musd", "Lowest revenue (USD millions)"], ["max_revenue_musd", "Highest revenue (USD millions)"]];
 const SOURCES = ["Conference", "Referral", "Event attendee list", "Inbound enquiry", "Other"];
 const FIELD_LABEL = Object.fromEntries([...FIELDS, ["problems", "Problems to watch for"]]);
+// Automatic searches (api/discovery_searches.py): how often, on which weekday, and how many companies per run.
+const FREQS = [["day", "Every day"], ["3days", "Every 3 days"], ["week", "Every week"], ["2weeks", "Every 2 weeks"], ["4weeks", "Every 4 weeks"]];
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+const COUNTS = [3, 5, 10];
 
 const st = pageState();
 let field = "signals"; // the field chosen in the "propose a change" form
@@ -27,6 +31,7 @@ export async function load(ctx, params) {
   const tab = TABS.some(([t]) => t === params.tab) ? params.tab : "find";
   const [direction, search] = await Promise.all([ctx.api.get("/direction"), ctx.api.get("/search/settings").catch(() => null)]);
   const data = { tab, direction, search };
+  if (tab === "find") data.searches = await ctx.api.get("/discovery/searches").catch((e) => ({ error: e.message }));
   if (tab === "learned") {
     [data.memory, data.feedback] = await Promise.all([ctx.api.get("/discovery/memory"), ctx.api.get("/feedback")]);
   }
@@ -57,15 +62,17 @@ function findView(d, ctx) {
     <div class="main stack">
       <section class="card" aria-labelledby="rec-h">
         <div class="card-head"><div><h2 id="rec-h">Ask the discovery agent</h2>
-          <p class="meta">It searches recent news for companies that match the research direction and checks every result before you see it. Up to 10 candidates.</p></div></div>
+          <p class="meta">It searches recent news for companies that match the research direction and checks every result before you see it.</p></div></div>
         <form class="card-body panel-form" data-act="recommendForm" data-on="submit">
           <label class="field">What to look for, in your own words <span class="hint">Optional. Empty means the research direction alone.</span>
             <textarea name="intent" rows="3" placeholder="For example: mid-size food manufacturers opening a new plant this year"></textarea></label>
+          ${countPicker("count", 10, "How many companies, at most")}
           <div class="actions"><button type="submit" class="btn primary">Find candidates</button>
             ${s ? html`<span class="meta-3">Searches ${s.provider === "mock" ? "the synthetic internet" : s.provider}, news from the last ${s.recency_days} days.</span>` : ""}</div>
           ${st.err("recommend")}
         </form>
       </section>
+      ${searchesCard(d, ctx)}
       <section class="card" aria-labelledby="add-h">
         <div class="card-head"><div><h2 id="add-h">Add a company yourself</h2>
           <p class="meta">For a referral, a conference contact or an inbound enquiry. Research starts at once, and the company then waits for a decision like any other.</p></div></div>
@@ -94,6 +101,72 @@ function findView(d, ctx) {
       </section>
     </aside>
   </div>`;
+}
+
+function countPicker(name, current, legend) {
+  const counts = COUNTS.includes(current) ? COUNTS : [...COUNTS, current].sort((a, b) => a - b);
+  return html`<fieldset class="rating"><legend>${legend}</legend>
+    ${counts.map((n) => html`<label><input type="radio" name="${name}" value="${n}" ${n === current ? "checked" : ""}><span>${n}</span></label>`)}</fieldset>`;
+}
+
+function searchesCard(d, ctx) {
+  const list = d.searches;
+  return html`
+  <section class="card" aria-labelledby="auto-h">
+    <div class="card-head"><div><h2 id="auto-h">Automatic searches</h2>
+      <p class="meta">The discovery agent runs these on its own, at the daily check. Results wait in Companies, New candidates, for you to pick or skip.</p></div>
+      ${st.ui.open === "search:new" ? "" : openButton("search:new", "New automatic search", "btn small")}</div>
+    ${st.ui.open === "search:new" ? html`<div class="card-body">${searchForm(null)}</div>` : ""}
+    ${list.error ? html`<div class="card-body"><div class="notice bad">${icon("alert")}<span>${list.error}</span></div></div>`
+      : html`<ul class="rows">${list.map((x) => searchRow(x, ctx))}</ul>`}
+    ${st.err("searches")}
+  </section>`;
+}
+
+function searchRow(x, ctx) {
+  const editing = st.ui.open === `search:${x.id}`;
+  const when = `${x.freqLabel}${x.weekdayLabel ? `, ${x.weekdayLabel}` : ""}`;
+  const last = x.lastRound ? `Last run ${day(x.lastRound.on, ctx.today)}: ${plural(x.lastRound.found, "company", "companies")}` : x.lastRunOn ? `Last run ${day(x.lastRunOn, ctx.today)}` : "Not run yet";
+  return html`<li class="search-row ${x.on ? "" : "off"}">
+    <div class="search-line">
+      <span class="what"><b>${x.name}</b><span class="meta">${x.main ? "Uses the research direction alone." : x.query}</span>
+        ${x.main ? "" : html`<span class="meta-3">Added by ${x.createdBy}; uses their direction.</span>`}</span>
+      <span class="search-when"><b>${when}</b><span class="meta">${plural(x.perRun, "company", "companies")} per run</span>
+        <span class="meta">${x.on ? `Next: ${day(x.nextRunOn, ctx.today)}` : "Off"}</span></span>
+      <span class="search-result meta">${last}${x.found ? html`<br>${x.found} found, ${x.picked} picked, ${x.skipped} skipped` : ""}
+        ${x.lastError ? html`<br><span class="bad-text">Last attempt failed: ${x.lastError}</span>` : ""}</span>
+      ${editing ? html`<span></span>` : html`<button type="button" class="btn small" data-act="open" data-open="search:${x.id}" aria-label="Edit ${x.name}">Edit</button>`}
+      <button type="button" class="switch" role="switch" aria-checked="${x.on ? "true" : "false"}" aria-label="${x.name}: run automatically"
+        data-act="toggleSearch" data-id="${x.id}" data-turn-on="${x.on ? "" : "1"}"><span></span></button>
+    </div>
+    ${editing ? searchForm(x) : ""}
+  </li>`;
+}
+
+function searchForm(x) {
+  const isNew = !x;
+  const main = x && x.main;
+  return html`
+  <form class="panel-form search-form" data-act="searchForm" data-on="submit input" data-id="${x ? x.id : ""}" data-main="${main ? "1" : ""}">
+    ${isNew ? html`<h3 class="sub-title" style="margin:0">New automatic search</h3>` : ""}
+    ${main ? html`<p class="meta">The main search uses the research direction alone. Change the direction itself under Research direction.</p>` : html`
+    <label class="field">Name<input name="name" value="${x ? x.name : ""}" placeholder="For example: New plant announcements" required></label>
+    <label class="field">What to look for <span class="hint">Describe the companies and the signal, as you would to a researcher. Your own research direction applies too.</span>
+      <textarea name="query" rows="2" required>${x ? x.query : ""}</textarea></label>`}
+    <div class="form-grid">
+      <label class="field">How often<select name="freq">${FREQS.map(([v, l]) => html`<option value="${v}" ${(x ? x.freq : "week") === v ? "selected" : ""}>${l}</option>`)}</select></label>
+      <label class="field">On <span class="hint">Weekly or less often only</span><select name="weekday">
+        <option value="">Any day</option>${WEEKDAYS.map((w, i) => html`<option value="${i}" ${x && x.weekday === i ? "selected" : ""}>${w}</option>`)}</select></label>
+    </div>
+    ${countPicker("per_run", x ? x.perRun : 5, "Companies per run")}
+    <p class="meta">Each run is one discovery round: a few AI requests and up to 6 web searches, counted in the agents' daily AI limit.</p>
+    <div class="actions">
+      <button type="submit" class="btn primary" ${main ? "" : "disabled"}>${isNew ? "Save search" : "Save changes"}</button>${cancelButton}
+      ${x && !main ? html`<button type="button" class="btn ghost" data-act="deleteSearch" data-id="${x.id}">Delete search</button>` : ""}
+      <span class="missing" data-missing>${main ? "" : "Add a name and what to look for."}</span>
+    </div>
+    ${st.err(isNew ? "search:new" : `search:${x.id}`)}
+  </form>`;
 }
 
 // ----- direction -----
@@ -244,10 +317,35 @@ export const actions = {
   pickField(t, e, ctx) { field = t.value; ctx.refresh(); },
 
   recommendForm(form, e, ctx) {
-    st.write("recommend", form.querySelector("[type=submit]"), ctx, () => ctx.api.post("/candidates/recommend", { intent: form.elements.intent.value.trim() }), (res) => {
+    const count = Number(form.elements.count.value) || 10;
+    st.write("recommend", form.querySelector("[type=submit]"), ctx, () => ctx.api.post("/candidates/recommend", { intent: form.elements.intent.value.trim(), count }), (res) => {
       st.ui.notice = [{ text: `Search round ${res.round}: ${plural(res.candidates, "new candidate")}.`, cls: res.candidates ? "good" : "" }];
       if (res.candidates) ctx.toast(`${plural(res.candidates, "new candidate")} to pick from.`, { link: { href: href("companies", { tab: "new" }), label: "Open them" } });
     });
+  },
+  searchForm(form, e, ctx) {
+    const f = form.elements;
+    const main = form.dataset.main === "1";
+    const why = main || (f.name.value.trim().length >= 3 && f.query.value.trim().length >= 10) ? "" : "Add a name and what to look for.";
+    if (e.type !== "submit") return missing(form, why);
+    if (why) return;
+    const freq = f.freq.value;
+    const weekday = f.weekday.value === "" || ["day", "3days"].includes(freq) ? null : Number(f.weekday.value);
+    const body = { freq, per_run: Number(f.per_run.value) || 5, ...(main ? {} : { name: f.name.value.trim(), query: f.query.value.trim() }) };
+    const id = form.dataset.id;
+    st.write(id ? `search:${id}` : "search:new", form.querySelector("[type=submit]"), ctx,
+      () => (id ? ctx.api.patch(`/discovery/searches/${enc(id)}`, { ...body, weekday: weekday === null ? -1 : weekday })
+        : ctx.api.post("/discovery/searches", { ...body, weekday })),
+      (res) => { st.ui.notice = [{ text: `${res.name}: saved. Next run ${day(res.nextRunOn, ctx.today)}.`, cls: "good" }]; });
+  },
+  toggleSearch(t, e, ctx) {
+    const on = t.dataset.turnOn === "1";
+    st.write("searches", t, ctx, () => ctx.api.patch(`/discovery/searches/${enc(t.dataset.id)}`, { on }),
+      (res) => { st.ui.notice = [{ text: on ? `${res.name} is on. Next run ${day(res.nextRunOn, ctx.today)}.` : `${res.name} is off. It does not run until you switch it on.`, cls: "good" }]; });
+  },
+  deleteSearch(t, e, ctx) {
+    st.write(`search:${t.dataset.id}`, t, ctx, () => ctx.api.del(`/discovery/searches/${enc(t.dataset.id)}`),
+      () => { st.ui.notice = [{ text: "Search deleted. Companies it found stay in Companies.", cls: "good" }]; });
   },
   addForm(form, e, ctx) {
     const f = form.elements;

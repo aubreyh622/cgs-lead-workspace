@@ -436,12 +436,14 @@ def pick_candidate(c: Ctx, cand_id: str) -> list[str]:
     return created
 
 
-def recommend(c: Ctx, intent: str, budget=None) -> dict:
-    """Step 1: a new round of up to 10 candidates. Demo: prepared list.
+def recommend(c: Ctx, intent: str, budget=None, count: int = 10, person: str | None = None) -> dict:
+    """Step 1: a new round of up to `count` candidates (1-10). Demo: prepared list. person: whose direction applies
+    (default the person acting; an automatic search uses its creator's, or the team's when it has none).
     Live: the tool-using discovery agent searches, reads and nominates; code checks every nomination (api/discovery_agent.py).
     budget(provider) -> may_call: the agents' daily AI budget, for rounds the agents start on their own."""
     from api import discovery_agent as D
-    d = current_direction(c, c.actor)
+    count = max(1, min(int(count), D.MAX_CANDIDATES))
+    d = current_direction(c, person if person is not None else c.actor)
     direction = {f: getattr(d, f) for f in WHITELIST}
     known = {D._norm(n) for n in c.s.scalars(select(m.Company.name))} | {D._norm(n) for n in c.s.scalars(select(m.Candidate.company))}
 
@@ -450,15 +452,17 @@ def recommend(c: Ctx, intent: str, budget=None) -> dict:
         from api.settings import ROOT
         search = TK.web_for("Discovery agent", c)
         from api import discovery_memory as DM
+        from api.lessons import block as lessons_for
         result, usage, steps = D.discover_with_agent(p, search, direction, intent, known, c.today, memory=DM.for_agent(c.s),
                                                      debug_file=ROOT / "runtime" / "discovery-last-round.json", config=search_config(),
                                                      may_call=budget(p) if budget else None,
-                                                     crm=TK.crm_if_allowed("Discovery agent", c))
+                                                     crm=TK.crm_if_allowed("Discovery agent", c),
+                                                     lessons=lessons_for(c.s, "Discovery agent", c.today), limit=count)
         trace.extend(steps)
         return result, usage
 
     trace: list = []
-    (found, info), _ = run_agent(c, "Discovery agent", None, "discovery-demo-1.0", lambda: (A.demo_round(direction, known), {}),
+    (found, info), _ = run_agent(c, "Discovery agent", None, "discovery-demo-1.0", lambda: (A.demo_round(direction, known)[:count], {}),
                                  subject=f"Direction {d.version}", live=live, live_prompt=D.AGENT_VERSION, trace=trace)
     row = c.s.get(m.Setting, "round")
     rnd = (row.value if row else 0) + 1

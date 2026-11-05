@@ -22,8 +22,10 @@ def agents(request: Request):
         today = demo_today(s, request.app.state.settings)
         jobs = list(s.scalars(select(m.AgentJob).where(m.AgentJob.created_on == today)))
         team = {}
+        paused = J.paused_agents(s)
         for kind, (agent, ai, what) in J.KINDS.items():
-            team.setdefault(agent, {"agent": agent, "does": [], "doneToday": 0})["does"].append(what)
+            team.setdefault(agent, {"agent": agent, "does": [], "doneToday": 0, "pausable": agent in J.PAUSABLE,
+                                    "paused": agent in paused})["does"].append(what)
         for j in jobs:
             if j.status == "done":
                 team[j.agent]["doneToday"] += 1
@@ -32,7 +34,7 @@ def agents(request: Request):
                 "lastPatrol": J.setting(s, "last_patrol"), "patrolHour": int(J.setting(s, "patrol_hour")),
                 "queued": s.scalar(select(func.count()).select_from(m.AgentJob).where(m.AgentJob.status == "queued")), "worker": bool(getattr(request.app.state, "worker", None)),
                 "lanes": getattr(getattr(request.app.state, "worker", None), "lanes", 0),
-                "managerMode": J.setting(s, "manager_mode"), "agents": list(team.values())}
+                "managerMode": J.setting(s, "manager_mode"), "pausedAgents": sorted(paused), "agents": list(team.values())}
 
 
 @router.get("/agents/jobs", summary="The task board: who is working on what, and why")
@@ -80,6 +82,37 @@ def configure(body: AgentSettings, c: S.Ctx = Actor):
         S.log(c, None, "h", f"Manager agent set to {body.manager_mode} by {c.actor}")
     return {"paused": bool(J.setting(c.s, "agents_paused")), "aiBudget": int(J.setting(c.s, "agent_ai_budget")),
             "patrolHour": int(J.setting(c.s, "patrol_hour")), "managerMode": J.setting(c.s, "manager_mode")}
+
+
+class AgentPause(BaseModel):
+    agent: Literal["Research agent", "Outreach agent", "Manager agent", "Discovery agent", "Direction agent"]
+    paused: bool
+
+
+@router.post("/agents/pause", summary="Pause or resume one agent. Its jobs stay on the board and wait; the other agents keep working")
+def pause_agent(body: AgentPause, c: S.Ctx = Actor):
+    now = J.paused_agents(c.s)
+    if (body.agent in now) != body.paused:
+        J.set_setting(c.s, "paused_agents", sorted(now | {body.agent} if body.paused else now - {body.agent}))
+        S.log(c, None, "h", f"{body.agent} {'paused' if body.paused else 'resumed'} by {c.actor}")
+    return {"agent": body.agent, "paused": body.paused, "pausedAgents": sorted(J.paused_agents(c.s))}
+
+
+class TryIn(BaseModel):
+    company: str = Field(..., description="The company to research")
+    domain: str = Field(..., description="Its website, for example arbor-fiberworks.com")
+
+
+@router.post("/agents/research/try", summary="Try the research agent on a company: the brief is shown, nothing is saved to the workflow (live mode)")
+def try_research(body: TryIn, c: S.Ctx = Actor):
+    from api import trials as T
+    return T.view(T.start(c, body.company, body.domain))
+
+
+@router.get("/agents/research/try", summary="Your recent trials of the research agent, with each brief once it is done")
+def trials(c: S.Ctx = Actor):
+    from api import trials as T
+    return [T.view(t) for t in T.recent(c)]
 
 
 @router.get("/inbox", summary="What the agents prepared. owner=name shows that person's items plus the team's")
@@ -161,7 +194,7 @@ def lesson_findings(request: Request):
 
 
 class LessonIn(BaseModel):
-    agent: str = Field(..., description="Evidence agent, Outreach agent or Manager agent")
+    agent: str = Field(..., description="Evidence, Outreach, Manager, Research, Discovery or Direction agent")
     text: str = Field(..., description="One or two sentences to the agent: in which situation, what to do")
     why: str = Field(..., description="What was seen that the lesson answers")
 

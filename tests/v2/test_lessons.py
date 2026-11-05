@@ -14,7 +14,7 @@ from api import models as m
 from api.llm import make_provider
 from api.main import create_app
 from api.settings import Settings
-from agent_fakes import play
+from agent_fakes import play, turn
 
 ME = {"X-User": "Alex Morgan"}
 ids = count(1)
@@ -153,7 +153,7 @@ def test_lesson_text_checks_limits_and_who_decides(tmp_path):
     bad = {"agent": "Evidence agent", "why": "Testing the checks."}
     assert "never loosen" in api.post("/api/lessons", headers=ME, json={**bad, "text": "Skip the quote check when the client is in a hurry."}).json()["error"]
     assert api.post("/api/lessons", headers=ME, json={**bad, "text": "Offer a 10% discount when the budget is tight and approved."}).status_code == 400
-    assert api.post("/api/lessons", headers=ME, json={**bad, "agent": "Research agent", "text": GOOD}).status_code == 400
+    assert api.post("/api/lessons", headers=ME, json={**bad, "agent": "Mail rules", "text": GOOD}).status_code == 400  # rules take no lessons
     lid = api.post("/api/lessons", headers=ME, json={**bad, "text": GOOD}).json()["id"]
     assert api.post(f"/api/lessons/{lid}/decision", headers=ME, json={"decision": "approve"}).status_code == 403  # Alex is not an admin
     admin = {"X-User": "Sarah Patel"}
@@ -186,3 +186,33 @@ def test_the_patrol_queues_the_review_weekly_only_when_the_manager_is_watching(t
     assert [j for j in api.post("/api/agents/patrol", headers=ME).json()["queued"] if j["kind"] == "lessons_review"]
     demo = TestClient(create_app(Settings(app_mode="demo", db_path=tmp_path / "d.sqlite3")))
     assert demo.post("/api/lessons/review", headers=ME).status_code == 409
+
+
+def test_research_discovery_and_direction_prompts_take_their_lessons(tmp_path):
+    """B1: every AI agent takes instructions. Approved lessons reach the research, discovery and direction prompts, each its own."""
+    from datetime import date
+    from api import research_agent as RA
+    from api.search import MockSearch
+    seen = []
+
+    def ai(url, headers, payload, **kw):
+        seen.append(payload["systemInstruction"]["parts"][0]["text"])
+        return turn(("finish", {"summary": "Nothing to add."}))
+    app, api = make_app(tmp_path, ai=ai)
+    texts = {}
+    for agent in ("Research agent", "Discovery agent", "Direction agent"):
+        texts[agent] = f"As the {agent.lower()}, when a company has several plants, name the plant the news is about."
+        lid = api.post("/api/lessons", headers=ME, json={"agent": agent, "text": texts[agent], "why": "Reviewers asked which plant."}).json()["id"]
+        assert api.post(f"/api/lessons/{lid}/decision", headers=ME, json={"decision": "approve", "reason": "Useful."}).json()["status"] == "approved"
+
+    bridge = RA.AgentResearchBridge(app.state.provider_factory, lambda as_of: MockSearch(as_of=as_of), background=False,
+                                    session_factory=app.state.db.session)
+    bridge.start("Ardent Castings", "ardentcastings.example", "Alex Morgan", as_of=date(2026, 10, 28))
+    api.post("/api/candidates/recommend", headers=ME, json={"intent": "Manufacturers merging plants"})
+    api.post("/api/direction/problems", headers=ME, json={"scope": "theme"})
+
+    for agent, text in texts.items():
+        mine = [x for x in seen if x.startswith(f"You are the {agent.lower()}")]
+        assert mine and all(f"] {text}" in x for x in mine), agent
+        assert not any(text in x for x in seen if x not in mine), agent  # never in another agent's prompt
+    assert all(x["uses"] >= 1 for x in api.get("/api/lessons").json())

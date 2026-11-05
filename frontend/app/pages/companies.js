@@ -318,7 +318,11 @@ function crmCheck(crm) {
   if (crm.error) return html`<div class="notice bad">${icon("alert")}<span>The CRM could not be checked: ${crm.error}</span></div>`;
   if (crm.off) return html`<div class="notice">${icon("alert")}<span>The CRM is off in this workspace (${crm.mode}), so no duplicate check ran. Check Insightly yourself before accepting.</span></div>`;
   const found = ["leads", "contacts", "organizations", "opportunities"].some((k) => (crm[k] || []).length);
-  return html`<div class="notice ${found ? "warn" : "good"}">${icon(found ? "alert" : "check")}<span>${crm.summary}</span></div>`;
+  const records = [["leads", "Lead"], ["contacts", "Contact"], ["organizations", "Organization"], ["opportunities", "Opportunity"]]
+    .flatMap(([k, kind]) => (crm[k] || []).map((x) => ({ kind, name: x.name || x.company || x.id, url: safeUrl(x.url), status: x.status })));
+  return html`<div class="notice ${found ? "warn" : "good"}">${icon(found ? "alert" : "check")}<span>${crm.summary}
+    ${records.length ? html`<ul class="crm-found">${records.slice(0, 8).map((x) => html`<li>${x.kind}: ${x.url
+      ? html`<a href="${x.url}" target="_blank" rel="noopener noreferrer">${x.name}</a>` : x.name}${x.status ? html` <span class="meta-3">(${x.status})</span>` : ""}</li>`)}</ul>` : ""}</span></div>`;
 }
 
 function relatedCheck(rel, ctx) {

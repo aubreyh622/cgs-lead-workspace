@@ -187,3 +187,40 @@ const items = [
 console.log(otherInbox(items).map((i) => i.id).join(","));
 """)
     assert out == "3,4"
+
+
+def test_one_paused_agent_shows_as_paused_and_crm_links_are_http_only(tmp_path):
+    """B1: a person can pause one agent; the page shows Insightly links but never a test CRM's mock:// address."""
+    out = run_module_script(tmp_path, """
+import { AGENTS, agentState } from "./pages/team.js";
+import { crmLinks } from "./shell.js";
+globalThis.location = { href: "http://127.0.0.1:8800/" };  // safeUrl resolves against the page address, as in a browser
+const d = { jobs: [{ agent: "Outreach agent", status: "queued", reason: "Follow up" }], inbox: [],
+            direction: { proposals: [] }, lessons: [], overview: { paused: false, pausedAgents: ["Outreach agent"] } };
+const out = AGENTS.find((a) => a.slug === "outreach"), res = AGENTS.find((a) => a.slug === "research");
+console.log(agentState(out, d, "Alex Morgan").label + "|" + agentState(out, d, "Alex Morgan").now + "|" + agentState(res, d, "Alex Morgan").label);
+const real = String(crmLinks({ provider: "insightly", leadUrl: "https://crm.na1.insightly.com/details/Lead/1", opportunityUrl: null }));
+const mock = String(crmLinks({ provider: "mock", leadUrl: "mock://crm/Lead/1", opportunityUrl: "javascript:alert(1)" }));
+console.log([real.includes('href="https://crm.na1.insightly.com/details/Lead/1"'), real.includes("Lead in Insightly"),
+             real.includes("Opportunity"), mock.includes("href")].join(","));
+""")
+    states, links = out.splitlines()
+    assert states == "Paused|1 job waiting until a person resumes it|Idle"
+    assert links == "true,true,false,false"
+
+
+def test_try_it_shows_the_brief_with_safe_links(tmp_path):
+    """B2: a finished trial shows the brief; a source that is not http(s) is shown as text, never as a link."""
+    out = run_module_script(tmp_path, """
+import { trialRow } from "./pages/team.js";
+globalThis.location = { href: "http://127.0.0.1:8800/" };
+const ctx = { today: "2026-11-05" };
+const done = String(trialRow({ company: "Ardent Castings", domain: "ardentcastings.example", on: "2026-11-05", status: "completed", person: null,
+  brief: { hypothesis: "Integration after an acquisition", flags: [], recommendation: { decision: "accept", reason: "Ready." },
+           facts: [{ text: "Ardent buys Hollow Pine", src: "https://news.example/a", date: "2026-10-10" },
+                   { text: "Evil", src: "javascript:alert(1)", date: "2026-10-11" }] } }, ctx));
+const running = String(trialRow({ company: "X", domain: "x.example", on: "2026-11-05", status: "running", brief: null }, ctx));
+console.log([done.includes('href="https://news.example/a"'), done.includes('href="javascript'), done.includes("Brief ready"),
+             done.includes("Integration after an acquisition"), running.includes("Running"), running.includes("checks again")].join(","));
+""")
+    assert out == "true,false,true,true,true,true"

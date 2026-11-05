@@ -3,7 +3,7 @@
 import { html, icon, day, addDays, daysBetween, href, plural, initials } from "../lib.js";
 import { enc, ApiError } from "../api.js";
 import { STAGE_LABELS, CLOSE_REASONS, NOTE_TYPES, NEED_FIELDS } from "../options.js";
-import { emptyState, inlineError } from "../shell.js";
+import { emptyState, inlineError, crmLinks } from "../shell.js";
 
 export const title = "Qualification";
 
@@ -162,6 +162,7 @@ function headerBlock(o, ctx) {
       <span class="tag">Owner ${o.owner || "not set"}</span>
       ${o.replyLabel ? html`<span class="tag info">Reply label: ${o.replyLabel}</span>` : ""}
       <span class="tag">Revenue ${revenueText(o.revenue)}</span>
+      ${crmLinks(o.crm)}
     </div>
     ${o.next.action ? html`<p class="meta" style="margin-top:10px">Next step: ${o.next.action}${o.next.due ? `, due ${day(o.next.due, ctx.today)}` : ""}.</p>` : ""}
   </div>`;

@@ -30,6 +30,7 @@ from api import live_agents as L
 from api import manager_agent as MA
 from api import manager_triage as MT
 from api import lessons as LS
+from api import discovery_searches as DS
 from api import lessons_agent as LA
 from api import memory as MEM
 from api import outreach_agent as OA
@@ -132,9 +133,9 @@ def patrol(c: S.Ctx) -> list[m.AgentJob]:
                 MEM.mark_nudged(s, opp_id, cm["id"], t)
                 if job not in found:
                     found.append(job)
-    last = J.setting(s, "last_discovery")
-    if not last or (t - date.fromisoformat(last)).days >= 7:
-        add("discovery_round", None, "Weekly discovery round")
+    searches = DS.due(s, t)  # automatic searches (Sources); the main one replaces the fixed weekly round
+    if searches:
+        add("discovery_round", None, "Automatic search: " + ", ".join(x.name for x in searches))
     last = J.setting(s, "last_feedback_review")
     if not last or (t - date.fromisoformat(last)).days >= 7:
         add("feedback_review", None, "Weekly review of consultant feedback")
@@ -275,7 +276,8 @@ def do_research_refresh(c, job, o):
     trace: list[dict] = []
 
     def live(p):  # live mode: the research agent's refresh task (api/research_agent.py), within today's AI budget
-        facts, usage, steps = RA.refresh(p, web(c), o.company.name, o.company.domain, since, known, may_call=may_call(c, p))
+        facts, usage, steps = RA.refresh(p, web(c), o.company.name, o.company.domain, since, known, may_call=may_call(c, p),
+                                         lessons=LS.block(c.s, "Research agent", c.today))
         trace.extend(steps)
         return [{**f, "date": f["date"] or "undated"} for f in facts], usage
 
@@ -317,7 +319,8 @@ def do_person_lookup(c, job, o):
     def live(p):  # live mode: the research agent's contact task decides where to look (api/research_agent.py)
         contacts = [{"name": x.name, "title": x.title, "confirmed_by_a_person": bool(x.confirmed_by)}
                     for x in c.s.scalars(select(m.Contact).where(m.Contact.company_id == o.company_id)) if x.name]
-        res, usage, steps = RA.find_contact(p, web(c), o.company.name, o.company.domain, role, asked, contacts, may_call=may_call(c, p))
+        res, usage, steps = RA.find_contact(p, web(c), o.company.name, o.company.domain, role, asked, contacts, may_call=may_call(c, p),
+                                              lessons=LS.block(c.s, "Research agent", c.today))
         trace.extend(steps)
         return res, usage
 
@@ -371,13 +374,28 @@ def do_ready_reminder(c, job, o):
 
 
 def do_discovery_round(c, job, o):
-    res = S.recommend(c, "Weekly round by the discovery agent", budget=lambda p: may_call(c, p))
-    J.set_setting(c.s, "last_discovery", c.today.isoformat())
-    if not res["candidates"]:
-        return "done", f"Round {res['round']}: no new candidates this week."
-    J.to_inbox(c.s, c.today, job, "candidates", f"{res['candidates']} new candidate{'s' if res['candidates'] != 1 else ''} (round {res['round']})",
-               "The discovery agent's weekly round. Pick or skip each one in Step 1.", {"round": res["round"]}, owner=None)
-    return "done", f"Round {res['round']}: {res['candidates']} candidates."
+    """Runs every automatic search that is due, each as its own round (api/discovery_searches.py)."""
+    searches = DS.due(c.s, c.today)
+    if not searches:
+        return "skipped", "No automatic search is due (switched off or already run)."
+    said, failed, n_failed = [], None, 0
+    for x in searches:
+        before = len(x.rounds or [])
+        try:
+            said.append(DS.run(c, x, budget=lambda p: may_call(c, p)))
+        except (LLMError, S.ActionError) as e:  # one search failing must not stop the others; it stays due
+            said.append(f"{x.name}: could not run ({e}).")
+            failed, n_failed = e, n_failed + 1
+            continue
+        found = (x.rounds or [])[-1]["found"] if len(x.rounds or []) > before else 0
+        if found:
+            rnd = x.rounds[-1]["round"]
+            J.to_inbox(c.s, c.today, job, "candidates", f"{found} new candidate{'s' if found != 1 else ''} from {x.name} (round {rnd})",
+                       "From an automatic search by the discovery agent. Pick or skip each one in Companies, New candidates.",
+                       {"round": rnd, "searchId": x.id}, owner=x.created_by or None)
+    if n_failed == len(searches):
+        raise failed  # nothing ran: the job fails (or retries a temporary AI error) as before
+    return "done", " ".join(said)
 
 
 def do_feedback_review(c, job, o):
@@ -581,6 +599,9 @@ def run_job(app, job_id: str) -> str:
             return job.status if job else "missing"
         if not J.due(job.retry_at):
             return "queued"
+        if job.agent in J.paused_agents(s):
+            job.result = f"Waiting: the {job.agent.lower()} is paused. It runs when a person resumes it."
+            return "queued"
         if uses_ai(c, job.kind) and not ai_budget_left(c):
             job.result = "Waiting: today's AI budget is used up. It runs tomorrow."
             return "queued"
@@ -611,10 +632,12 @@ def run_job(app, job_id: str) -> str:
 
 
 def queued(app) -> list[str]:
-    """Queued jobs that may run now, oldest first (jobs waiting out a retry delay are left out)."""
+    """Queued jobs that may run now, oldest first (jobs waiting out a retry delay, and paused agents' jobs, are left out)."""
     with app.state.db.session() as s:
-        rows = s.execute(select(m.AgentJob.id, m.AgentJob.retry_at).where(m.AgentJob.status == "queued").order_by(m.AgentJob.created_at)).all()
-    return [jid for jid, retry_at in rows if J.due(retry_at)]
+        paused = J.paused_agents(s)
+        rows = s.execute(select(m.AgentJob.id, m.AgentJob.retry_at, m.AgentJob.agent).where(m.AgentJob.status == "queued")
+                         .order_by(m.AgentJob.created_at)).all()
+    return [jid for jid, retry_at, agent in rows if J.due(retry_at) and agent not in paused]
 
 
 def next_job(app) -> str | None:
@@ -622,11 +645,11 @@ def next_job(app) -> str | None:
     and work that needs no AI goes ahead, so one waiting job never blocks the rest of the board."""
     with app.state.db.session() as s:
         c = agent_ctx(app, s)
-        budget = ai_budget_left(c)
-        rows = s.execute(select(m.AgentJob.id, m.AgentJob.kind, m.AgentJob.retry_at)
+        budget, paused = ai_budget_left(c), J.paused_agents(s)
+        rows = s.execute(select(m.AgentJob.id, m.AgentJob.kind, m.AgentJob.retry_at, m.AgentJob.agent)
                          .where(m.AgentJob.status == "queued").order_by(m.AgentJob.created_at)).all()
-        for jid, kind, retry_at in rows:
-            if J.due(retry_at) and (budget or not uses_ai(c, kind)):
+        for jid, kind, retry_at, agent in rows:
+            if J.due(retry_at) and agent not in paused and (budget or not uses_ai(c, kind)):
                 return jid
     return None
 
@@ -641,10 +664,11 @@ def next_job_for_lane(app, busy_opps: set, busy_kinds: set) -> tuple[str, str | 
         running = s.execute(select(m.AgentJob.opportunity_id, m.AgentJob.kind).where(m.AgentJob.status == "running")).all()
         opps = set(busy_opps) | {o for o, _ in running if o}
         kinds = set(busy_kinds) | {k for o, k in running if not o}
-        rows = s.execute(select(m.AgentJob.id, m.AgentJob.kind, m.AgentJob.retry_at, m.AgentJob.opportunity_id)
+        paused = J.paused_agents(s)
+        rows = s.execute(select(m.AgentJob.id, m.AgentJob.kind, m.AgentJob.retry_at, m.AgentJob.opportunity_id, m.AgentJob.agent)
                          .where(m.AgentJob.status == "queued").order_by(m.AgentJob.created_at)).all()
-        for jid, kind, retry_at, opp in rows:
-            if (opp in opps) if opp else (kind in kinds):
+        for jid, kind, retry_at, opp, agent in rows:
+            if agent in paused or ((opp in opps) if opp else (kind in kinds)):
                 continue
             if J.due(retry_at) and (budget or not uses_ai(c, kind)):
                 return jid, opp, kind

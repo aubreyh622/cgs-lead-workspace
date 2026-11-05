@@ -408,3 +408,19 @@ a.lead-row[aria-current=true] { background: var(--selected); }
 .pipe-bar .pipe-nurture { background: var(--line-strong); }
 .crm-status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); white-space: nowrap; }
 .avatar.round { width: 34px; height: 34px; border-radius: 50%; background: var(--ink); color: var(--surface); font-size: 13px; }
+
+/* ---------- CRM links (B1) ---------- */
+a.link-tag { color: var(--ink); text-decoration: none; }
+a.link-tag:hover { background: var(--surface-muted); }
+.crm-found { list-style: none; margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
+
+/* ---------- automatic searches (B2) ---------- */
+.search-row { display: block; }
+.search-row.off .search-line > :not(.switch) { opacity: 0.7; }
+.search-line { display: grid; grid-template-columns: minmax(0, 1fr) 180px 200px auto auto; gap: 16px; align-items: center; }
+.search-line .what > span { display: block; }
+.search-when { display: flex; flex-direction: column; font-size: 14px; line-height: 21px; }
+.search-result { font-size: 14px; line-height: 21px; }
+.search-form { margin-top: 14px; padding: 18px 20px; background: var(--surface-soft); border: 1px solid var(--border); border-radius: 10px; }
+.trial-brief { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; }
+.trial-brief b { font-weight: 500; }
