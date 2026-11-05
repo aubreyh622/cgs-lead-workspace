@@ -35,7 +35,17 @@ def demo_today(s, settings) -> date:
     return date.fromisoformat(base.value) + days
 
 
-def ctx(request: Request, x_user: str | None = Header(None, description="The person acting, from GET /api/users")):
+def after_response(request: Request):
+    """Work that waits until the response is sent: the CRM sync of what the request saved."""
+    pending: dict = {}
+    yield pending
+    if pending.get("ids"):  # the person's action is saved; now bring the CRM in line (a failure is recorded, never raised)
+        from api import crm_sync
+        crm_sync.after_request(request.app, pending["ids"], pending["today"])
+
+
+def ctx(request: Request, x_user: str | None = Header(None, description="The person acting, from GET /api/users"),
+        pending: dict = Depends(after_response, scope="request")):
     db = request.app.state.db
     session = db.sessions()
     c = S.Ctx(s=session, actor=x_user or "", today=demo_today(session, request.app.state.settings), settings=request.app.state.settings,
@@ -54,9 +64,8 @@ def ctx(request: Request, x_user: str | None = Header(None, description="The per
         raise
     finally:
         session.close()
-    if c.crm_dirty:  # the person's action is saved; now bring the CRM in line (a failure is recorded, never raised)
-        from api import crm_sync
-        crm_sync.after_request(request.app, set(c.crm_dirty), c.today)
+    if c.crm_dirty:
+        pending.update(ids=set(c.crm_dirty), today=c.today)
 
 
 def require_user(request: Request, x_user: str | None = Header(None, description="The person acting, from GET /api/users")) -> str:
@@ -95,7 +104,9 @@ def research_bridge(app):
     return app.state.research_bridge
 
 
-Actor = Depends(ctx)
+# scope="function": the change is committed before the response is sent, so a read straight after a write sees it.
+# (With the default scope, FastAPI sends the response first and a quick follow-up read could get the old data.)
+Actor = Depends(ctx, scope="function")
 
 
 @router.get("/users", tags=["system"], summary="Workspace users (choose one; there is no login yet)")

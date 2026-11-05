@@ -52,7 +52,7 @@ people accepted, and outreach and the manager see other CGS work with the same c
 2. Copy `.env.example` to `.env`. The defaults run the **demo** (`APP_MODE=demo`): seeded synthetic data, text rules
    instead of AI, no keys needed.
 3. `Start Workspace v2.cmd`, then open http://127.0.0.1:8800/docs for the interactive API, or http://127.0.0.1:8800/
-   for the workspace page (the UI is still being merged with the v2 backend).
+   for the workspace page. Home, Companies (Steps 1-4), Outreach (Step 5 and the first reply), Qualification (Steps 6-8), Sources (the research direction) and Agents work against the v2 API. Desktop only.
 
 For real AI, set `APP_MODE=live`, `AI_PROVIDER` (`gemini`, `openai` or `claude`) and its key, and `TAVILY_API_KEY` for
 real web search. Email and Insightly credentials live outside the project folder, in `%USERPROFILE%\.cgs-workspace\`
@@ -69,7 +69,8 @@ set `CRM_MODE=write_approved` and `CRM_PROVIDER=insightly`. `Check CRM.cmd` chec
 ## Checks
 
 - Offline tests: `python -m pytest tests --ignore=tests/research/test_app_and_contract.py --ignore=tests/research/test_five_company_workflow.py`
-  (about 500 tests, no network).
+  (about 540 tests, no network). They include an end-to-end browser test of the whole workflow when Playwright is
+  installed; see [docs/FRONTEND.md](docs/FRONTEND.md).
 - Live checks with the real AI on the synthetic internet: `Check AI.cmd`, `Check Research.cmd`, `Check Workflow.cmd`,
   `Check Agents.cmd`, `Check Orchestrator.cmd`; `AI Exam.cmd` grades the evidence agent on cases with known answers.
 - Connections: `Check Mail.cmd` (Gmail), `Check CRM.cmd` (Insightly).
@@ -83,13 +84,14 @@ set `CRM_MODE=write_approved` and `CRM_PROVIDER=insightly`. `Check CRM.cmd` chec
 | `backend/rules.py` | The qualification rules engine (BANTHE weights, conditions, readiness) |
 | `config/` | Search settings, toolkit permissions, CRM mapping, the research problem brief and the scoring rubric |
 | `knowledge/` | The CGS library the agents may cite |
-| `frontend/` | The workspace page |
+| `frontend/` | The workspace page: `index.html` plus ES modules and one stylesheet in `frontend/app/`, no build step |
 | `tests/v2/` | Tests for the v2 backend; `tests/p0`–`p5`, `tests/research` cover the earlier components |
-| `lead_agent/`, `workspace.py`, `server.py`, `demo.py`, `dist/` | The earlier integrated app (research worker and qualification prototype), still used by the research pipeline |
+| `lead_agent/`, `workspace.py`, `server.py`, `demo.py`, `dist/` | The earlier integrated app (research worker and qualification prototype), still used by the research pipeline. Its launchers are named `Legacy - …` |
 | `design-explorations/` | Standalone HTML interaction prototypes with simulated data |
 
 ## Documentation
 
+- [Workspace page](docs/FRONTEND.md): the pages, how they are built, the rules they keep, and their checks.
 - [Backend v2 guide](docs/BACKEND_V2.md): decisions, agents, autonomy, manager, toolkit, email, CRM, endpoints.
 - [Database](docs/DATABASE.md) and [API](docs/API.md).
 - [Search integration](docs/SEARCH_INTEGRATION.md) and [Research v2](docs/RESEARCH_V2.md).

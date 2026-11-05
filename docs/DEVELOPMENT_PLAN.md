@@ -104,3 +104,29 @@ This section records the completed prior authorization; the current authorizatio
 - Separate reused inputs from new calls/time and report all candidate dispositions and failures.
 - Do not claim an equal-cost A/B comparison, lead usefulness or CGS acceptance from this pilot.
 - Stop after reporting; no additional live round, model upgrade or UI integration is authorized here.
+
+## Frontend phases (v2 workspace UI)
+
+Authorized by the user on 2026-11-05 ("start writing the frontend code"); F2 authorized the same day ("开始"), F3 too ("做F3"), F4 ("开始F4"), F5 ("开始F5") and F6 ("Yes, start F6"). The UI replaces the static
+prototype at `frontend/index.html` with pages that read and write the v2 API (`api/`). Each phase is
+authorized on its own; F1 approval does not authorize F2.
+
+- Design: `DESIGN.md` (warm neutrals, one orange accent, Inter 400/500, top navigation by kind of work)
+  and the "Version 2" screens of the CGS Lead Workspace design canvas, with the 2026-11-04 Hallmark audit
+  fixes (Home leads with the queue, no stat tiles; tokens only; no middle-dot strings; field borders 3:1;
+  loading, empty and error states for every list).
+- Desktop only (user decision, 2026-11-05): no phone or tablet layout. The page has a 1024px minimum width;
+  the Hallmark audit's mobile items (375px nav menu, 320px overflow) do not apply.
+- Stack: no build step. ES modules and one stylesheet in `frontend/app/`, served by FastAPI at `/app/`.
+  Every value from the API is escaped before it reaches the page. Tabs and selections live in the URL.
+- No login yet: the person picks their name; every write sends it in `X-User`.
+- The page shows only what the backend records. It never invents counts, contacts or suggestions.
+
+| Phase | Scope | Status |
+| --- | --- | --- |
+| F1 | Shell (navigation, person picker, mode banner, toasts), API client, Home queue, Companies: Step 1 candidates (research, skip with reason), Steps 2-3 research status (stop, resume, retry, website), Step 4 brief review (accept, return with questions, reject with reason), accepted and set-aside lists | Complete; awaiting user review (VERIFICATION_F1.md) |
+| F2 | Outreach: agent drafts from the inbox, email preview and approve-and-send, record sent, follow-up, reply and nurture, confirm contact | Complete; awaiting user review (VERIFICATION_F2.md) |
+| F3 | Qualification: notes and evidence proposals (accept, edit, reject), manual review, rules result, next actions and tasks, pack submission, Step 8 approval and handover | Complete; awaiting user review (VERIFICATION_F3.md) |
+| F4 | Sources (direction, problems, proposals, discovery memory, add a lead, recommend) and Agents (team, task board, runs with traces, permissions, lessons, scorecard, CRM status) | Complete; awaiting user review (VERIFICATION_F4.md) |
+| F5 | Accessibility pass, end-to-end browser checks of the whole workflow, documentation, retire the old prototype launchers | Complete; awaiting user review (VERIFICATION_F5.md) |
+| F6 | Design fidelity: bring the pages back to the Version 2 design where the backend already has the data. Agents as six agent cards with status, suggestions from agents and an agent detail page; the agent dock on every page; Qualification list with evidence and next columns, accept all, the manager's memory and an approval card; Companies, Outreach and Home details from the design. Items the backend cannot supply yet are listed, not faked | Complete; awaiting user review (VERIFICATION_F6.md) |

@@ -13,6 +13,7 @@ from typing import Literal
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
 
 from backend.rules import (
@@ -128,6 +129,13 @@ def check_database_mode(db: Database, settings: Settings) -> bool:
     return demo_db or settings.app_mode == "demo"
 
 
+class NoCacheStatic(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or load_settings()
     app = FastAPI(
@@ -152,6 +160,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(actions_router)
     from api.agent_routes import router as agents_router
     app.include_router(agents_router)
+    # The workspace page's scripts and stylesheet (no build step). no-cache: the browser revalidates, so an edit shows at once.
+    app.mount("/app", NoCacheStatic(directory=settings.frontend.parent / "app", check_dir=False), name="app")
     app.state.worker = None  # main() starts the background agents; importing this module never does
     from api.toolkit.mail import make_mail
     from api import toolkit
@@ -221,8 +231,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/", include_in_schema=False)
     def index():
         if not settings.frontend.exists():
-            return HTMLResponse("<h1>Frontend not found</h1><p>Put the prototype at frontend/index.html.</p>", 404)
-        return FileResponse(settings.frontend)
+            return HTMLResponse("<h1>Frontend not found</h1><p>Put the workspace page at frontend/index.html.</p>", 404)
+        return FileResponse(settings.frontend, headers={"Cache-Control": "no-cache"})
 
     return app
 

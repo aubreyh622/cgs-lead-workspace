@@ -8,9 +8,9 @@ external deployment, live provider spending or client outreach.
 
 | Purpose | Entry point | Port | Data |
 | --- | --- | --- | --- |
-| Main integrated workspace | Start CGS Workspace.cmd / `python -B workspace.py serve` | 8766 | `runtime/research.sqlite3`, `runtime/qualification.sqlite3` |
-| Configuration check, no provider calls | Check Workspace.cmd / `python -B workspace.py check` | None | Opens main stores; reports readiness without secrets |
-| Explicit offline rehearsal | Start Offline Demo.cmd / `python -B demo.py` | 8767 | `runtime/offline-demo/runtime/research.sqlite3`, `runtime/offline-demo/runtime/qualification.sqlite3` |
+| Main integrated workspace | Legacy - Start P5 Workspace.cmd / `python -B workspace.py serve` | 8766 | `runtime/research.sqlite3`, `runtime/qualification.sqlite3` |
+| Configuration check, no provider calls | Legacy - Check P5 Workspace.cmd / `python -B workspace.py check` | None | Opens main stores; reports readiness without secrets |
+| Explicit offline rehearsal | Legacy - Start P5 Offline Demo.cmd / `python -B demo.py` | 8767 | `runtime/offline-demo/runtime/research.sqlite3`, `runtime/offline-demo/runtime/qualification.sqlite3` |
 | Preparation evidence only | `python -B demo.py --prepare-only --workspace-dir runtime/new-demo-session` | Ephemeral localhost during preparation | New isolated session and `pilot-evidence.json` |
 
 Run commands from the project folder with Python 3.12 and `requirements.lock` dependencies.

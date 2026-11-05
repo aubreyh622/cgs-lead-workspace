@@ -7,7 +7,7 @@ and an always-running research scheduler are not implemented in this scope.
 
 ## Start and expected state
 
-1. Double-click **Start Offline Demo.cmd** in the project folder. Keep its terminal open.
+1. Double-click **Legacy - Start P5 Offline Demo.cmd** in the project folder. Keep its terminal open.
 2. After the ready message, open **http://127.0.0.1:8767/**.
 3. Confirm the amber **OFFLINE SYNTHETIC DEMO** banner. No API keys are needed.
 4. Open **Lead research**. A fresh session contains four completed tasks, four opportunities,

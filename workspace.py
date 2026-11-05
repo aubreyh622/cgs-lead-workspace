@@ -64,7 +64,7 @@ def main():
     worker = threading.Thread(target=monitor, daemon=True)
     worker.start()
     print(f"CGS local workspace: http://127.0.0.1:{config.port}/", flush=True)
-    print("P5: integrated workflow available. Use Start Offline Demo.cmd for the isolated synthetic rehearsal.", flush=True)
+    print("P5: integrated workflow available. Use "Legacy - Start P5 Offline Demo.cmd" for the isolated synthetic rehearsal.", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
