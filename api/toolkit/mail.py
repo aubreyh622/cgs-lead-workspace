@@ -58,7 +58,8 @@ def build_raw(to: str, subject: str, body: str, sender: str = "", reply_to_rfc_i
     return base64.urlsafe_b64encode(msg.as_bytes()).decode()
 
 
-_QUOTE_START = re.compile(r"^(On .{5,200} wrote:|-----Original Message-----|From: .+|Sent from my \w+)\s*$", re.I)
+# Outlook puts a line of underscores above the quoted message, before its "From:" line.
+_QUOTE_START = re.compile(r"^(On .{5,200} wrote:|-----Original Message-----|_{20,}|From: .+|Sent from my \w+)\s*$", re.I)
 
 
 def new_text(text: str) -> str:

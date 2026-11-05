@@ -91,6 +91,8 @@ def test_gmail_explains_sign_in_problems():
 def test_quoted_history_is_dropped_from_a_reply():
     assert new_text("Thanks, not now.\n\n-----Original Message-----\nFrom: Alex") == "Thanks, not now."
     assert new_text("> old\nSure.") == "Sure."
+    outlook = "Happy to talk next week!\n\nBest,\nDesai\n" + "_" * 32 + "\nFrom: Alex Morgan <alex@example.com>\nSent: Thursday"
+    assert new_text(outlook) == "Happy to talk next week!\n\nBest,\nDesai"
 
 
 def test_sign_in_helper_saves_the_token_without_touching_other_lines(tmp_path):
