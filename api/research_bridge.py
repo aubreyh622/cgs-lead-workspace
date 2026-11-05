@@ -92,9 +92,12 @@ def card_to_brief(card: dict, owner: str, due: str, usage: dict) -> tuple[dict, 
                      "authorityWhy": (comps.get("buyer_access") or {}).get("reason", ""),
                      "relationship": "Unknown", "relationshipWhy": "Check CGS records (not connected yet).",
                      "fit": band, "fitWhy": (comps.get("capability_fit") or {}).get("reason", ""), "confidence": r.get("confidence", "low").capitalize()},
-        "recommendation": ({"decision": "accept", "reason": "Research brief is ready for review with dated, quoted sources."} if ready and not flags
-                           else {"decision": "return", "reason": "Resolve the flags before accepting."} if ready
-                           else {"decision": "return", "reason": "The research agent could not complete a reviewable brief: " + "; ".join(card.get("research_gaps", [])[:2])}),
+        # Set by code from the checks above, not a judgement of whether the company is worth pursuing (basis "checks").
+        "recommendation": ({"decision": "accept", "basis": "checks", "reason": "The company is named in its dated, quoted sources and a "
+                            "contact was found. Whether it is worth pursuing (fit, timing, value) is your call."} if ready and not flags
+                           else {"decision": "return", "basis": "checks", "reason": "Resolve the flags below before accepting."} if ready
+                           else {"decision": "return", "basis": "checks", "reason": "The research agent could not complete a reviewable brief: "
+                                 + "; ".join(card.get("research_gaps", [])[:2])}),
         "suggested": {"owner": owner, "next": "Send tailored outreach", "due": due},
         "usage": {"searches": usage.get("searches", 0), "pages": usage.get("extractions", 0), "calls": usage.get("model_calls", 0)},
     }

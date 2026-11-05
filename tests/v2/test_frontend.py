@@ -120,9 +120,10 @@ def run_module_script(tmp_path, script: str) -> str:
 
 
 def test_outreach_queue_takes_agent_drafts_and_leads_without_one(tmp_path):
-    """To approve = new inbox drafts and replies, plus accepted leads with no first-email draft waiting."""
+    """To approve = new inbox drafts, plus accepted leads with no first-email draft waiting. A client reply waits on its
+    lead in Waiting for a reply; the navigation count includes it."""
     out = run_module_script(tmp_path, """
-import { approveItems } from "./pages/outreach.js";
+import { approveItems, waitingFor } from "./pages/outreach.js";
 const opps = [{ id: "a", stage: "identified" }, { id: "b", stage: "identified" }, { id: "c", stage: "contacted" }];
 const inbox = [
   { id: "1", opportunityId: "a", kind: "draft", status: "new", data: { purpose: "first" } },
@@ -132,9 +133,9 @@ const inbox = [
   { id: "5", opportunityId: "zzz", kind: "draft", status: "new", data: { purpose: "first" } },
   { id: "6", opportunityId: "a", kind: "facts", status: "new", data: {} },
 ];
-console.log(approveItems(opps, inbox).map((x) => x.key).join(","));
+console.log(approveItems(opps, inbox).map((x) => x.key).join(","), waitingFor(opps, inbox));
 """)
-    assert out == "item-1,item-2,item-3,opp-b"
+    assert out == "item-1,item-2,opp-b 4"
 
 
 def test_html_template_escapes_values(tmp_path):

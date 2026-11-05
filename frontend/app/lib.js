@@ -53,6 +53,7 @@ const PATHS = {
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1Z"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
   refresh: '<path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v5h-5"/>',
   globe: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
   compass: '<circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12z"/>',
@@ -113,4 +114,15 @@ export function href(page, params = {}) {
   const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""));
   const s = q.toString();
   return `#/${page}${s ? "?" + s : ""}`;
+}
+
+// A brief's source: the site's name as a link that opens in a new tab, with the date. Text that is not a web address
+// (a demo source such as "Company news") is shown as it is.
+export function sourceLink(src, date) {
+  const url = /^https?:\/\//i.test(src || "") ? safeUrl(src) : "";
+  let site = src;
+  if (url) {
+    try { site = new URL(url).hostname.replace(/^www\./, ""); } catch { site = src; }
+  }
+  return html`${url ? html`<a href="${url}" target="_blank" rel="noopener noreferrer" title="${src}">${site}</a>` : src}${date ? `, ${date}` : ""}`;
 }

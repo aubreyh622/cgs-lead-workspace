@@ -5,6 +5,16 @@ import { enc } from "../api.js";
 import { emptyState } from "../shell.js";
 import { pageState, missing, tabBar, tabKeys, cancelButton, openButton } from "../forms.js";
 
+const SEARCH_NAMES = { mock: "the synthetic internet", tavily: "the web (Tavily)" };
+
+// Who approved the direction in use. The first live direction comes from the project brief; its note was written for the
+// prototype, so it is shown as what it is: not yet approved by CGS.
+function approval(cur) {
+  if (!cur || !cur.approvedBy) return "";
+  if (/not (yet )?(approved by )?CGS|not CGS approval/i.test(cur.approvedBy)) return ", the starting direction, not yet approved by CGS";
+  return `, approved by ${cur.approvedBy}`;
+}
+
 export const title = "Sources";
 
 const TABS = [["find", "Find companies"], ["direction", "Research direction"], ["learned", "What searches taught"]];
@@ -68,7 +78,7 @@ function findView(d, ctx) {
             <textarea name="intent" rows="3" placeholder="For example: mid-size food manufacturers opening a new plant this year"></textarea></label>
           ${countPicker("count", 10, "How many companies, at most")}
           <div class="actions"><button type="submit" class="btn primary">Find candidates</button>
-            ${s ? html`<span class="meta-3">Searches ${s.provider === "mock" ? "the synthetic internet" : s.provider}, news from the last ${s.recency_days} days.</span>` : ""}</div>
+            ${s ? html`<span class="meta-3">Searches ${SEARCH_NAMES[s.provider] || s.provider}, news from the last ${s.recency_days} days.</span>` : ""}</div>
           ${st.err("recommend")}
         </form>
       </section>
@@ -95,7 +105,7 @@ function findView(d, ctx) {
     <aside class="side">
       <section class="card card-body">
         <h2 class="section-title">The direction in use</h2>
-        <p class="meta">Version ${d.direction.current ? d.direction.current.version : "none"}${d.direction.current && d.direction.current.approvedBy ? `, approved by ${d.direction.current.approvedBy}` : ""}.</p>
+        <p class="meta">Version ${d.direction.current ? d.direction.current.version : "none"}${approval(d.direction.current)}.</p>
         ${d.direction.current ? html`<p style="margin-top:8px">${d.direction.current.problem}</p>` : ""}
         <p style="margin-top:12px"><a href="${href("sources", { tab: "direction" })}">See or change the direction</a></p>
       </section>

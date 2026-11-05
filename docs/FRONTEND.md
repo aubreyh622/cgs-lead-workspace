@@ -17,7 +17,9 @@ integrated app, which has its own interface.
 | `#/qualification` | Qualification | 6-8 | Notes and evidence proposals, scores and conditions, tasks, the pack, the Step 8 decision |
 | `#/agents` | Agents | All | The six agent cards and their suggestions; each agent's own page (`?agent=research`) with its pause switch, instructions and, for the research agent, Try it on a company; the records: controls, task board, AI runs, permissions, lessons, scorecard |
 
-Tabs and selections live in the URL (`#/companies?tab=review&id=ostrander`), so a link opens the same view. Picking another item on
+Tabs and selections live in the URL (`#/companies?tab=review&id=ostrander`), so a link opens the same view. When a page
+opens without a tab, the tab it chooses is written into the URL, so a later redraw (a brief finishing, a click elsewhere)
+never moves the person to another tab. Picking another item on
 the page you are on shows it at once: Companies already holds every brief in Ready to decide, and Outreach and
 Qualification fetch the other items of the open list in the background (kept for a minute). The full load follows and
 fills in what was still being checked (the Insightly duplicate check says "Checking…" until then, and is kept for five
@@ -29,9 +31,18 @@ Every page also has the agent dock at the bottom: a pill with the number of agen
 "paused") and how many items the agents prepared that wait for this person, which opens a panel with each agent's
 state. The pill's number is the sum of that panel's agent rows.
 
+Beside it, the bell opens the notification history (`app/updates.js`). The page asks `GET /api/updates` every 20
+seconds while the tab is visible, and at once when the person comes back to it. What the agents and the workspace
+finished in the background (an agent's draft or new candidates, a client reply, a brief that is ready or research that
+stopped, an approved email that went out or did not) shows as a notice with its link, the navigation counts and the
+dock are brought up to date, and the page on screen is drawn again unless the person is typing or has unsaved text in a
+field. The history keeps those items and the notices of the person's own actions for a week; the bell counts the ones
+not seen yet, per person in this browser.
+
 Counts follow one rule: a number equals what you see when you open it. Each navigation badge equals its page's list
-(Agents: the suggestions on the Agents page), and Home's To do lists everything that waits for the person, agent
-suggestions included. The header shows the CRM sync state (`GET /api/crm/state`): synced and when, how many wait or
+(Agents: the suggestions on the Agents page; Outreach: drafts to approve plus client replies to record), and Home's To
+do lists everything that waits for the person, agent suggestions included. A client reply found in the email thread
+waits on the lead it answers, in Waiting for a reply (or Nurture), first in the list, where the person records it. The header shows the CRM sync state (`GET /api/crm/state`): synced and when, how many wait or
 failed or need a decision, or read only or off; it links to the agent controls, where a failed sync can be retried
 and the read-back run. A field someone changed in the CRM shows as a notice on the opportunity's Outreach and
 Qualification pages ("Keep Insightly's" or "Use the workspace's") and as a To do on the owner's Home.
@@ -62,6 +73,7 @@ frontend/
     shell.js          header, chooser, toasts, loading/empty/error states
     forms.js          busy buttons, "what is missing" lines, tab keys, one write then redraw
     undo.js           the Undo toast, the waiting-email notice and its Undo and Send now buttons
+    updates.js        background updates every 20 seconds, notices, and the notification history (the bell)
     options.js        choices the backend accepts (tests keep them equal to api/services.py)
     styles.css        DESIGN.md tokens and every style; no colour outside :root
     pages/

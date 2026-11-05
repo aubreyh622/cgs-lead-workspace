@@ -70,21 +70,34 @@ _PARAM = re.compile(r'<parameter name="([A-Za-z_][A-Za-z0-9_]*)">')
 _CLOSE = re.compile(r"(?:\s*</[A-Za-z_][A-Za-z0-9_]*>)+\s*$")
 
 
+def _same(a, b) -> bool:
+    """The leaked copy and the argument say the same thing (allowing for a cut-off end)."""
+    norm = lambda t: " ".join(str(t).split()).lower()
+    a, b = norm(a), norm(b)
+    return bool(a) and bool(b) and (a == b or a.startswith(b[:60]) or b.startswith(a[:60]))
+
+
 def repair_args(args: dict, schema: dict) -> dict:
     """Some models (seen live with Claude Haiku 5.5, 5 Nov 2026) write the later arguments of a call inside an earlier
     string, as <parameter name="x">...</parameter> text. Move that text back to the arguments the schema names when they
-    are missing. Anything else is left as it is, so the tool's own checks still decide."""
+    are missing, and cut it when it only repeats what the named argument already holds (seen live on 5 Nov 2026 too: the
+    copy stayed in the brief). Anything else is left as it is, so the tool's own checks still decide."""
     props = (schema or {}).get("properties") or {}
     out = dict(args)
     for key, value in args.items():
         if not isinstance(value, str) or not _PARAM.search(value):
             continue
         parts = _PARAM.split(value)  # [text before, name1, text1, name2, text2, ...]
-        found = {}
+        found, repeats = {}, False
         for name, text in zip(parts[1::2], parts[2::2]):
-            if name in props and name != key and not out.get(name):
-                found[name] = _CLOSE.sub("", text).strip()
-        if not found:
+            if name not in props or name == key:
+                continue
+            text = _CLOSE.sub("", text).strip()
+            if not out.get(name):
+                found[name] = text
+            elif _same(text, out[name]):
+                repeats = True
+        if not found and not repeats:
             continue
         out[key] = _CLOSE.sub("", parts[0]).strip()
         for name, text in found.items():

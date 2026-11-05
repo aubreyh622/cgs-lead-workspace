@@ -46,7 +46,7 @@ def detail(s: Session, o: m.Opportunity) -> dict:
         "scores": o.scores, "conditions": o.conditions, "blocker": o.blocker, "need": o.need, "targetProblem": o.target_problem,
         "contact": {**out["contact"], "email": o.contact.email if o.contact else None, "confirmedBy": o.contact.confirmed_by if o.contact else None,
                     "confirmedOn": iso(o.contact.confirmed_on) if o.contact else None},
-        "company": {"id": o.company.id, "name": o.company.name, "domain": o.company.domain, "industry": o.company.industry, "hq": o.company.hq},
+        "company": {"id": o.company.id, "name": o.company.name, "domain": o.company.domain, "domainBy": o.company.domain_by, "industry": o.company.industry, "hq": o.company.hq},
         "brief": None if not b else {"facts": b.facts, "hypothesis": b.hypothesis, "relevance": b.relevance, "alternative": b.alternative,
                                      "unknowns": b.unknowns, "flags": b.flags, "priority": b.priority, "recommendation": b.recommendation,
                                      "suggested": b.suggested, "usage": b.usage, "frozenOn": iso(b.frozen_on)},

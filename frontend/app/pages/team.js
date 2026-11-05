@@ -111,9 +111,16 @@ export function agentState(a, d, me) {
     return { label: "Paused", cls: "", dot: "", now: queued.length ? `${plural(queued.length, "job")} waiting until a person resumes it` : "Paused by a person; the other agents keep working" };
   }
   if (running.length) return { label: "Working", cls: "info", dot: "run", now: running[0].reason };
+  // research runs on its own threads, not as board jobs (GET /api/agents, research)
+  const research = a.name === "Research agent" && d.overview.research;
+  if (research && research.running.length) {
+    return { label: "Working", cls: "info", dot: "run", now: `Researching ${research.running.slice(0, 3).join(", ")}${research.running.length > 3 ? ` and ${research.running.length - 3} more` : ""}` };
+  }
   if (waiting) return { label: "Waiting for you", cls: "warn", dot: "wait", now: `${plural(waiting, "item")} waiting for ${me}` };
   if (queued.length) return { label: "Queued", cls: "", dot: "", now: `Next: ${queued[0].reason}` };
-  return { label: "Idle", cls: "", dot: "", now: lastDone ? `Last: ${lastDone.result || lastDone.reason}` : "No work yet" };
+  const lastResearch = research && research.last
+    ? `Last: ${research.last.status === "done" ? "brief ready for" : "research stopped for"} ${research.last.company}` : "";
+  return { label: "Idle", cls: "", dot: "", now: lastDone ? `Last: ${lastDone.result || lastDone.reason}` : lastResearch || "No work yet" };
 }
 
 function monthStats(a, d, today) {

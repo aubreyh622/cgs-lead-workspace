@@ -10,6 +10,7 @@ import * as sources from "./pages/sources.js";
 import * as agents from "./pages/agents.js";
 import * as team from "./pages/team.js";
 import { dock } from "./shell.js";
+import * as updates from "./updates.js";
 
 const PAGES = {
   home,
@@ -34,7 +35,8 @@ const ctx = {
   counts: {},
   route: readRoute(),
   api,
-  toast,
+  // A notice on screen; it also joins the notification history (updates.js).
+  toast: (message, opts = {}) => { toast(message, opts); updates.record(message, opts.link); },
   href,
   // Reload the current page's data and draw it again. Pages keep their own open forms in module state.
   refresh: () => show({ quiet: true }),
@@ -66,12 +68,12 @@ export async function refreshCounts() {
     // Each badge equals what its page shows when opened.
     ctx.counts = {
       companies: cands.length + review.length,
-      outreach: outreach.approveItems(identified, inbox).length,
+      outreach: outreach.waitingFor(identified, inbox),
       qualification: qualification.waitingFor(ctx.me, qual).length,
       agents: team.suggestionCount(inbox, direction, lessons),
     };
     // The dock counts agent work waiting for this person: the sum of the agent rows its panel lists.
-    ctx.dock = { running: running.length, queued: overview.queued, paused: overview.paused,
+    ctx.dock = { running: running.length + ((overview.research && overview.research.running.length) || 0), queued: overview.queued, paused: overview.paused,
       waiting: team.AGENTS.reduce((n, a) => n + team.agentWaiting(a, inbox, direction, lessons), 0) };
   } catch {
     ctx.counts = {};
@@ -88,21 +90,58 @@ ctx.refreshCounts = refreshCounts;
 
 // The agent dock (DESIGN.md: bottom right, under the toasts): how many agents are working and how much waits for
 // this person; opened, what each agent is doing now.
-let dockOpen = false;
+let dockOpen = "";      // "" | "agents" | "notes"
 let dockData = null;
+let notesSeenBefore = ""; // items newer than this were unread when the history opened
 function drawDock() {
-  el.dock.innerHTML = ctx.me && ctx.dock ? String(dock(ctx.dock, dockOpen, dockData, ctx.me)) : "";
+  const list = updates.items().map((x) => ({ ...x, isNew: dockOpen === "notes" && x.at > notesSeenBefore }));
+  el.dock.innerHTML = ctx.me && ctx.dock ? String(dock(ctx.dock, dockOpen, dockData, ctx.me, { list, unread: updates.unread() })) : "";
 }
 document.addEventListener("click", async (event) => {
-  if (!event.target.closest("[data-shell=dock]")) return;
-  dockOpen = !dockOpen;
+  if (event.target.closest("[data-shell=note-link]")) { // the link navigates (or not, when it is this page); the panel closes
+    dockOpen = "";
+    setTimeout(drawDock, 0);
+    return;
+  }
+  const t = event.target.closest("[data-shell=dock], [data-shell=notes]");
+  if (!t) return;
+  const which = t.dataset.shell === "notes" ? "notes" : "agents";
+  dockOpen = dockOpen === which ? "" : which;
   dockData = null;
+  if (dockOpen === "notes") {
+    // notices are in the history and would cover it; one with Undo stays while its time lasts
+    document.querySelectorAll("#toasts .toast").forEach((x) => { if (!x.querySelector(".toast-action")) x.remove(); });
+    notesSeenBefore = updates.seenAt();
+    updates.markRead();
+  }
   drawDock();
-  if (dockOpen) {
+  if (dockOpen === "agents") {
     try { dockData = await team.loadOverview(ctx); } catch { dockData = { error: true }; }
     drawDock();
   }
 });
+
+// What the agents and the workspace finished in the background (updates.js calls this after every check): show it,
+// bring the counts up to date, and draw the page again when it is safe (nothing typed that would be lost).
+async function onUpdates(fresh) {
+  const shownNow = [...fresh].reverse().slice(-3);
+  for (const x of shownNow) toast(x.text, x.link ? { link: x.link, timeout: 8000 } : { timeout: 8000 });
+  if (fresh.length > shownNow.length) toast(`${fresh.length - shownNow.length} more in your notifications (the bell, bottom right).`);
+  await refreshCounts();
+  if (dockOpen === "agents") {
+    try { dockData = await team.loadOverview(ctx); } catch { /* keep what is shown */ }
+    drawDock();
+  }
+  if (fresh.length && shown && !typing() && !unsaved()) ctx.refresh();
+}
+
+// Anything typed into the page that a redraw would lose.
+function unsaved() {
+  return [...el.main.querySelectorAll("input, textarea, select")].some((f) =>
+    f.type === "checkbox" || f.type === "radio" ? f.checked !== f.defaultChecked
+      : f.tagName === "SELECT" ? [...f.options].some((o) => o.selected !== o.defaultSelected)
+      : f.value !== f.defaultValue);
+}
 
 let showSeq = 0;
 let shown = null; // the page and tab on screen, and the data drawn there
@@ -125,7 +164,9 @@ async function show({ quiet = false } = {}) {
   if (early) {
     draw(page, early, { scroll: sameTab ? window.scrollY : 0, used, quiet });
   } else if (samePage) {
-    el.main.querySelectorAll(".detail").forEach((d) => { d.inert = true; });  // the old item can no longer be acted on
+    // Until the next view is drawn nothing old can be acted on: the old item's details, and on another tab the old list too.
+    if (sameTab) el.main.querySelectorAll(".detail").forEach((d) => { d.inert = true; });
+    else el.main.inert = true;
   } else if (!quiet) {
     el.main.innerHTML = String(loadingCard(4));
   }
@@ -135,6 +176,7 @@ async function show({ quiet = false } = {}) {
   } catch (err) {
     if (seq !== showSeq) return;
     shown = null;
+    el.main.inert = false;
     el.main.innerHTML = String(errorCard(err));
     return;
   }
@@ -152,6 +194,7 @@ async function show({ quiet = false } = {}) {
 }
 
 function draw(page, data, { scroll, used, quiet }) {
+  el.main.inert = false;
   if (ctx.scrollTop) scroll = 0;
   ctx.scrollTop = false;
   el.main.innerHTML = String(page.view(data, ctx, ctx.route.params));
@@ -216,11 +259,12 @@ document.addEventListener("change", (event) => {
   if (!t) return;
   person.set(t.value);
   ctx.me = t.value;
-  toast(`You are now acting as ${t.value}. Changes record this name.`);
+  updates.start(api, ctx.me, onUpdates); // each person has their own notifications
+  ctx.toast(`You are now acting as ${t.value}. Changes record this name.`);
   show();
 });
 
-window.addEventListener("hashchange", () => { dockOpen = false; show(); });
+window.addEventListener("hashchange", () => { dockOpen = ""; show(); });
 
 async function start() {
   let users = [];
@@ -243,6 +287,7 @@ async function start() {
   }
   ctx.me = saved;
   show();
+  updates.start(api, ctx.me, onUpdates);
 }
 
 start();

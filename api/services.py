@@ -352,7 +352,7 @@ def latest_task(c: Ctx, o: m.Opportunity) -> m.ResearchTask:
 
 def run_research(c: Ctx, o: m.Opportunity) -> None:
     """Steps 2-3. Demo mode finishes at once from fixtures. Live mode starts Aubrey's research pipeline in the
-    background (Gemini + Tavily); sync_research() collects the brief when it is done."""
+    background (the configured AI and web search); sync_research() collects the brief when it is done."""
     task = latest_task(c, o)
     if not c.demo:
         # forget an earlier run first (a retry): while this one starts, sync_research must not check the old run,
@@ -370,8 +370,8 @@ def run_research(c: Ctx, o: m.Opportunity) -> None:
                     found = ""
                 if not found:
                     raise LLMError("The research agent needs the company website (domain), and a search did not find it. Add it, then retry.", "config")
-                o.company.domain = found
-                log(c, o.id, "a", f"Research agent found the company website: {found}. Check it is the right company.")
+                o.company.domain, o.company.domain_by = found, "search"
+                log(c, o.id, "a", f"Research agent found the company website by a web search: {found}. Check it is the right company.")
             TK.require("Research agent", "web", c.s)  # whichever engine runs the research, the permission table decides
             bridge = c.research_factory() if c.research_factory else None
             if bridge is None:
@@ -379,12 +379,13 @@ def run_research(c: Ctx, o: m.Opportunity) -> None:
             task.external_run_id = bridge.start(o.company.name, o.company.domain, c.actor, **({"as_of": c.today} if getattr(bridge, "dated", False) else {}),
                                                 **({"focus": task.returned_with} if getattr(bridge, "focus", False) and task.returned_with else {}),
                                                 **({"size": current_direction(c, c.actor).company_size or {},
-                                                    "problem": o.target_problem or ""} if getattr(bridge, "criteria", False) else {}))
+                                                    "problem": o.target_problem or ""} if getattr(bridge, "criteria", False) else {}),
+                                                **({"news": picked_for(c, o)} if getattr(bridge, "news", False) else {}))
             task.status, task.error = "running", None
-            log(c, o.id, "a", "Research agent started (Gemini + web search, up to about 8 minutes)" +
+            log(c, o.id, "a", "Research agent started (web search and AI, up to about 8 minutes)" +
                 (f". Reviewer question noted: {task.returned_with}" if task.returned_with else ""))
         except (LLMError, A.AgentUnavailable) as e:
-            task.status, task.error = "failed", str(e)
+            task.status, task.error, task.ended_at = "failed", str(e), datetime.now(timezone.utc)
             record_run(c, "Research agent", o, "research-v2 (Aubrey)", 0, "failed", str(e))
             log(c, o.id, "a", f"Research could not run: {e}")
         return
@@ -397,7 +398,7 @@ def run_research(c: Ctx, o: m.Opportunity) -> None:
             o.contact.name = sp["contact_name"]
             if sp["contact_title"]:
                 o.contact.title = sp["contact_title"]
-    task.status, task.progress = "done", 5
+    task.status, task.progress, task.ended_at = "done", 5, datetime.now(timezone.utc)
     task.log = task.log + [{"m": "Verified identity"}, {"m": "Checked duplicates"}, {"m": "Gathered sources"}, {"m": "Wrote brief"}, {"m": "Estimated priority"}]
     o.stage = "review"
     o.revision += 1
@@ -509,6 +510,42 @@ def add_manual(c: Ctx, company: str, domain: str, name: str, title: str, source:
     return o.id
 
 
+def picked_for(c: Ctx, o: m.Opportunity) -> str:
+    """The news discovery picked this company for, in one line for the research agent ("" for a lead added by hand)."""
+    cand = c.s.get(m.Candidate, o.candidate_id) if o.candidate_id else None
+    if not cand:
+        return ""
+    said = (cand.evidence_quote or cand.why or "").strip()
+    return f"\"{said}\"" + (f" (source: {cand.source_url})" if cand.source_url else "") if said else ""
+
+
+# Words that start with a capital in a news sentence but say nothing about which organisation it is.
+NEWS_STOP = {"the", "this", "that", "these", "with", "from", "after", "into", "over", "under", "announced", "announces",
+             "company", "companies", "inc", "llc", "corp", "group", "new", "its", "their", "and", "for", "has", "have", "will",
+             "said", "says", "ceo", "cfo", "coo", "cio", "cto", "january", "february", "march", "april", "may", "june", "july",
+             "august", "september", "october", "november", "december", "monday", "tuesday", "wednesday", "thursday", "friday"}
+
+
+def same_news_flag(c: Ctx, o: m.Opportunity, facts: list[dict]) -> dict | None:
+    """A flag when none of the brief's sources mention the news the company was picked for: the research may be about a
+    different organisation with the same name (seen live on 5 Nov 2026: "Olin", picked for a chemicals merger, was
+    researched as a college). Names in the news (other than the company's own) are looked for in the facts."""
+    cand = c.s.get(m.Candidate, o.candidate_id) if o.candidate_id else None
+    if not cand or not facts:
+        return None
+    own = {w.lower() for w in re.findall(r"[A-Za-z][A-Za-z&'-]+", cand.company)}
+    terms = {w.lower() for w in re.findall(r"\b[A-Z][A-Za-z&'-]{2,}", f"{cand.why or ''} {cand.evidence_quote or ''}")} - own - NEWS_STOP
+    if len(terms) < 2:
+        return None  # too little to compare
+    text = " ".join(f"{f.get('text', '')} {f.get('quote', '')}" for f in facts).lower()
+    host = (cand.source_url or "").split("/")[2] if (cand.source_url or "").count("/") >= 2 else ""
+    if any(t in text for t in terms) or (host and any(host in (f.get("src") or "") for f in facts)):
+        return None
+    return {"type": "Same company?", "text": f"None of the sources in this brief mention the news {cand.company} was picked for "
+            f"({', '.join(sorted(terms)[:4])}). Check that the research is about the same organisation"
+            + (f" and that {o.company.domain} is its website." if o.company.domain else ".")}
+
+
 def sync_research(c: Ctx) -> list[dict]:
     """Live mode: check running research and turn finished company cards into Step 4 briefs."""
     from api.research_bridge import card_to_brief
@@ -543,11 +580,16 @@ def sync_research(c: Ctx) -> list[dict]:
         except (KeyError, TypeError, ValueError, AttributeError) as e:
             st = {**st, "status": "failed", "error": f"The research result could not be read ({type(e).__name__}: {e}). Retry the research."}
         if brief:
+            flag = same_news_flag(c, o, brief["facts"])
+            if flag:  # a flag means the checks did not all pass
+                brief["flags"] = [flag] + brief["flags"]
+                brief["recommendation"] = {"decision": "return", "basis": "checks", "reason": "Resolve the flags below before accepting."}
             for k, v in brief.items():
                 setattr(o.brief, k, v)
             if person and not o.contact.name:
                 o.contact.name, o.contact.title = person["name"], person["title"]
             task.status, task.progress, o.stage = "done", 5, "review"
+            task.ended_at = datetime.now(timezone.utc)
             o.revision += 1
             rid = record_run(c, "Research agent", o, getattr(bridge, "prompt", "research-v2 (Aubrey)"), u.get("model_calls", 0), model=getattr(bridge, "label", "gemini+tavily"),
                              usage=type("U", (), {"tokens_in": u.get("tokens_in"), "tokens_out": u.get("tokens_out")})())
@@ -558,6 +600,7 @@ def sync_research(c: Ctx) -> list[dict]:
         else:
             reason = st.get("error") or ("Paused at a research limit." if st["status"] == "paused" else "No reviewable brief was produced.")
             task.status, task.error = ("paused" if st["status"] == "paused" else "failed"), reason
+            task.ended_at = datetime.now(timezone.utc)
             task.pause_reason = "budget" if st["status"] == "paused" else None
             rid = record_run(c, "Research agent", o, getattr(bridge, "prompt", "research-v2 (Aubrey)"), u.get("model_calls", 0), "failed", reason, model=getattr(bridge, "label", "gemini+tavily"))
             if hasattr(bridge, "trace"):
@@ -572,7 +615,7 @@ def set_domain(c: Ctx, opp_id: str, domain: str) -> None:
     d = need_text(domain, "Website domain").lower().removeprefix("https://").removeprefix("http://").removeprefix("www.").strip("/")
     if not re.fullmatch(r"[a-z0-9-]+(\.[a-z0-9-]+)+", d):
         raise ActionError("Give the website as a domain, for example corvane.com.")
-    o.company.domain = d
+    o.company.domain, o.company.domain_by = d, "person"
     touch(c, o)
     log(c, o.id, "h", f"Company website set to {d} by {c.actor}")
 
@@ -598,7 +641,7 @@ def research_control(c: Ctx, opp_id: str, action: str) -> None:
             try:
                 bridge.resume(task.external_run_id)
             except LLMError as e:
-                task.status, task.error = "failed", str(e)
+                task.status, task.error, task.ended_at = "failed", str(e), datetime.now(timezone.utc)
         else:
             run_research(c, o)
     elif action == "retry":
@@ -1122,9 +1165,17 @@ def followup_sent(c: Ctx, opp_id: str, follow_days: int) -> None:
 
 def to_nurture(c: Ctx, opp_id: str, review_on: date | None, reason: str) -> None:
     o = opp(c, opp_id, "identified", "contacted", "active")
+    reason = need_text(reason, "Reason")
+    no_waiting_email(c, o)
     o.stage, o.next_action, o.next_due = "nurture", "Revisit the opportunity", review_on or c.today + timedelta(days=60)
+    # Email drafts written for the stage it leaves are not sent now: they leave the inbox. A reconnect email is drafted
+    # at the review date.
+    drafts = list(c.s.scalars(select(m.InboxItem).where(m.InboxItem.opportunity_id == o.id, m.InboxItem.kind == "draft",
+                                                        m.InboxItem.status == "new")))
+    for it in drafts:
+        it.status, it.decided_by = "dismissed", f"{c.actor} moved the lead to nurture"
     touch(c, o)
-    log(c, o.id, "h", f"Moved to nurture by {c.actor}: {need_text(reason, 'Reason')}")
+    log(c, o.id, "h", f"Moved to nurture by {c.actor}: {reason}" + (f". {len(drafts)} unsent email draft(s) withdrawn." if drafts else ""))
     CRM.mark(c, o)
 
 

@@ -108,11 +108,14 @@ class Change(BaseModel):
     after: Result
 
 
+STARTING = "Starting direction (not yet approved by CGS)"  # the project brief's own approval note was for the prototype
+
+
 def starting_direction() -> DirectionVersion:
     from api.settings import ROOT
     b = json.loads((ROOT / "config" / "problem_brief.json").read_text(encoding="utf-8"))
     return DirectionVersion(version="v1", scope="shared", problem=b["problem"], signals=b["signals"], buyer_roles=b["buyer_roles"],
-                            exclusions=b["exclusions"], excluded_domains=b["excluded_domains"], approved_by=b["approved_by"],
+                            exclusions=b["exclusions"], excluded_domains=b["excluded_domains"], approved_by=STARTING if "not CGS approval" in b["approved_by"] else b["approved_by"],
                             approved_on=date.fromisoformat(b["approved_at"][:10]), basis=b["approval_basis"],
                             change=f"Imported from config/problem_brief.json ({b['version']})")
 

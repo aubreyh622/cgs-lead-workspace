@@ -226,6 +226,8 @@ def undo_email(c, out_id: str) -> dict:
         c.s.refresh(row)
         raise S.ActionError("Too late: the email already went out." if row.status in ("sending", "sent")
                             else f"That email was {row.status}.", 409, "too_late")
+    c.s.refresh(row)
+    row.ended_at = utcnow()
     S.log(c, row.opportunity_id, "h", f"{c.actor} undid the {row.purpose} email to {row.to}. Nothing was sent; the draft is unchanged.")
     return {"status": "undone"}
 
@@ -261,11 +263,12 @@ def deliver(c, row: m.OutboundEmail) -> dict:
     except S.ActionError as e:
         c.s.rollback()
         row = c.s.get(m.OutboundEmail, row.id)
-        row.status, row.error = "failed", str(e)
+        row.status, row.error, row.ended_at = "failed", str(e), utcnow()
         S.log(c, row.opportunity_id, "s", f"The {row.purpose} email to {row.to} approved by {row.by} was not sent: {e}")
         c.s.commit()
         raise
     row.status, row.sent_at = "sent", utcnow()
+    row.ended_at = row.sent_at
     return {**res, "id": row.id}
 
 
@@ -285,7 +288,7 @@ def send_due(app) -> int:
             if now - aware(row.send_at) > STALE:
                 if _take(c, out_id, "expired"):
                     row = s.get(m.OutboundEmail, out_id)
-                    row.error = "The workspace was stopped before it went out."
+                    row.error, row.ended_at = "The workspace was stopped before it went out.", utcnow()
                     from api.services import log
                     log(c, row.opportunity_id, "s", f"The {row.purpose} email to {row.to} approved by {row.by} was not sent: the "
                                                     "workspace was stopped before it went out. Approve it again to send it.")

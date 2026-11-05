@@ -129,6 +129,21 @@ Agents work like employees: they notice work, do it, and hand the result to a pe
   - use a person's name only when it appears word for word in that result; otherwise the contact is “contact to confirm”,
   - are not on an excluded domain and are not already in the workspace.
 - **Research agent** (`api/research_bridge.py`). Picking a candidate starts Aubrey's research v2 for that company in the background. That pipeline is Gemini + Tavily only, uses her `config/problem_brief.json`, and caps each company at 10 searches, 12 page reads, 18 model calls, 22 credits and 8 minutes. The background worker checks running research every 30 seconds (or press `POST /api/research/sync`) and turns a finished company card into the Step 4 brief: quoted, dated facts with source URLs; flags; and a contact only if the sources name one. A run that produces no brief stays visible as failed or paused. Research needs the company website; set it with `PATCH /api/opportunities/{id}/company`.
+
+  Checks added after the full live test of 5 Nov 2026, where "Olin" (picked for a chemicals merger) was researched as a
+  college and "Second Nature Brands" got another company's website:
+  - **Website by search** (`discovery_agent.resolve_domain`): when the candidate has no website, one search; a result is
+    taken only when its host carries every distinctive word of the name, or all but one and the result names the company
+    in full. Colleges, government, social and data sites are never taken. Otherwise research asks a person. A website found
+    this way is marked (`companies.domain_by = "search"`) and the brief says to check it.
+  - **The news it was picked for**: the research agent (1.2) is told the candidate's source sentence and link, and told
+    not to confirm the identity when the pages describe another organisation.
+  - **Same company?** (`services.same_news_flag`): when none of the brief's facts mention a name from that news, the brief
+    gets this flag and its recommendation becomes "return".
+  - The recommendation on a live brief comes from these code checks, not from the agent's judgement of the company; it
+    carries `basis: "checks"` and the page says "The brief passed the research checks" ("Checks passed" in the list).
+  - `GET /api/agents` reports research (`research.running`, `research.last`), which runs on its own threads and not on the
+    task board, so the agent panel shows it.
 - **CGS library** (`api/knowledge.py`, `GET /api/knowledge?q=`). Searches `knowledge/**/*.md|*.txt` (subfolders too; files
   and folders starting with `_` are skipped). Each paragraph is one passage the agents may quote word for word.
   - **CGS's public website**: `python -m api.fetch_cgs_site` downloads 15 public pages of cgsadvisors.com (about, approach,
@@ -163,7 +178,7 @@ Agents work like employees: they notice work, do it, and hand the result to a pe
 | 2–3 | Stop, resume, retry research | `POST /api/opportunities/{id}/research/{stop,resume,retry}` | Live mode shows the failure; it never invents a brief |
 | 4 | Accept, return or reject; undo | `POST /api/opportunities/{id}/step4`, `POST …/step4/undo` | Accept needs the duplicate check; reject “Other” needs a comment; review time is optional and never counted as zero. `undo_seconds` (up to 30, accept or reject) opens an undo window: the CRM write and the outreach agent's draft wait until it ends. Undo puts the opportunity back in Step 4, adds an “Undone” decision and withdraws the feedback; refused after the window or once something else changed |
 | 4 | Confirm a contact; save another opportunity at the same company | `POST …/contact`, `POST …/siblings` | Confirming needs where it was verified |
-| 5 | Save the draft; record sent, follow-up, nurture | `PUT …/outreach/draft`, `POST …/outreach/sent`, `/followup`, `POST …/nurture` | The workspace never sends email itself |
+| 5 | Save the draft; record sent, follow-up, nurture | `PUT …/outreach/draft`, `POST …/outreach/sent`, `/followup`, `POST …/nurture` | Moving to nurture withdraws the lead's unsent email drafts from the inbox (a reconnect email is drafted at the review date) |
 | 6 | Record a reply | `POST …/outreach/reply` | Any reply makes the opportunity Active at once; the label comes after |
 | 6 | Add notes and get suggestions | `POST …/notes` | The note is saved even if analysis fails; a client quote that is not in the notes is thrown away |
 | 6 | Accept, edit or reject a suggestion | `POST /api/proposals/{id}` | Edit and reject need a reason; replacing a confirmed value needs a reason |
@@ -363,7 +378,7 @@ the `gap_actions` job (a stalled opportunity, or a pack the approver returned). 
 
 ## Research agent (multi-agent step 6)
 
-`api/research_agent.py`, prompt version `research-agent-1.1`. One agent for everything looked up on the public web about a
+`api/research_agent.py`, prompt version `research-agent-1.2`. One agent for everything looked up on the public web about a
 company, with three tasks that share the same web tools, limits and checks:
 
 | Task | When | Result |
@@ -610,7 +625,8 @@ Permissions have three layers, strongest first:
    | `PUT /api/toolkit/permissions/{agent}/{connector}` | `{"enabled": true \| false \| null, "reason": "..."}`: on, off, or back to the default for one agent. A reason is required |
    | `PUT /api/toolkit/connectors/{connector}` | The same for every agent at once (a kill switch) |
    | `GET /api/toolkit/permissions/history` | Every change (switches and limits), newest first: `id`, `kind`, who, when, why, state before and after, `undoable` |
-   | `POST /api/toolkit/permissions/history/{id}/undo` | `{"reason": "..."}`: put that setting back as it was before the change. Only the latest change to a setting can be undone; the undo is itself recorded |
+   | `GET /api/updates?since=…` (or `?days=7`) | What happened for the person acting since a moment, newest first: inbox items for them or the whole team, research that ended (`research_tasks.ended_at`; leads they own or not owned yet), approved emails of theirs that were sent or not (`outbound_emails.ended_at`). Each item has the opportunity and its stage for the link. The page polls it |
+| `POST /api/toolkit/permissions/history/{id}/undo` | `{"reason": "..."}`: put that setting back as it was before the change. Only the latest change to a setting can be undone; the undo is itself recorded |
    | `PUT /api/toolkit/limits/{connector}` | `{"perDay": n \| 0 \| null, "reason": "..."}`: a daily limit for the connector (all agents and people together); 0 = no limit; null = the config file's default |
    | `GET /api/toolkit/usage?days=7` | Calls per day, agent and connector (`ok`, `failed`, `denied`, `limit`), and each connector's limit and use today |
 

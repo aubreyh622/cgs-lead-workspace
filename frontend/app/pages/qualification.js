@@ -43,6 +43,7 @@ export async function load(ctx, params) {
   let tab = TABS.some(([t]) => t === params.tab) ? params.tab : null;
   if (!tab && params.id) tab = (all.find((o) => o.id === params.id) || {}).stage || null;
   if (!TABS.some(([t]) => t === tab)) tab = lists.active.length ? "active" : lists.approval.length ? "approval" : "active";
+  if (params.tab !== tab) ctx.replace("qualification", { ...params, tab });  // the tab chosen now stays when the page redraws
   const data = { tab, team, lists };
   const list = lists[tab];
   if (list.length) {

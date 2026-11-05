@@ -29,7 +29,12 @@ def agents(request: Request):
         for j in jobs:
             if j.status == "done":
                 team[j.agent]["doneToday"] += 1
-        return {"paused": bool(J.setting(s, "agents_paused")), "today": today.isoformat(),
+        # Research runs on its own threads, not on the task board: report it here so the agent panel can show it.
+        tasks = s.execute(select(m.ResearchTask.status, m.Company.name).join(m.Opportunity, m.Opportunity.id == m.ResearchTask.opportunity_id)
+                          .join(m.Company, m.Company.id == m.Opportunity.company_id).order_by(m.ResearchTask.started_at.desc()).limit(50)).all()
+        research = {"running": [name for st, name in tasks if st == "running"],
+                    "last": next(({"company": name, "status": st} for st, name in tasks if st in ("done", "failed")), None)}
+        return {"paused": bool(J.setting(s, "agents_paused")), "today": today.isoformat(), "research": research,
                 "aiCallsToday": J.ai_calls_today(s, today), "aiBudget": int(J.setting(s, "agent_ai_budget")),
                 "lastPatrol": J.setting(s, "last_patrol"), "patrolHour": int(J.setting(s, "patrol_hour")),
                 "queued": s.scalar(select(func.count()).select_from(m.AgentJob).where(m.AgentJob.status == "queued")), "worker": bool(getattr(request.app.state, "worker", None)),

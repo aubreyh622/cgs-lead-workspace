@@ -36,6 +36,7 @@ class Company(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(200), index=True)
     domain: Mapped[str] = mapped_column(String(200), default="", index=True)
+    domain_by: Mapped[Optional[str]] = mapped_column(String(20))   # "search" when a web search found it: a person checks it
     industry: Mapped[str] = mapped_column(String(200), default="")
     hq: Mapped[str] = mapped_column(String(200), default="")
     opportunities: Mapped[list["Opportunity"]] = relationship(back_populates="company")
@@ -130,6 +131,7 @@ class ResearchTask(Base):
     external_run_id: Mapped[Optional[str]] = mapped_column(String(64))  # Aubrey's research run, in live mode
     log: Mapped[list] = mapped_column(JSON, default=list)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))  # when it finished, failed or paused (the updates feed)
 
 
 class Candidate(Base):
@@ -193,6 +195,7 @@ class OutboundEmail(Base):
     send_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))  # sent, undone, failed or not sent (the updates feed)
     error: Mapped[Optional[str]] = mapped_column(Text)
 
 

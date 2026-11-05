@@ -191,11 +191,33 @@ export function inlineError(message) {
   return message ? html`<div class="notice bad" role="alert">${icon("alert")}<span>${message}</span></div>` : "";
 }
 
+// ---------- notification history (frontend/app/updates.js) ----------
+const when = (iso) => {
+  const t = new Date(iso);
+  return t.toDateString() === new Date().toDateString()
+    ? t.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : t.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+};
+
+function notesPanel(list) {
+  return html`
+  <section class="dock-panel notes-panel" aria-label="Notifications">
+    <div class="dock-head"><b>Notifications</b><span class="meta-3">The past week</span></div>
+    ${list.length ? html`<ul>${list.slice(0, 60).map((x) => html`<li class="${x.isNew ? "unread" : ""}">
+      ${x.link ? html`<a href="${x.link.href}" data-shell="note-link">` : html`<div class="note-row">`}
+        <span class="row-flex" style="gap:10px;flex-wrap:nowrap"><span class="note-text">${x.text}</span><span class="meta-3" style="margin-left:auto;white-space:nowrap">${when(x.at)}</span></span>
+        <span class="meta-3">${x.agent || (x.kind === "local" ? "You" : "Workspace")}${x.link ? html`. ${x.link.label}` : ""}</span>
+      ${x.link ? html`</a>` : html`</div>`}</li>`)}</ul>`
+      : html`<p class="meta" style="padding:12px 18px">Nothing yet. What the agents finish and what you do shows here for a week.</p>`}
+  </section>`;
+}
+
 // ---------- the agent dock ----------
-export function dock(state, open, data, me) {
+// open: "" | "agents" | "notes". notes: { list, unread } for the bell.
+export function dock(state, open, data, me, notes = { list: [], unread: 0 }) {
   const summary = state.paused ? "Agents paused" : state.running ? `${plural(state.running, "agent job")} running` : state.queued ? `${plural(state.queued, "job")} queued` : "Agents idle";
   return html`
-  ${open ? html`
+  ${open === "notes" ? notesPanel(notes.list) : ""}
+  ${open === "agents" ? html`
   <section class="dock-panel" aria-label="Agents now">
     <div class="dock-head"><b>Agents now</b><a href="${href("agents")}">All agents</a></div>
     ${!data ? html`<p class="meta" style="padding:12px 18px">Loading…</p>`
@@ -206,7 +228,11 @@ export function dock(state, open, data, me) {
           <span class="meta dock-now">${s.now}</span></a></li>`;
       })}</ul>`}
   </section>` : ""}
-  <button type="button" class="dock-pill" data-shell="dock" aria-expanded="${open ? "true" : "false"}">
-    <span class="with-dot ${state.running ? "run" : state.paused ? "" : "done"}"><span><b>${summary}</b>${state.waiting ? `, ${state.waiting} from agents waiting for you` : ""}</span></span>
-  </button>`;
+  <div class="dock-row">
+    <button type="button" class="dock-bell" data-shell="notes" aria-expanded="${open === "notes" ? "true" : "false"}"
+      aria-label="${notes.unread ? `Notifications, ${notes.unread} new` : "Notifications"}">${icon("bell", 18)}${notes.unread ? html`<span class="bell-count" aria-hidden="true">${notes.unread > 99 ? "99+" : notes.unread}</span>` : ""}</button>
+    <button type="button" class="dock-pill" data-shell="dock" aria-expanded="${open === "agents" ? "true" : "false"}">
+      <span class="with-dot ${state.running ? "run" : state.paused ? "" : "done"}"><span><b>${summary}</b>${state.waiting ? `, ${state.waiting} from agents waiting for you` : ""}</span></span>
+    </button>
+  </div>`;
 }

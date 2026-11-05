@@ -97,18 +97,21 @@ def test_whole_workflow_in_the_browser(server, page):
     page.wait_for_selector(f".toast:has-text('{company}')")
 
     # Step 4: accept it, undo that from the toast, then accept again and let the undo window pass
-    def accept_it():
+    def accept_it(oid=None):
         go(page, base, "companies?tab=review")
-        page.click(f".pick:has-text('{company}')")
+        # by id when known: the demo also makes a second opportunity at the same company, and Undo changes the order
+        page.click(f".pick[href$='id={oid}']" if oid else f".pick:has-text('{company}')")
         page.wait_for_selector(f"#brief-h:has-text('{company}')")
+        picked = page.url.split("id=")[-1]
         page.click("[data-act=mode][data-mode=accept]")
         page.check("form[data-act=acceptForm] input[name=duplicates_checked]")
         page.click("form[data-act=acceptForm] [type=submit]")
         page.wait_for_selector(".toast:has-text('Accepted')")
-    accept_it()
+        return picked
+    oid = accept_it()
     page.click(".toast:has-text('Accepted') .toast-action")
     page.wait_for_selector(".toast:has-text('Undone')")
-    accept_it()
+    accept_it(oid)
     page.wait_for_timeout(11500)  # the clock ends the window; then the outreach agent may draft
     go(page, base, "companies?tab=accepted")
     page.wait_for_selector(f"table.list b:has-text('{company}')")

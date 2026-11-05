@@ -30,7 +30,7 @@ from api.agent_tools import Pages, web_tools
 from api.demo_agents import quote_in_text
 from api.llm import LLMError
 
-VERSION = "research-agent-1.1"
+VERSION = "research-agent-1.2"  # 1.2: told the news the company was picked for, to keep to the same organisation
 MAX_FACTS = 8
 MAX_SEARCHES = 8     # company_pages + search_web, each one search credit on the real web
 MAX_READS = 10
@@ -372,8 +372,12 @@ def date_on_page(iso: str, text: str) -> bool:
     return any(f in page for f in forms)
 
 
-def task(company: str, domain: str, focus: str = "", size: dict | None = None, problem: str = "") -> str:
+def task(company: str, domain: str, focus: str = "", size: dict | None = None, problem: str = "", news: str = "") -> str:
     t = f"Research {company} (website {domain or 'unknown'}) and write the brief."
+    if news:
+        t += (f" Discovery picked this company for this news: {news} Research that organisation. If the website or the "
+              "pages you find describe a different organisation with a similar name, do not confirm the identity, and say "
+              "so in the alternative.")
     if problem:
         t += (f" Discovery found it for this problem CGS solves: \"{problem}\". Treat it as a hypothesis: check whether the "
               "public evidence supports it, and say in the hypothesis and the alternative whether it does.")
@@ -415,10 +419,10 @@ def card(company: str, domain: str, record: dict, args: dict) -> dict:
 
 
 def research(provider, search, company: str, domain: str, focus: str = "", may_call=None, size: dict | None = None,
-             problem: str = "", lessons: str = "") -> tuple[dict | None, dict, list, str, list]:
+             problem: str = "", lessons: str = "", news: str = "") -> tuple[dict | None, dict, list, str, list]:
     """Run the brief task. Returns (card or None, usage counts, trace, why there is no card, progress events)."""
     spec, record = research_agent(search, company, domain, size, lessons)
-    out = R.run(spec, provider, task(company, domain, focus, size, problem), **({"may_call": may_call} if may_call else {}))
+    out = R.run(spec, provider, task(company, domain, focus, size, problem, news), **({"may_call": may_call} if may_call else {}))
     usage = {"searches": record["searches"], "extractions": record["reads"], "model_calls": getattr(provider, "calls", 0),
              "tokens_in": out.usage.tokens_in, "tokens_out": out.usage.tokens_out,
              **{"dropped_" + k: v for k, v in record["dropped"].items()}}
@@ -434,6 +438,7 @@ class AgentResearchBridge:
     prompt = VERSION
     dated = True   # takes the simulated date, so research on the synthetic web sees only news published by then
     focus = True   # takes the reviewer's question when a brief was returned
+    news = True    # takes the news the company was picked for
     criteria = True  # takes the direction's company size range
 
     def __init__(self, provider_factory, search_factory, background: bool = True, session_factory=None):
@@ -444,7 +449,7 @@ class AgentResearchBridge:
         self.label = "research agent"
 
     def start(self, company: str, domain: str, consultant: str, as_of=None, focus: str = "", size: dict | None = None,
-              problem: str = "") -> str:
+              problem: str = "", news: str = "") -> str:
         run_id = "agent-" + uuid.uuid4().hex[:10]
         self.runs[run_id] = {"status": "running", "card": None, "usage": {}, "error": None, "events": [], "trace": [], "uses": []}
 
@@ -462,7 +467,8 @@ class AgentResearchBridge:
                 else:
                     search = toolkit.connector("Research agent", "web", lambda: self.search_factory(as_of))
                 self.label = f"{provider.label}+{getattr(search, 'name', 'web')}"
-                c, usage, trace, reason, events = research(provider, search, company, domain, focus, size=size, problem=problem, lessons=lessons)
+                c, usage, trace, reason, events = research(provider, search, company, domain, focus, size=size, problem=problem,
+                                                           lessons=lessons, news=news)
                 r.update(card=c, usage=usage, trace=trace, events=events, error=reason or None,
                          status="completed" if c else "failed")
             except (LLMError, toolkit.Denied) as e:

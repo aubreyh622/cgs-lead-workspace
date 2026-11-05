@@ -457,6 +457,14 @@ def crm_state(request: Request, c: S.Ctx = Actor):
             "pending": counts.get("sync_pending", 0), "failed": counts.get("sync_failed", 0), "conflicts": conflicts}
 
 
+@router.get("/updates", tags=["system"], summary="What happened for the person acting since a moment (the page polls this for notices and the notification history)")
+def updates(since: str | None = None, days: int = 7, c: S.Ctx = Actor):
+    from datetime import datetime, timezone
+    from api import updates as UP
+    now = datetime.now(timezone.utc)
+    return {"now": now.isoformat(), "items": UP.feed(c.s, c.actor, UP.since_from(since, days))}
+
+
 @router.post("/crm/pull", tags=["crm"], summary="Read back now what changed in the CRM: edits there (kept for a person to decide), the CRM opportunity's stage, tasks done")
 def crm_pull_now(c: S.Ctx = Actor):
     from api import crm_sync as CRM

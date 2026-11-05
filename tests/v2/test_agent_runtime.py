@@ -199,3 +199,14 @@ def test_a_null_optional_argument_counts_as_left_out():
     ai = Script(gemini(call("keep", {"word": "hi", "extra": None})), gemini(call("finish", {"answer": "done"})))
     out = R.run(spec(tools=(keep,)), make_provider("gemini", "m", key="k", transport=ai), "Keep hi.")
     assert out.status == "done" and seen == [{"word": "hi"}]
+
+
+def test_leaked_text_is_cut_even_when_the_field_was_also_written():
+    """Live, 5 Nov 2026 (stow Group): the model wrote "alternative" in its own field and again inside "relevance"; the
+    copy stayed in the brief, tags and all."""
+    schema = R.params({"relevance": {"type": "string"}, "alternative": {"type": "string"}})
+    args = {"relevance": 'Operations work can address it.</relevance> <parameter name="alternative">Routine growth.',
+            "alternative": "Routine growth."}
+    assert R.repair_args(args, schema) == {"relevance": "Operations work can address it.", "alternative": "Routine growth."}
+    plain = {"relevance": 'The client wrote <parameter name="other"> in an email.', "alternative": "x"}
+    assert R.repair_args(plain, schema) == plain  # a name the tool does not have is left alone

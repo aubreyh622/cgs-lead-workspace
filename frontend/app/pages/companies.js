@@ -1,5 +1,5 @@
 // Companies: Step 1 candidates, Steps 2-3 research, Step 4 decision, then accepted and set-aside lists.
-import { html, icon, day, addDays, daysBetween, href, plural, initials, safeUrl } from "../lib.js";
+import { html, icon, day, addDays, daysBetween, href, plural, initials, safeUrl, sourceLink } from "../lib.js";
 import { enc, ApiError } from "../api.js";
 import { SKIP_REASONS, REJECT_REASONS, ACCEPT_REASONS, SCOPES, STAGE_LABELS, RECOMMENDATION_LABELS } from "../options.js";
 import { emptyState, inlineError, dropToast } from "../shell.js";
@@ -43,6 +43,7 @@ export async function load(ctx, params) {
   const [cands, opps] = await Promise.all([ctx.api.get("/candidates"), ctx.api.get("/opportunities")]);
   const review = opps.filter((o) => o.stage === "review");
   const tab = TABS.some(([t]) => t === params.tab) ? params.tab : review.length ? "review" : "new";
+  if (params.tab !== tab) ctx.replace("companies", { ...params, tab });  // the tab chosen now stays when the page redraws
   const data = { tab, cands, opps, review };
   if (tab === "research") {
     const ids = opps.filter((o) => o.stage === "researching").map((o) => o.id);
@@ -52,7 +53,7 @@ export async function load(ctx, params) {
     // the research agent's suggestion for each company in the list (DESIGN: "Suggested: accept" on each item)
     const briefs = await Promise.all(review.map((o) => ctx.api.get(`/opportunities/${enc(o.id)}`).catch(() => null)));
     data.briefs = Object.fromEntries(briefs.filter(Boolean).map((b) => [b.id, b]));
-    data.suggested = Object.fromEntries(briefs.filter(Boolean).map((b) => [b.id, b.brief && b.brief.recommendation ? b.brief.recommendation.decision : null]));
+    data.suggested = Object.fromEntries(briefs.filter(Boolean).map((b) => [b.id, b.brief && b.brief.recommendation ? b.brief.recommendation : null]));
     const id = review.some((o) => o.id === params.id) ? params.id : review[0].id;
     const [detail, crm, related] = await Promise.all([
       ctx.api.get(`/opportunities/${enc(id)}`),
@@ -253,9 +254,17 @@ function researchRow(o, ctx) {
 }
 
 // ----- Step 4 -----
-function suggestTag(decision) {
-  if (!decision) return "";
-  const [cls, text] = { accept: ["good", "Suggested: accept"], return: ["warn", "Suggested: look again"], reject: ["", "Suggested: not now"] }[decision] || ["", decision];
+// A live brief's recommendation comes from code checks, not the agent's judgement: it says so (basis "checks"). Briefs
+// saved before 5 Nov 2026 carry the old fixed reason instead of the basis.
+const OLD_CHECKS_REASON = "Research brief is ready for review with dated, quoted sources.";
+const byChecks = (rec) => !!rec && (rec.basis === "checks" || rec.reason === OLD_CHECKS_REASON);
+
+function suggestTag(rec) {
+  if (!rec) return "";
+  const decision = rec.decision;
+  const [cls, text] = byChecks(rec)
+    ? (decision === "accept" ? ["good", "Checks passed"] : ["warn", "Needs a look"])
+    : { accept: ["good", "Suggested: accept"], return: ["warn", "Suggested: look again"], reject: ["", "Suggested: not now"] }[decision] || ["", decision];
   return html`<span class="tag ${cls}" style="margin-top:6px">${text}</span>`;
 }
 
@@ -289,15 +298,19 @@ function brief(o, d, ctx) {
   return html`
   <div class="block">
     <h2 id="brief-h">${o.company.name}</h2>
-    <p class="meta">${place ? `${place}. ` : ""}${site ? html`<a href="${site}" target="_blank" rel="noopener noreferrer">${o.company.domain}</a>` : "Website not known."}</p>
+    <p class="meta">${place ? `${place}. ` : ""}${site ? html`<a href="${site}" target="_blank" rel="noopener noreferrer">${o.company.domain}</a>` : "Website not known."}${site && o.company.domainBy === "search" ? html` <span class="meta-3">Found by a web search: check it is this company's website.</span>` : ""}</p>
     <p class="meta-3">${o.title}${o.team ? `, ${o.team} team` : ""}. ${o.source.note}</p>
   </div>
   ${rec ? html`
   <div class="block">
     <div class="suggestion">${icon("bulb", 20)}<div>
+      ${byChecks(rec) ? html`
+      <b>${rec.decision === "accept" ? "The brief passed the research checks" : "The brief needs another look"}</b>
+      <p class="meta">${rec.reason === OLD_CHECKS_REASON ? "The company is named in its dated, quoted sources and a contact was found. Whether it is worth pursuing (fit, timing, value) is your call." : rec.reason}</p>
+      <p class="meta-3">Checked by code, not judged by the research agent. Direction ${o.directionVersion || "unknown"}</p>` : html`
       <b>The research agent suggests: ${RECOMMENDATION_LABELS[rec.decision] || rec.decision}</b>
       <p class="meta">${rec.reason}</p>
-      <p class="meta-3">Research agent, direction ${o.directionVersion || "unknown"}</p>
+      <p class="meta-3">Research agent, direction ${o.directionVersion || "unknown"}</p>`}
     </div></div>
   </div>` : ""}
   ${(b.flags || []).length ? html`<div class="block stack">${b.flags.map((f) => html`
@@ -305,7 +318,7 @@ function brief(o, d, ctx) {
   <div class="block">
     <h3 class="sub-title">Why now: what the sources say</h3>
     ${(b.facts || []).length ? html`<ol class="facts">${b.facts.map((f, i) => html`
-      <li><span class="n">${i + 1}</span><span>${f.text}<span class="meta-3" style="display:block">${f.src}${f.date ? `, ${f.date}` : ""}</span></span></li>`)}</ol>`
+      <li><span class="n">${i + 1}</span><span>${f.text}<span class="meta-3" style="display:block">${sourceLink(f.src, f.date)}</span></span></li>`)}</ol>`
     : html`<p class="meta">The brief has no sourced facts.</p>`}
   </div>
   <div class="block stack">

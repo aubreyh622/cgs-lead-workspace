@@ -1,6 +1,6 @@
 // Outreach: Step 5 (first email, follow-ups, nurture) and the first reply that makes a lead Active.
 // Agents draft; a person approves the exact email and address before anything is sent.
-import { html, icon, day, addDays, href, plural, initials } from "../lib.js";
+import { html, icon, day, addDays, href, plural, initials, sourceLink } from "../lib.js";
 import { enc } from "../api.js";
 import { STAGE_LABELS } from "../options.js";
 import { emptyState, inlineError, crmLinks, crmConflicts, resolveCrm } from "../shell.js";
@@ -35,13 +35,28 @@ export function approveItems(opps, inbox) {
     const o = byId[it.opportunityId];
     if (!o || it.status !== "new") continue;
     if (it.kind === "draft") items.push({ key: `item-${it.id}`, kind: "draft", item: it, opp: o });
-    if (it.kind === "reply") items.push({ key: `item-${it.id}`, kind: "reply", item: it, opp: o });
   }
   const firstDraftFor = new Set(items.filter((x) => x.kind === "draft" && x.item.data.purpose === "first").map((x) => x.opp.id));
   for (const o of opps.filter((x) => x.stage === "identified" && !firstDraftFor.has(x.id))) {
     items.push({ key: `opp-${o.id}`, kind: "first", opp: o });
   }
   return items;
+}
+
+// A client reply found in the email thread waits on the lead it answers (Waiting for a reply, or Nurture), so the person
+// reads and records it where they were waiting for it. Leads with a reply come first.
+function withReplies(opps, stage, kind, inbox) {
+  const replies = Object.fromEntries(inbox.filter((it) => it.kind === "reply" && it.status === "new").map((it) => [it.opportunityId, it]));
+  const items = opps.filter((o) => o.stage === stage).map((o) => (replies[o.id]
+    ? { key: `item-${replies[o.id].id}`, kind: "reply", item: replies[o.id], opp: o }
+    : { key: `opp-${o.id}`, kind, opp: o }));
+  return [...items.filter((x) => x.kind === "reply"), ...items.filter((x) => x.kind !== "reply")];
+}
+
+// What waits for this person on Outreach (the navigation count): drafts and first emails to approve, and replies to record.
+export function waitingFor(opps, inbox) {
+  const replies = ["contacted", "nurture"].flatMap((s) => withReplies(opps, s, "", inbox)).filter((x) => x.kind === "reply");
+  return approveItems(opps, inbox).length + replies.length;
 }
 
 export async function load(ctx, params) {
@@ -54,8 +69,8 @@ export async function load(ctx, params) {
   const opps = team ? all : all.filter((o) => o.owner === ctx.me);
   const lists = {
     approve: approveItems(opps, inbox),
-    waiting: opps.filter((o) => o.stage === "contacted").map((o) => ({ key: `opp-${o.id}`, kind: "waiting", opp: o })),
-    nurture: opps.filter((o) => o.stage === "nurture").map((o) => ({ key: `opp-${o.id}`, kind: "nurture", opp: o })),
+    waiting: withReplies(opps, "contacted", "waiting", inbox),
+    nurture: withReplies(opps, "nurture", "nurture", inbox),
     talking: opps.filter((o) => ["active", "approval", "qualification"].includes(o.stage)),
   };
   // A link from Home names an opportunity (id) or an inbox item (item); open the tab that holds it.
@@ -63,7 +78,9 @@ export async function load(ctx, params) {
   const wanted = params.item ? `item-${params.item}` : params.id ? `opp-${params.id}` : null;
   if (!tab && wanted) tab = ["approve", "waiting", "nurture"].find((t) => lists[t].some((x) => x.key === wanted)) || null;
   if (!tab && params.id) tab = lists.talking.some((o) => o.id === params.id) ? "talking" : null;
-  tab = tab || (lists.approve.length ? "approve" : lists.waiting.length ? "waiting" : "approve");
+  const replied = (t) => lists[t].some((x) => x.kind === "reply");
+  tab = tab || (replied("waiting") ? "waiting" : replied("nurture") ? "nurture" : lists.approve.length ? "approve" : lists.waiting.length ? "waiting" : "approve");
+  if (params.tab !== tab) ctx.replace("outreach", { ...params, tab });  // the tab chosen now stays when the page redraws
 
   const data = { tab, team, lists, inbox, mail: toolkit.mail || { provider: "off", ready: false } };
   const list = lists[tab];
@@ -180,7 +197,7 @@ function pickCard(x, d, ctx) {
   const link = x.item ? href("outreach", { tab: d.tab, item: x.item.id, team: d.team ? "1" : undefined })
     : href("outreach", { tab: d.tab, id: o.id, team: d.team ? "1" : undefined });
   const what = x.kind === "draft" ? `${PURPOSE[x.item.data.purpose] || "Email"} written by the ${x.item.agent.toLowerCase()}`
-    : x.kind === "reply" ? "Client reply found in the email thread"
+    : x.kind === "reply" ? html`<span class="good-text">Replied ${day(x.item.data.on || x.item.on, ctx.today)}: record the reply</span>`
     : x.kind === "first" ? "First email"
     : x.kind === "waiting" ? (o.next.due ? `Follow up ${day(o.next.due, ctx.today)}` : "Waiting")
     : `Review ${o.next.due ? day(o.next.due, ctx.today) : "date not set"}`;
@@ -280,7 +297,7 @@ function draftBody(subject, body, facts, extra = {}) {
       <dt>Subject</dt><dd><b>${subject || "(no subject)"}</b></dd>
     </dl>
     <div class="email-body">${paragraphs}</div>
-    ${notes.length ? html`<ol class="sources">${notes.map((x) => html`<li>${x.fact ? html`${x.fact.text} <span class="meta-3">${x.fact.src}${x.fact.date ? `, ${x.fact.date}` : ""}</span>` : `CGS library: ${x.key}`}</li>`)}</ol>` : ""}
+    ${notes.length ? html`<ol class="sources">${notes.map((x) => html`<li>${x.fact ? html`${x.fact.text} <span class="meta-3">${sourceLink(x.fact.src, x.fact.date)}</span>` : `CGS library: ${x.key}`}</li>`)}</ol>` : ""}
     ${extra.checks ? checksRow(notes, extra) : ""}
   </div>`;
 }
@@ -494,8 +511,10 @@ function agentDraft(d, ctx) {
 function replyItem(d, ctx) {
   const o = d.detail;
   const it = d.cur.item;
+  const r = o.outreach;
+  const answers = r.subject ? html`<p class="meta">Answers your email${r.sentOn ? ` of ${day(r.sentOn, ctx.today)}` : ""}: ${r.subject}</p>` : "";
   return html`
-  ${header(`Reply from ${o.contact.name || "the client"}`, contactLine(o), html`<p class="meta-3">Found in the email thread, ${day(it.data.on || it.on, ctx.today)}</p>`)}
+  ${header(`Reply from ${o.contact.name || "the client"}`, contactLine(o), html`<p class="meta-3">Found in the email thread, ${day(it.data.on || it.on, ctx.today)}</p>${answers}`)}
   ${noticeBlock()}
   <div class="block"><div class="email-plain">${it.data.text || it.body}</div></div>
   <div class="decision-bar">

@@ -147,14 +147,32 @@ def _debug(path: Path | None, qs, results, raw) -> None:
                                 "ai_nominations": raw}, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+GENERIC_NAME_WORDS = ("industries", "industrial", "company", "group", "systems", "holdings", "corporation", "international",
+                      "manufacturing", "incorporated", "limited")
+NOT_COMPANY_SITES = ("linkedin", "wikipedia", "bloomberg", "reuters", "crunchbase", "zoominfo", "facebook", "youtube", "x.com",
+                     "twitter", "instagram", "glassdoor", "indeed")
+NOT_COMPANY_ENDINGS = (".edu", ".gov", ".mil", ".ac.uk", ".edu.au", ".gc.ca")
+
+
 def resolve_domain(search, company: str) -> str:
-    """Find the official website for a company name: one search; accept a host containing the name's first distinctive word."""
-    words = [w for w in re.findall(r"[a-z0-9]+", company.lower()) if len(w) > 3 and w not in ("industries", "industrial", "company", "group", "systems", "holdings", "corporation", "international", "manufacturing")]
+    """Find the official website for a company name with one search. A result is taken when its host carries every
+    distinctive word of the name, or all but one when the result's own title or text names the company in full (a
+    website often drops a word: kesslermotion for Kessler Motion Controls). Seen live on 5 Nov 2026: the first word
+    alone took "Second Nature Brands" to secondnature.com, another company, and "Olin" to a college. Colleges, government
+    sites and social or data sites are never taken. Returns "" when nothing fits: research then asks a person for the
+    website instead of guessing."""
+    words = [w for w in re.findall(r"[a-z0-9]+", company.lower()) if len(w) > 3 and w not in GENERIC_NAME_WORDS]
     if not words:
         return ""
+    full = " ".join(re.findall(r"[a-z0-9]+", company.lower()))
     for r in search.search(f"{company} official website"):
         host = re.sub(r"^www\.", "", re.sub(r"^https?://", "", r["url"]).split("/")[0].lower())
-        if words[0] in host.replace("-", "") and not any(x in host for x in ("linkedin", "wikipedia", "bloomberg", "reuters", "crunchbase", "zoominfo", "facebook")):
+        flat = host.replace("-", "")
+        if any(x in host for x in NOT_COMPANY_SITES) or host.endswith(NOT_COMPANY_ENDINGS):
+            continue
+        hits = sum(w in flat for w in words)
+        named = full in " ".join(re.findall(r"[a-z0-9]+", f"{r.get('title', '')} {r.get('content', '')}".lower()))
+        if hits == len(words) or (hits >= len(words) - 1 and hits >= 1 and named):
             return ".".join(host.split(".")[-3:]) if host.count(".") >= 3 else host
     return ""
 
