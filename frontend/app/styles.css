@@ -98,8 +98,18 @@ main:focus { outline: none; }
 .top-side { display: flex; align-items: center; gap: 14px; margin-left: auto; }
 .mode { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 12px; background: var(--surface-muted); color: var(--ink-2); font-size: 12px; font-weight: 500; white-space: nowrap; }
 .mode.live { background: var(--warning-surface); color: var(--warning-ink); }
-.person { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
+.person { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); white-space: nowrap; }
 .person select { height: 36px; padding: 0 8px; border: 1px solid var(--border-field); border-radius: var(--r-control); background: var(--surface); font-size: 14px; }
+/* Narrower desktop windows (the page supports 1024px and up): the header drops repeated words before it would scroll. */
+@media (max-width: 1399px) {
+  .brand-text, .crm-detail:not(.keep) { display: none; }
+  .top-in { gap: 16px; }
+}
+@media (max-width: 1199px) {
+  .nav a svg, .top-side .avatar { display: none; }
+  .nav a { padding: 0 10px; }
+  .top-side { gap: 10px; }
+}
 /* ---------- page ---------- */
 .page { max-width: 1440px; margin: 0 auto; padding: 32px var(--page-x) 120px; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
@@ -197,6 +207,10 @@ main:focus { outline: none; }
 .notice.bad { background: var(--danger-surface); color: var(--danger-ink); }
 .notice.good { background: var(--success-surface); color: var(--success-ink); }
 .notice.info { background: var(--info-surface); color: var(--info-ink); }
+.conflict-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.conflict-list li { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; padding: 10px 12px; border-radius: var(--r-control); background: var(--surface); color: var(--ink); }
+.conflict-list .what { display: flex; flex-direction: column; min-width: 0; flex: 1 1 260px; }
+.conflict-list .meta { overflow-wrap: anywhere; }
 .suggestion { padding: 16px 18px; border: 1px solid var(--suggestion-border); border-radius: var(--r-card); background: var(--suggestion-surface); display: flex; gap: 12px; align-items: flex-start; }
 .suggestion > .icon { color: var(--suggestion-icon); margin-top: 2px; }
 .suggestion b { display: block; font-weight: 500; font-size: 16px; }
@@ -266,6 +280,9 @@ main:focus { outline: none; }
 table.list { width: 100%; border-collapse: collapse; font-size: 14px; }
 table.list th { text-align: left; font-weight: 500; color: var(--ink-3); padding: 12px 24px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 table.list td { padding: 14px 24px; border-bottom: 1px solid var(--border-row); vertical-align: top; }
+/* Tables inside a padded block: the block gives the outer edge, so cells only need room between them. */
+table.list.compact th, table.list.compact td { padding-left: 0; padding-right: 16px; }
+table.list.compact th:last-child, table.list.compact td:last-child { padding-right: 0; }
 table.list tr:last-child td { border-bottom: 0; }
 table.list td b { font-weight: 500; font-size: 15px; display: block; }
 
@@ -282,6 +299,8 @@ table.list td b { font-weight: 500; font-size: 15px; display: block; }
 .toast a { color: var(--selection); font-weight: 500; }
 .toast .btn.ghost { color: var(--surface); width: 32px; height: 32px; padding: 0; }
 .toast .btn.ghost:hover { background: var(--ink-2); }
+.toast-action { border: 0; background: transparent; color: var(--selection); font: inherit; font-weight: 500; padding: 0 6px; height: 32px; border-radius: 6px; cursor: pointer; }
+.toast-action:hover { background: var(--ink-2); }
 
 /* ---------- person chooser ---------- */
 .chooser { max-width: 520px; margin: 64px auto; padding: 28px; }
@@ -378,7 +397,7 @@ details > summary:hover { color: var(--link); }
 .selection-bar { bottom: 80px; }
 
 /* ---------- qualification list and approval (Version 2 design) ---------- */
-.split.wide-list { grid-template-columns: minmax(420px, 540px) minmax(0, 1fr); }
+.split.wide-list { grid-template-columns: minmax(360px, 2fr) minmax(0, 3fr); }
 .lead-table { overflow: hidden; }
 .lead-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1.3fr) minmax(0, 1.2fr); gap: 12px; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border-row); color: var(--ink); text-decoration: none; }
 .lead-row:last-child { border-bottom: 0; }
@@ -413,7 +432,9 @@ a.lead-row[aria-current=true] { background: var(--selected); }
 .pipe-bar .pipe-approval { background: var(--accent); }
 .pipe-bar .pipe-qualification { background: var(--success-ink); }
 .pipe-bar .pipe-nurture { background: var(--line-strong); }
-.crm-status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.crm-status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); white-space: nowrap; text-decoration: none; }
+.crm-status:hover { color: var(--link); }
+.crm-status .with-dot { gap: 6px; }
 .avatar.round { width: 34px; height: 34px; border-radius: 50%; background: var(--ink); color: var(--surface); font-size: 13px; }
 
 /* ---------- CRM links (B1) ---------- */

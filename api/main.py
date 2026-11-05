@@ -249,6 +249,8 @@ def main():
     if "onedrive" in str(s.db_path).lower():
         print(f"Warning: the database {s.db_path} is in a OneDrive folder. Syncing can damage a database that is in use. "
               "Set CGS_V2_DB_PATH in .env to a folder outside OneDrive, for example C:/cgs-data/workspace-v2.sqlite3.")
+    from api.undo import Clock
+    app.state.clock = Clock(app).start()  # sends approved emails and ends Step 4 undo windows; runs even when agents are off
     if s.agent_worker:
         from api.autonomy import Worker
         app.state.worker = Worker(app).start()  # agents patrol and work in the background; see api/autonomy.py

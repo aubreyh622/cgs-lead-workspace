@@ -3,7 +3,8 @@
 import { html, icon, day, addDays, href, plural, initials } from "../lib.js";
 import { enc } from "../api.js";
 import { STAGE_LABELS } from "../options.js";
-import { emptyState, inlineError, crmLinks } from "../shell.js";
+import { emptyState, inlineError, crmLinks, crmConflicts, resolveCrm } from "../shell.js";
+import { UNDO_SECONDS, offerUndo, undoEmail, waitingNotice, emailWaits, undoEmailAct, sendNowAct } from "../undo.js";
 
 export const title = "Outreach";
 
@@ -188,6 +189,7 @@ function contactBlock(o) {
   return html`
   <div class="block stack">
     <div class="row-flex"><h3 class="sub-title" style="margin:0">Contact</h3>${confirmed}${crmLinks(o.crm)}</div>
+    ${crmConflicts(o.id, o.crm)}
     <p>${c.name || "No person named yet"}${c.name ? html`, <span class="meta">${c.title}</span>` : ""}</p>
     <p class="meta">${c.email ? `Email: ${c.email}` : "No email address on file. Agents never guess one; add it when you send."}</p>
     ${panel ? html`
@@ -271,14 +273,14 @@ function sendPanel(d, { itemId, hash } = {}) {
   <div class="block">
     <form class="panel-form" data-act="sendForm" data-on="submit input" data-id="${d.detail.id}" data-item="${itemId || ""}" data-hash="${hash || ""}">
       <h3 class="sub-title">Approve and send</h3>
-      <p class="meta">This is exactly what the client receives: citation marks are removed. ${d.mail.ready ? `It goes out from the ${d.mail.provider} mailbox.` : ""}</p>
+      <p class="meta">This is exactly what the client receives: citation marks are removed. ${d.mail.ready ? `It goes out from the ${d.mail.provider} mailbox ${UNDO_SECONDS} seconds after you approve it, so you can still undo it.` : ""}</p>
       ${p.blocked ? html`<div class="notice bad">${icon("alert")}<span>${p.blocked}</span></div>` : ""}
       <label class="field">To <span class="hint">The client's address. Check it: agents never guess one.</span>
         <input type="email" name="to" value="${p.to || ""}" required autocomplete="off"></label>
       <div class="email-plain"><b>${p.subject}</b>\n\n${p.body}</div>
       <div class="actions">
         ${d.mail.ready ? html`
-          <button type="submit" class="btn primary" name="how" value="send" ${p.blocked || !p.to ? "disabled" : ""}>Send now</button>
+          <button type="submit" class="btn primary" name="how" value="send" ${p.blocked || !p.to ? "disabled" : ""}>Approve and send</button>
           ${itemId ? "" : html`<button type="submit" class="btn" name="how" value="draft" ${p.blocked || !p.to ? "disabled" : ""}>Put it in my Gmail drafts</button>`}`
         : html`<span class="meta">Email is off here. Send it yourself, then use "Record as sent".</span>`}
         <button type="button" class="btn ghost" data-act="mode" data-mode="">Cancel</button>
@@ -363,6 +365,7 @@ function firstEmail(d, ctx) {
   ${contactBlock(o)}
   ${relatedBlock(d.related)}
   ${noticeBlock()}
+  ${waitingNotice(r.waiting)}
   ${hasDraft && m !== "edit" ? draftBody(r.subject, r.body, facts, { to: (d.preview && d.preview.to) || "", confirmed: !!o.contact.confirmedBy, checks: true, blocked: d.preview && d.preview.blocked }) : ""}
   ${!hasDraft && m !== "edit" ? html`<div class="block">${emptyState("No draft yet",
     "The outreach agent writes one when the lead is accepted. If none arrived, ask for one now, or write it yourself.")}</div>` : ""}
@@ -371,7 +374,7 @@ function firstEmail(d, ctx) {
   ${m === "edit" ? editPanel(o) : ""}
   ${m === "record" ? recordSentPanel(o, ctx) : ""}
   ${m === "nurture" ? nurturePanel(o, ctx) : ""}
-  ${!m || m === "contact" ? html`
+  ${(!m || m === "contact") && !emailWaits(r.waiting) ? html`
   <div class="decision-bar">
     <div class="actions">
       ${hasDraft ? html`<button type="button" class="btn primary" data-act="mode" data-mode="send">Approve and send…</button>` : ""}
@@ -434,9 +437,10 @@ function agentDraft(d, ctx) {
   ${contactBlock(o)}
   ${relatedBlock(d.related)}
   ${noticeBlock()}
+  ${waitingNotice(o.outreach.waiting)}
   ${draftBody(it.data.subject, it.data.body, facts, { to: (d.preview && d.preview.to) || "", confirmed: !!o.contact.confirmedBy, checks: true, blocked: d.preview && d.preview.blocked })}
   ${m === "send" ? sendPanel(d, { itemId: it.id, hash: it.payloadHash }) : ""}
-  ${!m || m === "contact" ? html`
+  ${(!m || m === "contact") && !emailWaits(o.outreach.waiting) ? html`
   <div class="decision-bar">
     <div class="actions">
       ${d.mail.ready ? html`<button type="button" class="btn primary" data-act="mode" data-mode="send">Approve and send…</button>` : ""}
@@ -559,6 +563,7 @@ function moveOn(ctx, d, message, link) {
 }
 
 export const actions = {
+  crmResolve: resolveCrm,
   tab(t, e, ctx) { resetUi(); ctx.go("outreach", { tab: t.dataset.tab, team: ctx.route.params.team }); },
   tabkeys(t, e, ctx) {
     if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(e.key)) return;
@@ -637,12 +642,20 @@ export const actions = {
       const p = await ctx.api.get(`/opportunities/${enc(id)}/outreach/email${q}`);
       // The person approved the text on screen. If the draft changed since, stop and show the new text.
       if (`${p.subject}\n\n${p.body}` !== shown) throw new Error("The draft changed since you opened it. Look at the new text, then approve again.");
-      if (itemId) return ctx.api.post(`/inbox/${enc(itemId)}`, { action: "send", payload_hash: form.dataset.hash, to });
-      return ctx.api.post(`/opportunities/${enc(id)}/outreach/email`, { to, mode: how, seenHash: p.seenHash });
+      const delay = how === "send" ? UNDO_SECONDS : 0;
+      if (itemId) return ctx.api.post(`/inbox/${enc(itemId)}`, { action: "send", payload_hash: form.dataset.hash, to, delay });
+      return ctx.api.post(`/opportunities/${enc(id)}/outreach/email`, { to, mode: how, seenHash: p.seenHash, delay });
     });
     if (!res) return;
-    if (how === "draft") moveOn(ctx, null, `The email is in your Gmail drafts for ${to}. Nothing was sent; the workspace records it once you send it from Gmail.`);
-    else moveOn(ctx, null, `Sent to ${to}. The lead is now waiting for a reply.`, { href: href("outreach", { tab: "waiting", id }), label: "See it" });
+    if (how === "draft") return moveOn(ctx, null, `The email is in your Gmail drafts for ${to}. Nothing was sent; the workspace records it once you send it from Gmail.`);
+    const out = itemId ? res.sent : res;
+    if (out && out.mode === "queued") {
+      resetUi();
+      offerUndo(ctx, `Approved. The email goes to ${to} in ${out.seconds} seconds.`, () => undoEmail(ctx, out.id), { seconds: out.seconds, key: `email:${out.id}` });
+      ctx.scrollTop = true;
+      return ctx.go("outreach", { tab: ctx.route.params.tab, team: ctx.route.params.team });
+    }
+    moveOn(ctx, null, `Sent to ${to}. The lead is now waiting for a reply.`, { href: href("outreach", { tab: "waiting", id }), label: "See it" });
   },
   async recordSentForm(form, e, ctx) {
     const f = form.elements;
@@ -651,6 +664,9 @@ export const actions = {
       ctx.api.post(`/opportunities/${enc(id)}/outreach/sent`, { via: f.via.value, on: f.on.value }));
     if (ok) moveOn(ctx, null, `Recorded: ${f.via.value} sent. The lead is now waiting for a reply.`, { href: href("outreach", { tab: "waiting", id }), label: "See it" });
   },
+
+  undoEmail: undoEmailAct,
+  sendNow: sendNowAct,
 
   // inbox items: apply or dismiss
   async inboxAct(t, e, ctx) {

@@ -158,10 +158,10 @@ Agents work like employees: they notice work, do it, and hand the result to a pe
 
 | Step | What a person does | Endpoint | Rule the backend enforces |
 |---|---|---|---|
-| 1 | Pick or skip a candidate | `POST /api/candidates/{id}/pick`, `/skip` | Skip needs a reason and scope; “existing relationship” or “competitor” proposes an exclusion for approval |
+| 1 | Pick or skip a candidate; undo a skip | `POST /api/candidates/{id}/pick`, `/skip`, `/unskip` | Skip needs a reason and scope; “existing relationship” or “competitor” proposes an exclusion for approval. Unskip makes the candidate new again, withdraws its feedback and a pending exclusion; refused once an approved direction change came from it |
 | 1 | Add a lead by hand | `POST /api/opportunities` | Company is required |
 | 2–3 | Stop, resume, retry research | `POST /api/opportunities/{id}/research/{stop,resume,retry}` | Live mode shows the failure; it never invents a brief |
-| 4 | Accept, return or reject | `POST /api/opportunities/{id}/step4` | Accept needs the duplicate check; reject “Other” needs a comment; review time is optional and never counted as zero |
+| 4 | Accept, return or reject; undo | `POST /api/opportunities/{id}/step4`, `POST …/step4/undo` | Accept needs the duplicate check; reject “Other” needs a comment; review time is optional and never counted as zero. `undo_seconds` (up to 30, accept or reject) opens an undo window: the CRM write and the outreach agent's draft wait until it ends. Undo puts the opportunity back in Step 4, adds an “Undone” decision and withdraws the feedback; refused after the window or once something else changed |
 | 4 | Confirm a contact; save another opportunity at the same company | `POST …/contact`, `POST …/siblings` | Confirming needs where it was verified |
 | 5 | Save the draft; record sent, follow-up, nurture | `PUT …/outreach/draft`, `POST …/outreach/sent`, `/followup`, `POST …/nurture` | The workspace never sends email itself |
 | 6 | Record a reply | `POST …/outreach/reply` | Any reply makes the opportunity Active at once; the label comes after |
@@ -647,11 +647,18 @@ passage list (not a search) is not counted.
    follow-up/reconnect draft from the inbox (`itemId=...`), with citation markers removed, and a `seenHash`. A draft that
    cites a SYNTHETIC library document is blocked.
 2. `POST /api/opportunities/{id}/outreach/email` with `to`, `mode` (`draft` puts it in the person's Gmail drafts; `send` sends
-   it now) and the `seenHash` the person saw. Anything else is refused. A follow-up goes into the same Gmail thread. The
+   it) and the `seenHash` the person saw. Anything else is refused. A follow-up goes into the same Gmail thread. The
    address is saved on the contact; agents never guess an address.
+   With `delay` (seconds, up to 30; the page uses 10) a send waits in `outbound_emails` so the person can undo it:
+   `POST /api/outbound/{id}/undo` cancels it, `POST /api/outbound/{id}/send-now` sends it at once. It holds exactly what was
+   approved; while it waits the draft cannot be edited or sent again, and the opportunity's `outreach.waiting` shows it. A
+   clock in the server process (`api/undo.py`, started by `python -m api.main`, also when agents are off) sends it when the
+   window ends, after checking again that it may still go out. A failed send is recorded and not retried; an email whose
+   time passed more than 10 minutes ago (the server was stopped) is not sent, and the person approves it again.
    For a follow-up or reconnect draft the agents put in the inbox, `POST /api/inbox/{id}` with `action: send`, the
-   `payload_hash` the person saw and the `to` address approves it and sends it at once (approve and send). A changed draft,
-   a missing address or a second send is refused and nothing goes out.
+   `payload_hash` the person saw and the `to` address approves it and sends it (approve and send; `delay` works as above,
+   and the item is applied once the email goes out). A changed draft, a missing address or a second send is refused and
+   nothing goes out.
 3. `mail_sync` (rules, no AI) runs with the daily patrol, or now with `POST /api/mail/sync`. A Gmail draft the person sent
    from Gmail is recorded as sent. A client reply goes to the owner's inbox (quoted history removed, no expiry); it is
    recorded, and the reply classifier runs, only when a person applies it, so an out-of-office message never makes a lead
@@ -689,6 +696,20 @@ API), outside the synced folder.
 | an email sent through Gmail | BCC to the lead's own Insightly address, so Insightly logs the email on the lead (the client does not see it) |
 | Qualification approved | organization (found by name or created), contact (found by email, or name at that organization, or created), opportunity at the qualification stage with Opp Workspace ID, linked to the contact; then the lead is set to the closed status "Converted(API)" and marked converted, in that order (Insightly refuses a status change on a converted lead). A note on the opportunity sums up the need and scores |
 | Step 8 return, nurture, close | the lead's status (Active, Nurture, Disqualified) |
+| the next step (action and date) | one task linked to the lead, then to the CRM opportunity after conversion: renamed and moved when the next step changes, marked done when there is none or when it moves to the opportunity; a task done in Insightly is not reopened, a new one is added |
+
+**No silent overwrite.** After each write the link remembers what Insightly held (`crm_links.written`). Before the next
+write the lead is read: a field changed in Insightly since then that differs from the workspace is not written. It
+becomes a conflict (`crm.conflicts`), noted once in the activity log, shown on the opportunity's Outreach or
+Qualification page and on Home; a person chooses "Keep Insightly's" (the field is written again only when the workspace
+changes it; `crm.kept`) or "Use the workspace's" (written at once). A lead found already in Insightly by email keeps its
+own values: the workspace fills its empty fields and writes a field again only once it changes it.
+
+**Read-back.** The daily `crm_sync` job (and `POST /api/crm/pull`) reads every linked lead, CRM opportunity and task:
+edits made in Insightly become conflicts; a lead converted or deleted there, the opportunity's stage and state (WON,
+LOST) and a task done there go into the activity log, once each. It never moves a workspace stage. A field the
+workspace changed without a sync (a next step set by the rules) marks the opportunity to sync. Checked live
+(`check_crm --write`): Insightly's PUT changes only the fields it names, custom fields included.
 
 The sync runs right after the person's request is saved, so a failure never undoes their action: the opportunity shows
 `crmSync: sync_failed` and `crm.lastError`, the activity log says why, and it is retried by the daily `crm_sync` job
@@ -696,7 +717,8 @@ The sync runs right after the person's request is saved, so a failure never undo
 twice. Calls are metered in `connector_uses` as "CRM sync" or "Workspace (person)".
 
 **Reads.** `GET /api/opportunities/{id}/crm` is the duplicate check for Step 4: the leads, contacts, organizations and
-opportunities Insightly already has for this company (exact name) or person (email), with links. Agents read only through
+opportunities Insightly already has for this company (same name, ignoring case, punctuation and legal endings such as
+Inc or LLC) or person (email), with links. Agents read only through
 the toolkit gate: the discovery agent's `check_company` and `nominate` consult the CRM when the `crm` connector is on for
 it and `CLIENT_DATA_TO_AI=allowed`; a company with an open lead or open opportunity is not nominated (dropped as `in_crm`).
 `crm_lookup` is a ready-made read tool for an agent that may use the CRM. The connector is off for every agent in
@@ -705,6 +727,9 @@ it and `CLIENT_DATA_TO_AI=allowed`; a company with an open lead or open opportun
 | Endpoint | What it does |
 |---|---|
 | `GET /api/crm` | Provider, mode, account, and every opportunity that is synced, pending or failed |
+| `GET /api/crm/state` | For the page header: mode, times of the last sync and read-back, how many are pending, failed or in conflict, from the workspace database only (the CRM is not called) |
+| `POST /api/crm/pull` | The read-back now; with writes on, what it found out of step is then synced |
+| `POST /api/opportunities/{id}/crm/resolve` | `{field, use: "workspace" \| "crm"}`: decide one conflict |
 | `POST /api/crm/sync` (`?all=true`) | Sync what is pending or failed now; `all` marks every opportunity past Step 4 and fills an empty CRM |
 | `GET /api/opportunities/{id}/crm` | The duplicate check, and this opportunity's CRM records |
 | `POST /api/opportunities/{id}/crm/sync` | Sync this one now |

@@ -50,28 +50,36 @@ const ctx = {
 };
 
 function drawHeader() {
-  el.header.innerHTML = String(header({ page: ctx.route.page, counts: ctx.counts, config: ctx.config, users: ctx.users, me: ctx.me }));
+  el.header.innerHTML = String(header({ page: ctx.route.page, counts: ctx.counts, config: ctx.config, users: ctx.users, me: ctx.me, crm: ctx.crm }));
 }
 
 // Counts in the navigation: items waiting for a person. Only pages that exist get a count.
 export async function refreshCounts() {
   try {
     const me = encodeURIComponent(ctx.me);
-    const [cands, review, inbox, identified, qual, running, overview] = await Promise.all([
+    const [cands, review, inbox, identified, qual, running, overview, direction, lessons] = await Promise.all([
       api.get("/candidates?status=new"), api.get("/opportunities?stage=review"),
       api.get(`/inbox?owner=${me}`), api.get(`/opportunities?stage=identified&stage=contacted&stage=nurture&owner=${me}`),
       api.get("/opportunities?stage=active&stage=approval"), api.get("/agents/jobs?status=running&limit=20"), api.get("/agents"),
+      api.get("/direction"), api.get("/lessons"),
     ]);
+    // Each badge equals what its page shows when opened.
     ctx.counts = {
       companies: cands.length + review.length,
       outreach: outreach.approveItems(identified, inbox).length,
       qualification: qualification.waitingFor(ctx.me, qual).length,
-      agents: agents.otherInbox(inbox).length,
+      agents: team.suggestionCount(inbox, direction, lessons),
     };
+    // The dock counts agent work waiting for this person: the sum of the agent rows its panel lists.
     ctx.dock = { running: running.length, queued: overview.queued, paused: overview.paused,
-      waiting: Object.values(ctx.counts).reduce((n, x) => n + x, 0) };
+      waiting: team.AGENTS.reduce((n, a) => n + team.agentWaiting(a, inbox, direction, lessons), 0) };
   } catch {
     ctx.counts = {};
+  }
+  try {
+    ctx.crm = await api.get("/crm/state");
+  } catch {
+    ctx.crm = null; // the header falls back to the setting in /api/config
   }
   drawHeader();
   drawDock();

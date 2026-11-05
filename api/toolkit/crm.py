@@ -4,11 +4,15 @@ The workspace hands over plain, provider-neutral records and gets plain records 
   lead in:  first, last, title, email, company, website, industry, rating, status (a workspace stage name, mapped with
             config/crm.json), source (ai | manual | import), owner (a workspace user), description, workspace_id,
             target_problem, evidence_url, priority_tier, lead_type
-  lead out: id, name, company, email, status (the CRM's status name), converted, mailbox, url, workspace_id
+  lead out: id, name, company, email, status (the CRM's status name), converted, mailbox, url, workspace_id, updated,
+            fields (the values of FIELDS as the CRM holds them, normalized with norm(), for the read-back)
+  deal out: id, name, state (OPEN, WON, LOST...), stage (the pipeline stage name), updated, url
+  task out: id, title, due, status, completed
 InsightlyCRM maps them onto Insightly's fields with config/crm.json, so another Insightly account only needs that file.
 
-Reads (matches, find_lead, get_lead) serve the duplicate check and the agents (through the toolkit gate). Writes
-(save_lead, add_note, convert) run only after a person's action, from api/crm_sync.py; they are never agent tools.
+Reads (matches, find_lead, get_lead, get_deal, get_task) serve the duplicate check, the read-back and the agents
+(through the toolkit gate). Writes (save_lead, add_note, convert, save_task) run only after a person's action, from
+api/crm_sync.py; they are never agent tools.
 
 Credentials: %USERPROFILE%\\.cgs-workspace\\insightly.env (INSIGHTLY_API_KEY, INSIGHTLY_API_URL), outside the synced
 project folder. INSIGHTLY_CREDENTIALS_FILE can point elsewhere.
@@ -30,6 +34,15 @@ CREDENTIALS = Path(os.environ.get("INSIGHTLY_CREDENTIALS_FILE") or Path.home() /
 PROVIDERS = ("off", "mock", "insightly")
 CUSTOM = {"workspace_id": "workspaceId", "target_problem": "targetProblem", "evidence_url": "evidenceUrl",
           "priority_tier": "priorityTier", "lead_type": "leadType"}
+# The lead fields the workspace writes and reads back to notice edits made in the CRM. Source, owner, lead type and the
+# Workspace ID are left out: the workspace sets them once and nobody is expected to change them there.
+FIELDS = ("first", "last", "title", "email", "company", "website", "industry", "rating", "description", "status",
+          "target_problem", "evidence_url", "priority_tier")
+TOP = {"first": "FIRST_NAME", "last": "LAST_NAME", "title": "TITLE", "email": "EMAIL", "company": "ORGANISATION_NAME",
+       "website": "WEBSITE", "industry": "INDUSTRY", "rating": "LEAD_RATING", "description": "LEAD_DESCRIPTION"}
+TASK_DONE = "COMPLETED"
+SUFFIXES = {"inc", "incorporated", "llc", "ltd", "limited", "corp", "corporation", "co", "company", "plc", "gmbh", "ag",
+            "sa", "lp", "llp", "pllc"}
 
 
 class CrmError(Exception):
@@ -67,6 +80,35 @@ def tag_name(tag: str) -> str:
 
 def note_html(text: str) -> str:
     return html.escape(text).replace("\n", "<br>")
+
+
+def norm(v) -> str:
+    """One comparable form for a field value: Insightly returns 4.0 for the 4 it was sent, and None for an empty text."""
+    if v is None:
+        return ""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return f"{v:g}"
+    return str(v).strip()
+
+
+def core_name(name: str | None) -> str:
+    """A company name without case, punctuation and legal endings, so 'Meridian Industries, Inc.' and 'Meridian
+    Industries' are the same company in the duplicate check. '(TEST)' stays, so test records never match real ones."""
+    words = re.sub(r"[^\w()]+", " ", (name or "").lower()).split()
+    while len(words) > 1 and words[-1] in SUFFIXES:
+        words.pop()
+    return " ".join(words)
+
+
+def search_name(name: str | None) -> str:
+    """The words to search the CRM with: the name without its legal ending, as the person wrote it (the search matches
+    any record whose name contains them; core_name then keeps only the same company)."""
+    words = (name or "").replace(",", " ").split()
+    while len(words) > 1 and re.sub(r"\W", "", words[-1].lower()) in SUFFIXES:
+        words.pop()
+    return " ".join(words)
 
 
 # ---------- Insightly ----------
@@ -189,12 +231,43 @@ class InsightlyCRM:
 
     # reads
     def _lead_out(self, x: dict) -> dict:
+        custom = {c.get("FIELD_NAME"): c.get("FIELD_VALUE") for c in x.get("CUSTOMFIELDS") or []}
         wf = self._field("workspaceId")
-        ws = next((c.get("FIELD_VALUE") for c in x.get("CUSTOMFIELDS") or [] if c.get("FIELD_NAME") == wf), None) if wf else None
+        ws = custom.get(wf) if wf else None
+        status = self._status_name(x.get("LEAD_STATUS_ID"))
+        fields = {k: norm(x.get(col)) for k, col in TOP.items()}
+        fields["status"] = status
+        for key in ("target_problem", "evidence_url", "priority_tier"):
+            f = self._field(CUSTOM[key])
+            fields[key] = norm(custom.get(f)) if f else ""
         return {"id": str(x["LEAD_ID"]), "name": " ".join(p for p in (x.get("FIRST_NAME"), x.get("LAST_NAME")) if p),
                 "company": x.get("ORGANISATION_NAME") or "", "email": x.get("EMAIL") or "",
-                "status": self._status_name(x.get("LEAD_STATUS_ID")), "converted": bool(x.get("CONVERTED")),
-                "mailbox": x.get("LINKED_EMAIL_ADDRESS") or "", "url": self.url("Lead", x["LEAD_ID"]), "workspace_id": ws}
+                "status": status, "converted": bool(x.get("CONVERTED")),
+                "mailbox": x.get("LINKED_EMAIL_ADDRESS") or "", "url": self.url("Lead", x["LEAD_ID"]), "workspace_id": ws,
+                "updated": x.get("DATE_UPDATED_UTC") or "", "fields": fields}
+
+    def _stage_names(self) -> dict:
+        if "stage_names" not in self._cache:
+            self._cache["stage_names"] = {s["STAGE_ID"]: s["STAGE_NAME"] for s in self._call("GET", "PipelineStages") or []}
+        return self._cache["stage_names"]
+
+    def get_deal(self, deal_id: str) -> dict | None:
+        """The CRM opportunity made at Qualification: its state (OPEN, WON, LOST, ABANDONED, SUSPENDED) and stage."""
+        x = self._call("GET", f"Opportunities/{deal_id}")
+        if not x:
+            return None
+        return {"id": str(x["OPPORTUNITY_ID"]), "name": x.get("OPPORTUNITY_NAME") or "", "state": x.get("OPPORTUNITY_STATE") or "",
+                "stage": self._stage_names().get(x.get("STAGE_ID"), ""), "updated": x.get("DATE_UPDATED_UTC") or "",
+                "url": self.url("Opportunity", x["OPPORTUNITY_ID"])}
+
+    @staticmethod
+    def _task_out(x: dict) -> dict:
+        return {"id": str(x["TASK_ID"]), "title": x.get("TITLE") or "", "due": (x.get("DUE_DATE") or "")[:10],
+                "status": x.get("STATUS") or "", "completed": bool(x.get("COMPLETED")) or x.get("STATUS") == TASK_DONE}
+
+    def get_task(self, task_id: str) -> dict | None:
+        x = self._call("GET", f"Tasks/{task_id}")
+        return self._task_out(x) if x else None
 
     def get_lead(self, lead_id: str) -> dict | None:
         x = self._call("GET", f"Leads/{lead_id}")
@@ -212,8 +285,10 @@ class InsightlyCRM:
     def matches(self, company: str = "", email: str = "") -> dict:
         """What the CRM already holds for a company or a person: leads, contacts, organizations, opportunities."""
         out = {"leads": {}, "contacts": {}, "organizations": {}, "opportunities": {}}
-        orgs = self._search("Organisations", "ORGANISATION_NAME", company)
-        for x in self._search("Leads", "ORGANISATION_NAME", company) + self._search("Leads", "EMAIL", email):
+        same = core_name(company)
+        orgs = [x for x in self._search("Organisations", "ORGANISATION_NAME", search_name(company)) if core_name(x.get("ORGANISATION_NAME")) == same]
+        leads = [x for x in self._search("Leads", "ORGANISATION_NAME", search_name(company)) if core_name(x.get("ORGANISATION_NAME")) == same]
+        for x in leads + self._search("Leads", "EMAIL", email):
             out["leads"][x["LEAD_ID"]] = self._lead_out(x)
         for x in self._search("Contacts", "EMAIL_ADDRESS", email):
             out["contacts"][x["CONTACT_ID"]] = {"id": str(x["CONTACT_ID"]), "name": f"{x.get('FIRST_NAME') or ''} {x.get('LAST_NAME') or ''}".strip(),
@@ -231,12 +306,14 @@ class InsightlyCRM:
         return {k: list(v.values()) for k, v in out.items()}
 
     # writes (after a person's action only)
-    def _lead_body(self, lead: dict, create: bool) -> dict:
+    def _lead_body(self, lead: dict, create: bool, skip=()) -> dict:
+        """The Insightly body. Fields in skip are left out, so Insightly keeps what it holds (a PUT changes only the
+        fields it is sent; checked against the live API, see api/check_crm.py)."""
         body = {"FIRST_NAME": lead.get("first"), "LAST_NAME": lead.get("last") or "Contact to confirm", "TITLE": lead.get("title"),
                 "EMAIL": lead.get("email"), "ORGANISATION_NAME": lead.get("company"), "WEBSITE": lead.get("website"),
                 "INDUSTRY": lead.get("industry"), "LEAD_RATING": lead.get("rating"), "LEAD_DESCRIPTION": lead.get("description")}
-        body = {k: v for k, v in body.items() if v not in (None, "")}
-        if lead.get("status"):
+        body = {k: v for k, v in body.items() if v not in (None, "") and not any(TOP.get(f) == k for f in skip)}
+        if lead.get("status") and "status" not in skip:
             body["LEAD_STATUS_ID"] = self._status_id(lead["status"])
         src = self._source_id(lead.get("source"))
         if src:
@@ -245,16 +322,17 @@ class InsightlyCRM:
         if uid:
             body["OWNER_USER_ID"] = body["RESPONSIBLE_USER_ID"] = uid
         custom = [{"FIELD_NAME": self._field(cfg_key), "FIELD_VALUE": lead[key]}
-                  for key, cfg_key in CUSTOM.items() if self._field(cfg_key) and lead.get(key) not in (None, "")]
+                  for key, cfg_key in CUSTOM.items() if self._field(cfg_key) and lead.get(key) not in (None, "") and key not in skip]
         if custom:
             body["CUSTOMFIELDS"] = custom
         if create and self.cfg.get("tag"):
             body["TAGS"] = [{"TAG_NAME": tag_name(self.cfg["tag"])}]
         return body
 
-    def save_lead(self, lead: dict, lead_id: str | None = None) -> dict:
-        """Create a lead, or update the given one. A converted lead cannot be changed (Insightly refuses)."""
-        body = self._lead_body(lead, create=not lead_id)
+    def save_lead(self, lead: dict, lead_id: str | None = None, skip=()) -> dict:
+        """Create a lead, or update the given one, leaving the fields in skip as the CRM holds them. A converted lead
+        cannot be changed (Insightly refuses)."""
+        body = self._lead_body(lead, create=not lead_id, skip=skip)
         if lead_id:
             body["LEAD_ID"] = int(lead_id)
             x = self._call("PUT", "Leads", body)
@@ -269,13 +347,38 @@ class InsightlyCRM:
         x = self._call("POST", f"{kind}/{rid}/Notes", {"TITLE": title[:250], "BODY": note_html(text)}) or {}
         return str(x.get("NOTE_ID", ""))
 
+    def save_task(self, record: str, rid: str, title: str, due: str | None, owner: str | None = None, task_id: str | None = None,
+                  done: bool = False) -> dict:
+        """The opportunity's next step as an Insightly task, linked to its lead or opportunity. With task_id: rename it,
+        move its date, or mark it done."""
+        if task_id:
+            body = {"TASK_ID": int(task_id), "TITLE": title[:250]}
+            if due:
+                body["DUE_DATE"] = f"{due} 00:00:00"
+            if done:
+                body.update({"STATUS": TASK_DONE, "COMPLETED": True, "PERCENT_COMPLETE": 100})
+            x = self._call("PUT", "Tasks", body)
+            if x is None:
+                raise CrmError(f"Insightly task {task_id} no longer exists.")
+            return self._task_out(x)
+        kind = {"lead": "Lead", "opportunity": "Opportunity"}[record]
+        body = {"TITLE": title[:250], "STATUS": "NOT STARTED", "PUBLICLY_VISIBLE": True,
+                "LINKS": [{"LINK_OBJECT_NAME": kind, "LINK_OBJECT_ID": int(rid)}]}
+        if due:
+            body["DUE_DATE"] = f"{due} 00:00:00"
+        uid = self._user(owner)
+        if uid:
+            body["OWNER_USER_ID"] = body["RESPONSIBLE_USER_ID"] = uid
+        return self._task_out(self._call("POST", "Tasks", body))
+
     def convert(self, lead_id: str, deal: dict) -> dict:
         """Qualification: organization, contact and opportunity (at the qualification stage), linked; then the lead is set
         to the 'converted' status and marked converted, in that order (Insightly refuses a status change afterwards).
         Safe to run again after a partial failure: each part is looked up before it is created."""
         tag = [{"TAG_NAME": tag_name(self.cfg["tag"])}] if self.cfg.get("tag") else []
         uid = self._user(deal.get("owner"))
-        orgs = self._search("Organisations", "ORGANISATION_NAME", deal["company"])
+        orgs = [x for x in self._search("Organisations", "ORGANISATION_NAME", search_name(deal["company"]))
+                if core_name(x.get("ORGANISATION_NAME")) == core_name(deal["company"])]
         org = orgs[0] if orgs else self._call("POST", "Organisations", {"ORGANISATION_NAME": deal["company"], "TAGS": tag,
                                                                        **({"WEBSITE": deal["website"]} if deal.get("website") else {})})
         contacts = self._search("Contacts", "EMAIL_ADDRESS", deal.get("email")) or [
@@ -326,6 +429,7 @@ class MockCRM:
         self.orgs: dict[str, dict] = {}
         self.deals: dict[str, dict] = {}
         self.notes: list[dict] = []
+        self.tasks: dict[str, dict] = {}
         self.fail_next = ""
         self._ids = itertools.count(1001)
 
@@ -348,7 +452,38 @@ class MockCRM:
 
     def _out(self, x: dict) -> dict:
         return {k: x.get(k) for k in ("id", "company", "email", "status", "converted", "mailbox", "url", "workspace_id")} | {
-            "name": f"{x.get('first') or ''} {x.get('last') or ''}".strip()}
+            "name": f"{x.get('first') or ''} {x.get('last') or ''}".strip(), "updated": x.get("updated", ""),
+            "fields": {k: norm(x.get(k)) for k in FIELDS}}
+
+    def edit(self, lead_id: str, **changes) -> None:
+        """Test helper: a person changes the lead in the CRM itself."""
+        x = self.leads[str(lead_id)]
+        x.update(changes)
+        x["updated"] = datetime.now(timezone.utc).isoformat()
+
+    def get_deal(self, deal_id: str) -> dict | None:
+        d = self.deals.get(str(deal_id))
+        return {k: d.get(k, "") for k in ("id", "name", "state", "stage", "updated", "url")} if d else None
+
+    def get_task(self, task_id: str) -> dict | None:
+        t = self.tasks.get(str(task_id))
+        return dict(t) if t else None
+
+    def save_task(self, record: str, rid: str, title: str, due: str | None, owner: str | None = None, task_id: str | None = None,
+                  done: bool = False) -> dict:
+        self._maybe_fail()
+        if task_id:
+            t = self.tasks.get(str(task_id))
+            if t is None:
+                raise CrmError(f"Insightly task {task_id} no longer exists.")
+            t.update({"title": title, **({"due": due} if due else {})})
+            if done:
+                t.update({"status": TASK_DONE, "completed": True})
+            return dict(t)
+        tid = self._id()
+        self.tasks[tid] = {"id": tid, "title": title, "due": due or "", "status": "NOT STARTED", "completed": False,
+                           "record": record, "rid": str(rid), "owner": owner}
+        return dict(self.tasks[tid])
 
     def get_lead(self, lead_id: str) -> dict | None:
         x = self.leads.get(str(lead_id))
@@ -365,16 +500,17 @@ class MockCRM:
 
     def matches(self, company: str = "", email: str = "") -> dict:
         same = lambda a, b: bool(a and b) and a.strip().lower() == b.strip().lower()
-        orgs = [o for o in self.orgs.values() if same(o["name"], company)]
-        return {"leads": [self._out(x) for x in self.leads.values() if same(x.get("company"), company) or same(x.get("email"), email)],
+        firm = lambda a, b: bool(a and b) and core_name(a) == core_name(b)
+        orgs = [o for o in self.orgs.values() if firm(o["name"], company)]
+        return {"leads": [self._out(x) for x in self.leads.values() if firm(x.get("company"), company) or same(x.get("email"), email)],
                 "contacts": [dict(x) for x in self.contacts.values() if same(x.get("email"), email)],
                 "organizations": [dict(o) for o in orgs],
                 "opportunities": [dict(d) for d in self.deals.values() if d["organisation"] in {o["id"] for o in orgs}]}
 
-    def save_lead(self, lead: dict, lead_id: str | None = None) -> dict:
+    def save_lead(self, lead: dict, lead_id: str | None = None, skip=()) -> dict:
         self._maybe_fail()
-        status = self.cfg["statuses"].get(lead["status"]) if lead.get("status") else None
-        if lead.get("status") and not status:  # as strict as Insightly
+        status = self.cfg["statuses"].get(lead["status"]) if lead.get("status") and "status" not in skip else None
+        if lead.get("status") and "status" not in skip and not status:  # as strict as Insightly
             raise CrmError(f"config/crm.json maps no lead status for the workspace stage {lead['status']!r}.")
         if lead_id:
             x = self.leads.get(str(lead_id))
@@ -382,7 +518,7 @@ class MockCRM:
                 raise CrmError(f"Insightly lead {lead_id} no longer exists.")
             if x["converted"]:
                 raise CrmError("Cannot change converted Leads")
-            x.update({k: v for k, v in lead.items() if v not in (None, "") and k != "status"})
+            x.update({k: v for k, v in lead.items() if v not in (None, "") and k != "status" and k not in skip})
         else:
             lid = self._id()
             x = {**{k: v for k, v in lead.items() if k != "status"}, "id": lid, "converted": False,
@@ -400,7 +536,7 @@ class MockCRM:
 
     def convert(self, lead_id: str, deal: dict) -> dict:
         self._maybe_fail()
-        org = next((o for o in self.orgs.values() if o["name"] == deal["company"]), None)
+        org = next((o for o in self.orgs.values() if core_name(o["name"]) == core_name(deal["company"])), None)
         if org is None:
             oid = self._id()
             org = self.orgs[oid] = {"id": oid, "name": deal["company"], "url": self.url("Organisation", oid)}

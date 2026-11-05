@@ -12,7 +12,19 @@ What (config/crm.json maps names):
   qualification               organization + contact + opportunity at the qualification stage, linked; the lead set to
                               the 'converted' status and marked converted
   rejected, closed            the lead's status (Disqualified), if a lead exists
+  the next step               one CRM task per opportunity (linked to the lead, then to the CRM opportunity), renamed
+                              and moved when the next step changes, marked done when there is none
 Needs CRM_MODE=write_approved and a CRM (CRM_PROVIDER). Reads (matches) need read_only or write_approved.
+
+No silent overwrite. After each write the link remembers what the CRM held (written). Before the next write the lead is
+read: a field that changed in the CRM since then, and differs from the workspace, is not written; it becomes a
+conflict a person decides on the opportunity's page (use the workspace value, or keep the CRM's; a kept field is
+written again only once the workspace changes it). A lead the sync finds already in the CRM keeps its own values; the
+workspace fills only the empty fields and writes a field again when it changes it.
+
+The read-back (pull: the daily crm_sync job, POST /api/crm/pull) reads every linked lead, CRM opportunity and task:
+edits made in the CRM become conflicts, a lead converted or deleted there, the CRM opportunity's stage and state (WON,
+LOST) and a task done there are written to the opportunity's activity. It never changes a stage in the workspace.
 """
 from __future__ import annotations
 
@@ -23,10 +35,14 @@ from sqlalchemy import select
 
 from api import models as m
 from api import toolkit as TK
-from api.toolkit.crm import CrmError, split_name
+from api.toolkit.crm import FIELDS, CrmError, norm, split_name
 
 WHO = "CRM sync"
 NOT_YET = ("researching", "review")
+TASK_STAGES = ("identified", "contacted", "active", "approval", "nurture", "qualification")
+FIELD_LABELS = {"first": "first name", "last": "last name", "title": "job title", "email": "email address", "company": "company name",
+                "website": "website", "industry": "industry", "rating": "rating", "description": "description", "status": "lead status",
+                "target_problem": "target problem", "evidence_url": "evidence link", "priority_tier": "priority tier"}
 log_ = logging.getLogger("cgs.crm")
 
 
@@ -71,13 +87,15 @@ def lead_record(o: m.Opportunity) -> dict:
     ct = o.contact
     first, last = split_name(ct.name if ct else None)
     tier = (o.brief.priority or {}).get("tier") if o.brief else None
-    hyp = (o.brief.hypothesis if o.brief else "") or ""
+    hyp = ((o.brief.hypothesis if o.brief else "") or "").strip()
+    # The title once: a hypothesis that already starts with it ("Finance transformation may need...") is enough.
+    about = hyp if hyp.lower().startswith((o.title or "").lower().strip()) else f"{o.title}. {hyp}".strip()
     return {"first": first, "last": last, "title": ct.title if ct and ct.title != "Contact to confirm" else "",
             "email": (ct.email if ct else "") or "", "company": o.company.name,
             "website": f"https://{o.company.domain}" if o.company.domain else "", "industry": o.company.industry,
             "rating": o.rating, "status": "active" if o.stage == "qualification" else o.stage,  # converted by convert(), not here
             "source": o.source_type, "owner": o.owner,
-            "description": (f"{o.title}. {hyp}".strip()[:1900] + f"\n\nCGS workspace: {o.id}, owner {o.owner or 'not set'}."),
+            "description": (about[:1900] + f"\n\nCGS workspace: {o.id}, owner {o.owner or 'not set'}."),
             "workspace_id": o.id, "target_problem": o.target_problem or "", "evidence_url": evidence_url(o),
             "priority_tier": tier if isinstance(tier, (int, float)) else None,
             "lead_type": None}  # filled from config by the connector's default below
@@ -124,6 +142,91 @@ def deal_record(o: m.Opportunity) -> dict:
             "details": (need.get("problem") or o.target_problem or (o.brief.hypothesis if o.brief else "") or "")[:1900]}
 
 
+# ---------- no silent overwrite ----------
+def desired_fields(crm, rec: dict) -> dict:
+    """What the workspace wants the CRM lead to say, in the connector's comparable form."""
+    want = {k: norm(rec.get(k)) for k in FIELDS if k != "status"}
+    want["status"] = crm.cfg["statuses"].get(rec["status"], "") if rec.get("status") else ""
+    return want
+
+
+def compare(link: m.CrmLink, want: dict, remote: dict, dry: bool = False) -> tuple[set, dict]:
+    """Which fields not to write (skip) and where the CRM and the workspace disagree (found: field -> (crm, workspace)).
+    A field disagrees when the CRM changed it since the workspace last wrote it and holds something else than the
+    workspace wants. dry: only look (the read-back); otherwise a kept field the workspace changed since is released."""
+    written, kept = link.written or {}, dict(link.kept or {})
+    skip, found = set(), {}
+    for k in FIELDS:
+        d, r = want.get(k, ""), remote.get(k, "")
+        if k in kept:
+            if kept[k] == d:
+                skip.add(k)
+                continue
+            kept.pop(k)  # the workspace changed this field since a person kept the CRM's value: the new value goes out
+        base = written.get(k, r)  # nothing remembered (a link made before the read-back existed): the CRM as it is
+        if r == base or r == d or d == "":
+            continue
+        skip.add(k)
+        found[k] = (r, d)
+    if not dry:
+        link.kept = kept or None
+    return skip, found
+
+
+def short(v: str, n: int = 80) -> str:
+    v = " ".join(str(v).split())
+    return v if len(v) <= n else v[: n - 1] + "…"
+
+
+def set_conflicts(c, o: m.Opportunity, link: m.CrmLink, found: dict) -> int:
+    """Keep the open disagreements; write each new one (or a changed one) to the activity once. Returns how many are new."""
+    old = {x["field"]: x for x in link.conflicts or []}
+    out, new = [], 0
+    for k, (r, d) in found.items():
+        prev = old.get(k)
+        if not prev or prev["crm"] != r or prev["workspace"] != d:
+            new += 1
+            log(c, o.id, f"Insightly: the {FIELD_LABELS[k]} was changed there to \"{short(r) or '(empty)'}\"; the workspace has "
+                         f"\"{short(d)}\". Insightly keeps its value until a person decides on this opportunity's page.")
+        out.append({"field": k, "label": FIELD_LABELS[k], "crm": r, "workspace": d, "on": (prev or {}).get("on") or c.today.isoformat()})
+    link.conflicts = out or None
+    return new
+
+
+def task_plan(o: m.Opportunity, link: m.CrmLink) -> tuple[str, str | None, str, str, str]:
+    """The next step as the CRM task should show it: title, due date, record, record id, and a key for "unchanged"."""
+    want = (o.next_action or "").strip() if o.stage in TASK_STAGES else ""
+    record, rid = ("opportunity", link.deal_id) if link.deal_id else ("lead", link.lead_id)
+    due = o.next_due.isoformat() if o.next_due else None
+    return want, due, record, str(rid), f"{want}|{due or ''}|{record}:{rid}"[:400]
+
+
+def sync_task(o: m.Opportunity, link: m.CrmLink, crm) -> list[str]:
+    want, due, record, rid, key = task_plan(o, link)
+    if key == link.task_key:
+        return []
+    did = []
+    old_title = (link.task_key or "").split("|")[0]
+    same_record = bool(link.task_key) and link.task_key.endswith(f"|{record}:{rid}")
+    cur = crm.get_task(link.task_id) if link.task_id else None
+    open_task = cur is not None and not cur["completed"]
+    if want and open_task and same_record:
+        crm.save_task(record, rid, want, due, o.owner, task_id=link.task_id)
+        did.append(f"task updated: {want}")
+    else:
+        if open_task:  # no next step any more, or it moves from the lead to the CRM opportunity
+            crm.save_task(record, rid, old_title or cur["title"], None, task_id=link.task_id, done=True)
+            did.append(f"task marked done: {old_title or cur['title']}")
+        link.task_id = None
+        if want:
+            t = crm.save_task(record, rid, want, due, o.owner)
+            link.task_id = t["id"]
+            did.append(f"task added: {want}")
+    link.task_key = key
+    link.remote = {**(link.remote or {}), "taskDone": False if link.task_id else (link.remote or {}).get("taskDone")}
+    return did
+
+
 # ---------- the sync ----------
 def sync_one(c, o: m.Opportunity, crm) -> list[str]:
     """Bring the CRM in line with this opportunity. Returns what was done. Raises CrmError."""
@@ -147,10 +250,21 @@ def sync_one(c, o: m.Opportunity, crm) -> list[str]:
             if found["converted"]:
                 link.converted = True
             else:
-                link.status = crm.save_lead(rec, link.lead_id)["status"]
+                want, have = desired_fields(crm, rec), found["fields"]
+                if found.get("workspace_id") != o.id:
+                    # Someone else's lead (found by email): it keeps its own values; the workspace fills the empty fields
+                    # and writes a field again only once it changes it.
+                    link.kept = {k: want[k] for k in FIELDS if have.get(k) and have[k] != want[k]} or None
+                link.written = dict(have)
+                skip, _ = compare(link, want, have)
+                out = crm.save_lead(rec, link.lead_id, skip=skip)
+                link.status, link.written = out["status"], dict(out["fields"])
+                if link.kept:
+                    did.append(f"{len(link.kept)} field(s) kept as the CRM has them")
         else:
             new = crm.save_lead(rec)
             link.lead_id, link.lead_url, link.mailbox, link.status = new["id"], new["url"], new["mailbox"], new["status"]
+            link.written = dict(new["fields"])
             crm.add_note("lead", link.lead_id, "Research brief (CGS workspace)", brief_note(o))
             did.append(f"lead created ({new['status']})")
     elif not link.converted:
@@ -161,7 +275,16 @@ def sync_one(c, o: m.Opportunity, crm) -> list[str]:
             link.converted = True
             did.append("the lead was converted in the CRM; it is no longer updated")
         else:
-            out = crm.save_lead(rec, link.lead_id)
+            want, have = desired_fields(crm, rec), cur["fields"]
+            skip, found = compare(link, want, have)
+            if any(want[k] and want[k] != have.get(k) for k in FIELDS if k not in skip):
+                out = crm.save_lead(rec, link.lead_id, skip=skip)
+            else:
+                out = cur  # nothing to write: the CRM already says what the workspace says
+            written = link.written or {}
+            link.written = {k: (written.get(k, have.get(k, "")) if k in found else out["fields"].get(k, "")) for k in FIELDS}
+            if set_conflicts(c, o, link, found):
+                did.append(f"{len(found)} field(s) changed in the CRM kept for a person to decide")
             if out["status"] != link.status:
                 did.append(f"status {link.status or '?'} -> {out['status']}")
             link.status, link.mailbox = out["status"], out["mailbox"] or link.mailbox
@@ -180,6 +303,8 @@ def sync_one(c, o: m.Opportunity, crm) -> list[str]:
         sent.append(n.id)
         link.notes_sent = list(sent)  # a new list, so the JSON column is saved
         did.append(f"note copied: {n.type}")
+    if link.lead_id:
+        did += sync_task(o, link, crm)
     return did
 
 
@@ -193,7 +318,10 @@ def sync(c, ids: list[str] | None = None) -> dict:
     crm = TK.metered(raw, WHO, "crm", c)
     q = select(m.Opportunity).where(m.Opportunity.id.in_(ids)) if ids else select(m.Opportunity).where(
         m.Opportunity.crm_sync.in_(("sync_pending", "sync_failed")))
+    from api.undo import held
     for o in list(c.s.scalars(q)):
+        if held(o):
+            continue  # a Step 4 decision that can still be undone: it goes to the CRM once the window ends (api/undo.py)
         try:
             did = sync_one(c, o, crm)
         except (CrmError, TK.LimitReached) as e:
@@ -229,6 +357,108 @@ def sync_all(c) -> dict:
     return sync(c)
 
 
+# ---------- the read-back ----------
+def pull_one(c, o: m.Opportunity, crm) -> int:
+    """Read what the CRM holds for this opportunity now and note what changed there. Returns how many changes were new.
+    Never writes to the CRM and never moves the workspace stage."""
+    link = o.crm_link
+    rem, new = dict(link.remote or {}), 0
+    if not link.converted:
+        lead = crm.get_lead(link.lead_id)
+        if lead is None:
+            if not rem.get("deleted"):
+                new += 1
+                log(c, o.id, "Insightly: the lead was deleted there. Clear the CRM link to create it again, or leave it out of the CRM.")
+            rem["deleted"] = True
+            link.last_error = f"The CRM lead {link.lead_id} was deleted in the CRM."
+        elif lead["converted"]:
+            link.converted = True
+            new += 1
+            log(c, o.id, "Insightly: the lead was converted there by a person. The workspace no longer updates it.")
+        else:
+            rem.pop("deleted", None)
+            rec = lead_record(o)
+            want = desired_fields(crm, rec)
+            skip, found = compare(link, want, lead["fields"], dry=True)
+            new += set_conflicts(c, o, link, found)
+            rem.update(status=lead["status"], updated=lead["updated"])
+            out_of_step = any(want[k] and want[k] != lead["fields"].get(k) for k in FIELDS if k not in skip)
+            if writes_on(c) and o.stage not in NOT_YET and (out_of_step or task_plan(o, link)[4] != link.task_key):
+                o.crm_sync = "sync_pending"  # the workspace changed something the CRM does not show yet
+    if link.deal_id:
+        d = crm.get_deal(link.deal_id)
+        if d is None:
+            if not rem.get("dealDeleted"):
+                new += 1
+                log(c, o.id, "Insightly: the opportunity was deleted there.")
+            rem["dealDeleted"] = True
+        else:
+            moved = (d["stage"], d["state"]) != (rem.get("dealStage"), rem.get("dealState"))
+            first = "dealStage" not in rem
+            if moved and not (first and d["state"] == "OPEN" and d["stage"] == crm.cfg.get("qualificationStage")):
+                new += 1
+                log(c, o.id, f"Insightly: the opportunity is now {d['state'].lower() or 'open'}, at the stage {d['stage'] or '(none)'}.")
+            rem.update(dealStage=d["stage"], dealState=d["state"])
+    if link.task_id:
+        t = crm.get_task(link.task_id)
+        done = t is None or t["completed"]
+        if t is not None and done and not rem.get("taskDone"):
+            new += 1
+            log(c, o.id, f"Insightly: the task \"{short(t['title'])}\" was marked done there.")
+        if t is None:
+            link.task_id = None  # deleted there: the next sync adds the next step again
+        rem["taskDone"] = done
+    link.remote = rem
+    link.pulled_at = datetime.now(timezone.utc)
+    return new
+
+
+def pull(c, ids: list[str] | None = None) -> dict:
+    """The read-back for every opportunity with a CRM lead (or the given ones). Commits after each."""
+    out = {"read": 0, "changes": 0, "failed": 0, "errors": [], "off": False}
+    raw = client(c)
+    if not reads_on(c):
+        return {**out, "off": True}
+    c.s.commit()
+    crm = TK.metered(raw, WHO, "crm", c)
+    q = select(m.Opportunity).join(m.CrmLink).where(m.CrmLink.lead_id.is_not(None))
+    if ids:
+        q = q.where(m.Opportunity.id.in_(ids))
+    for oid in [o.id for o in c.s.scalars(q)]:
+        o = c.s.get(m.Opportunity, oid)
+        try:
+            n = pull_one(c, o, crm)
+        except (CrmError, TK.LimitReached) as e:
+            c.s.rollback()
+            out["failed"] += 1
+            out["errors"].append(f"{c.s.get(m.Opportunity, oid).company.name}: {e}")
+            continue
+        out["read"] += 1
+        out["changes"] += n
+        c.s.commit()
+    return out
+
+
+def resolve(c, o: m.Opportunity, field: str, use: str) -> None:
+    """A person settles one disagreement: use the workspace value (it goes to the CRM now), or keep the CRM's."""
+    from api.services import ActionError
+    link = o.crm_link
+    x = next((x for x in (link.conflicts or []) if x["field"] == field), None) if link else None
+    if x is None:
+        raise ActionError("There is nothing to decide for this field: the CRM and the workspace agree, or it was already decided.", 409, "no_conflict")
+    if use == "workspace" and not writes_on(c):
+        raise ActionError(f"Writing to the CRM is off (CRM_MODE={c.settings.crm_mode}).", 409, "crm_off")
+    link.conflicts = [y for y in link.conflicts if y["field"] != field] or None
+    link.written = {**(link.written or {}), field: x["crm"]}  # the CRM's edit is seen, so it no longer counts as new
+    label = FIELD_LABELS.get(field, field)
+    if use == "workspace":
+        log(c, o.id, f"{c.actor} chose the workspace's {label} (\"{short(x['workspace'])}\") over Insightly's (\"{short(x['crm'])}\"). It goes to Insightly now.")
+        mark(c, o)
+    else:
+        link.kept = {**(link.kept or {}), field: x["workspace"]}
+        log(c, o.id, f"{c.actor} kept Insightly's {label} (\"{short(x['crm'])}\"). The workspace writes it again only when it changes here.")
+
+
 def after_request(app, ids: set[str], today) -> None:
     """Called once a person's request is saved: sync what it changed. Errors are recorded, never raised."""
     if not ids:
@@ -247,9 +477,13 @@ def view(o: m.Opportunity) -> dict | None:
     k = o.crm_link
     if k is None:
         return None
+    rem = k.remote or {}
     return {"provider": k.provider, "leadId": k.lead_id, "leadUrl": k.lead_url, "status": k.status, "converted": k.converted,
             "opportunityId": k.deal_id, "opportunityUrl": k.deal_url, "lastError": k.last_error,
-            "syncedAt": k.synced_at.isoformat() if k.synced_at else None}
+            "syncedAt": k.synced_at.isoformat() if k.synced_at else None,
+            "conflicts": k.conflicts or [], "kept": sorted((k.kept or {}).keys()),
+            "dealStage": rem.get("dealStage"), "dealState": rem.get("dealState"), "taskId": k.task_id, "taskDone": rem.get("taskDone"),
+            "pulledAt": k.pulled_at.isoformat() if k.pulled_at else None}
 
 
 def matches(c, o: m.Opportunity) -> dict:

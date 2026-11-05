@@ -1,7 +1,7 @@
 """End-to-end check of the workspace page in a real browser (frontend phase F5).
 
 Starts the v2 server on a fresh demo database (agents run only when asked, mock mail, no CRM), then clicks through
-the whole workflow the way a consultant would: pick a candidate, accept it, let the outreach agent draft, approve
+the whole workflow the way a consultant would: pick a candidate, accept it (undo that once, then accept again), let the outreach agent draft, approve
 and send, record the reply, close the qualification gaps, send the pack, and approve it as someone else.
 
 Skipped when Playwright or its Chromium is not installed (they are not in requirements.lock).
@@ -96,14 +96,20 @@ def test_whole_workflow_in_the_browser(server, page):
     first.locator("[data-act=researchOne]").click()
     page.wait_for_selector(f".toast:has-text('{company}')")
 
-    # Step 4: accept it
-    go(page, base, "companies?tab=review")
-    page.click(f".pick:has-text('{company}')")
-    page.wait_for_selector(f"#brief-h:has-text('{company}')")
-    page.click("[data-act=mode][data-mode=accept]")
-    page.check("form[data-act=acceptForm] input[name=duplicates_checked]")
-    page.click("form[data-act=acceptForm] [type=submit]")
-    page.wait_for_selector(".toast:has-text('Accepted')")
+    # Step 4: accept it, undo that from the toast, then accept again and let the undo window pass
+    def accept_it():
+        go(page, base, "companies?tab=review")
+        page.click(f".pick:has-text('{company}')")
+        page.wait_for_selector(f"#brief-h:has-text('{company}')")
+        page.click("[data-act=mode][data-mode=accept]")
+        page.check("form[data-act=acceptForm] input[name=duplicates_checked]")
+        page.click("form[data-act=acceptForm] [type=submit]")
+        page.wait_for_selector(".toast:has-text('Accepted')")
+    accept_it()
+    page.click(".toast:has-text('Accepted') .toast-action")
+    page.wait_for_selector(".toast:has-text('Undone')")
+    accept_it()
+    page.wait_for_timeout(11500)  # the clock ends the window; then the outreach agent may draft
     go(page, base, "companies?tab=accepted")
     page.wait_for_selector(f"table.list b:has-text('{company}')")
 
@@ -119,6 +125,9 @@ def test_whole_workflow_in_the_browser(server, page):
     page.click("[data-act=mode][data-mode=send]")
     page.fill("form[data-act=sendForm] input[name=to]", "contact@e2e-test.example")
     page.click("form[data-act=sendForm] button[value=send]")
+    page.wait_for_selector(".toast:has-text('goes to contact@e2e-test.example')")  # it waits so it can be undone
+    page.click(f".pick:has-text('{company}')")
+    page.click("[data-act=sendNow]")
     page.wait_for_selector(".toast:has-text('Sent to contact@e2e-test.example')")
 
     # the reply makes the lead Active

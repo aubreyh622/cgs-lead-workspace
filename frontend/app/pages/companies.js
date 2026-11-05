@@ -2,8 +2,9 @@
 import { html, icon, day, addDays, daysBetween, href, plural, initials, safeUrl } from "../lib.js";
 import { enc, ApiError } from "../api.js";
 import { SKIP_REASONS, REJECT_REASONS, ACCEPT_REASONS, SCOPES, STAGE_LABELS, RECOMMENDATION_LABELS } from "../options.js";
-import { emptyState, inlineError } from "../shell.js";
+import { emptyState, inlineError, dropToast } from "../shell.js";
 import { linkFor } from "./links.js";
+import { UNDO_SECONDS, offerUndo } from "../undo.js";
 
 export const title = "Companies";
 
@@ -154,7 +155,7 @@ function candidateRow(c) {
       <button type="button" class="btn ghost small" data-act="skipOpen" data-id="${c.id}" aria-expanded="${skipping ? "true" : "false"}">Skip</button>
     </div>
     ${skipping ? html`
-    <form class="skip-form" data-act="skipForm" data-on="submit input change" data-id="${c.id}">
+    <form class="skip-form" data-act="skipForm" data-on="submit input change" data-id="${c.id}" data-name="${c.company}">
       <label class="field">Why skip? The direction agent learns from this.
         <select name="reason" required>
           <option value="">Choose a reason</option>
@@ -478,7 +479,8 @@ function asideView(d, ctx) {
     <section class="card" aria-labelledby="skip-list-h">
       <div class="card-head"><h2 id="skip-list-h">Skipped candidates</h2><span class="meta num">${skipped.length}</span></div>
       ${skipped.length ? html`<ul class="rows">${skipped.map((c) => html`
-        <li><span class="what"><b>${c.company}</b><span class="meta">${c.skipReason}${c.skipScope ? `. Teaches: ${(scopeLabel[c.skipScope] || c.skipScope).toLowerCase()}` : ""}</span></span></li>`)}</ul>`
+        <li><span class="what"><b>${c.company}</b><span class="meta">${c.skipReason}${c.skipScope ? `. Teaches: ${(scopeLabel[c.skipScope] || c.skipScope).toLowerCase()}` : ""}</span></span>
+          <button type="button" class="btn small ghost" data-act="unskip" data-id="${c.id}" aria-label="Undo skipping ${c.company}">Undo</button></li>`)}</ul>`
       : emptyState("Nothing skipped", "Candidates you skip appear here with the reason the direction agent learns from.")}
     </section>
   </div>`;
@@ -588,6 +590,16 @@ export const actions = {
     ctx.refresh();
   },
   clearSelection(t, e, ctx) { ui.selected.clear(); ctx.refresh(); },
+  async unskip(t, e, ctx) {
+    t.disabled = true;
+    dropToast(`skip:${t.dataset.id}`);
+    try {
+      ctx.toast(await unskip(ctx, t.dataset.id));
+    } catch (err) {
+      ctx.toast(err.message);
+    }
+    ctx.refresh();
+  },
   researchOne(t, e, ctx) { pick([t.dataset.id], ctx, t); },
   researchSelected(t, e, ctx) { pick([...ui.selected], ctx, t); },
   skipOpen(t, e, ctx) {
@@ -602,10 +614,12 @@ export const actions = {
     if (!reason) return;
     const button = form.querySelector("[type=submit]");
     try {
-      await busy(button, () => ctx.api.post(`/candidates/${enc(form.dataset.id)}/skip`, { reason, scope: form.elements.scope.value }));
+      const id = form.dataset.id;
+      await busy(button, () => ctx.api.post(`/candidates/${enc(id)}/skip`, { reason, scope: form.elements.scope.value }));
       ui.skipping = null;
-      ui.selected.delete(form.dataset.id);
+      ui.selected.delete(id);
       ui.error = null;
+      offerUndo(ctx, `Skipped ${form.dataset.name || "the candidate"}. The reason goes to the direction agent.`, () => unskip(ctx, id), { key: `skip:${id}` });
       ctx.refresh();
     } catch (err) {
       fail("cands", err, ctx);
@@ -682,8 +696,10 @@ async function submitStep4(form, ctx, body, message) {
   // The revision is the one the person read; a change by someone else since then is refused (409), never overwritten.
   const { id, revision, name } = form.dataset;
   const button = form.querySelector("[type=submit]");
+  let res;
   try {
-    await busy(button, () => ctx.api.post(`/opportunities/${enc(id)}/step4`, { ...body, revision: Number(revision) }));
+    const undo_seconds = body.decision === "return" ? 0 : UNDO_SECONDS;  // returned research starts at once
+    res = await busy(button, () => ctx.api.post(`/opportunities/${enc(id)}/step4`, { ...body, revision: Number(revision), undo_seconds }));
   } catch (err) {
     return fail("step4", err, ctx);
   }
@@ -700,7 +716,15 @@ async function submitStep4(form, ctx, body, message) {
       link = { href: href("companies", { tab: "research" }), label: "Watch the research" };
     }
   }
-  ctx.toast(text, { link });
+  if (res && res.undo) {
+    offerUndo(ctx, `${text} You can undo this for ${res.undo.seconds} seconds.`, () =>
+      ctx.api.post(`/opportunities/${enc(id)}/step4/undo`).then(() => `Undone. ${name} is back in Ready to decide; nothing reached the CRM or the agents.`),
+    { seconds: res.undo.seconds, link });
+  } else {
+    ctx.toast(text, { link });
+  }
   ctx.scrollTop = true;
   ctx.go("companies", { tab: "review" });
 }
+
+const unskip = (ctx, id) => ctx.api.post(`/candidates/${enc(id)}/unskip`).then(() => "Put back in New candidates. The skip no longer teaches the direction agent.");

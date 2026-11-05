@@ -83,6 +83,10 @@ class Opportunity(Base):
     candidate_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)  # the Step 1 candidate it was picked from
     crm_sync: Mapped[str] = mapped_column(String(20), default="local_saved")  # local_saved | sync_pending | synced | sync_failed
     revision: Mapped[int] = mapped_column(Integer, default=1)          # guards against two people saving over each other
+    # The undo window of the latest Step 4 decision (api/undo.py). While undo_until is in the future the decision can be
+    # undone and its outside effects wait: no CRM write, no agent draft. undo: what to restore (the state before it).
+    undo_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    undo: Mapped[Optional[dict]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
@@ -172,6 +176,26 @@ class Outreach(Base):
     mail_draft_purpose: Mapped[Optional[str]] = mapped_column(String(20))  # first | followup | reconnect
 
 
+class OutboundEmail(Base):
+    """An email a person approved with an undo window (api/undo.py): it goes out at send_at unless they undo it first.
+    Holds exactly what they approved. Append-only apart from status, sent_at and error."""
+    __tablename__ = "outbound_emails"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    opportunity_id: Mapped[str] = mapped_column(ForeignKey("opportunities.id"), index=True)
+    item_id: Mapped[Optional[str]] = mapped_column(String(64))          # the inbox draft it came from (follow-up, reconnect)
+    purpose: Mapped[str] = mapped_column(String(20))                    # first | followup | reconnect
+    to: Mapped[str] = mapped_column(String(200))
+    subject: Mapped[str] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text)
+    seen_hash: Mapped[str] = mapped_column(String(32))
+    by: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(12), default="queued", index=True)  # queued | sending | sent | undone | failed | expired
+    send_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    error: Mapped[Optional[str]] = mapped_column(Text)
+
+
 class CrmLink(Base):
     """The CRM records that belong to one opportunity (api/crm_sync.py). Written only after a person's action."""
     __tablename__ = "crm_links"
@@ -189,6 +213,16 @@ class CrmLink(Base):
     notes_sent: Mapped[list] = mapped_column(JSON, default=list)      # workspace note ids already copied to the CRM
     last_error: Mapped[Optional[str]] = mapped_column(Text)
     synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    # The read-back (api/crm_sync.py): what the CRM held right after the workspace last wrote each lead field, so an edit
+    # made in the CRM afterwards is noticed instead of overwritten; fields a person chose to keep as the CRM has them
+    # (field -> the workspace value at that moment); open disagreements; and what the CRM showed at the last read.
+    written: Mapped[Optional[dict]] = mapped_column(JSON)
+    kept: Mapped[Optional[dict]] = mapped_column(JSON)
+    conflicts: Mapped[Optional[list]] = mapped_column(JSON)          # [{field, crm, workspace, on}]
+    remote: Mapped[Optional[dict]] = mapped_column(JSON)             # {status, updated, dealStage, dealState, taskDone}
+    pulled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    task_id: Mapped[Optional[str]] = mapped_column(String(40))        # the next step as a CRM task
+    task_key: Mapped[Optional[str]] = mapped_column(String(400))      # title|due|record it was last written with
 
 
 class Note(Base):
@@ -310,6 +344,8 @@ class Feedback(Base):
     on: Mapped[date] = mapped_column(Date)
     minutes: Mapped[Optional[float]] = mapped_column(Float)            # null = not measured, never zero
     direction_version: Mapped[str] = mapped_column(String(40))
+    withdrawn_by: Mapped[Optional[str]] = mapped_column(String(100))   # the decision was undone: the learning loop ignores it
+    withdrawn_on: Mapped[Optional[date]] = mapped_column(Date)
 
 
 class DirectionVersion(Base):
@@ -350,7 +386,7 @@ class DirectionProposal(Base):
     feedback_ids: Mapped[list] = mapped_column(JSON, default=list)
     base_version: Mapped[Optional[str]] = mapped_column(String(40))
     proposed_by: Mapped[Optional[str]] = mapped_column(String(100))    # whose personal direction a consultant-scope proposal changes
-    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | approved | rejected
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | approved | rejected | withdrawn (its feedback was undone)
     decided_by: Mapped[Optional[str]] = mapped_column(String(100))
     created_on: Mapped[date] = mapped_column(Date)
     decided_on: Mapped[Optional[date]] = mapped_column(Date)

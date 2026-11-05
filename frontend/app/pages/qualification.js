@@ -3,7 +3,7 @@
 import { html, icon, day, addDays, daysBetween, href, plural, initials } from "../lib.js";
 import { enc, ApiError } from "../api.js";
 import { STAGE_LABELS, CLOSE_REASONS, NOTE_TYPES, NEED_FIELDS } from "../options.js";
-import { emptyState, inlineError, crmLinks } from "../shell.js";
+import { emptyState, inlineError, crmLinks, crmConflicts, resolveCrm } from "../shell.js";
 
 export const title = "Qualification";
 
@@ -165,6 +165,7 @@ function headerBlock(o, ctx) {
       ${crmLinks(o.crm)}
     </div>
     ${o.next.action ? html`<p class="meta" style="margin-top:10px">Next step: ${o.next.action}${o.next.due ? `, due ${day(o.next.due, ctx.today)}` : ""}.</p>` : ""}
+    ${o.crm && o.crm.conflicts && o.crm.conflicts.length ? html`<div style="margin-top:12px">${crmConflicts(o.id, o.crm)}</div>` : ""}
   </div>`;
 }
 
@@ -627,6 +628,7 @@ async function write(where, button, ctx, fn, after) {
 }
 
 export const actions = {
+  crmResolve: resolveCrm,
   tab(t, e, ctx) { resetUi(); ctx.go("qualification", { tab: t.dataset.tab, team: ctx.route.params.team }); },
   tabkeys(t, e, ctx) {
     if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(e.key)) return;

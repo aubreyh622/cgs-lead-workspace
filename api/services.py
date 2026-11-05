@@ -22,6 +22,7 @@ from api import live_agents as L
 from api.llm import LLMError, make_provider
 from api import models as m
 from api import toolkit as TK
+from api import undo as U
 from api.settings import Settings
 from backend.rules import CONDITIONS, LABELS, REASONS, RULE_VERSION, WEIGHTS, calculate, validate_score
 
@@ -610,9 +611,13 @@ def research_control(c: Ctx, opp_id: str, action: str) -> None:
 
 # ---------- Step 4 ----------
 def step4(c: Ctx, opp_id: str, b) -> None:
+    """b.undo_seconds > 0 (accept or reject): the decision can be undone for that long, and its outside effects (the CRM
+    lead, the outreach agent's draft) wait until then (api/undo.py)."""
     o = opp(c, opp_id, "review")
     check_revision(o, b.revision)
     owners = owners_list(c)
+    seconds = U.window(getattr(b, "undo_seconds", 0)) if b.decision != "return" else 0
+    before = U.before_step4(o)
     if b.decision == "accept":
         if not b.duplicates_checked:
             raise ActionError("Confirm that you checked for existing relationships and duplicates.", 400, "check_required")
@@ -623,11 +628,14 @@ def step4(c: Ctx, opp_id: str, b) -> None:
         o.stage, o.owner, o.rating = "identified", b.owner, b.rating
         o.next_action, o.next_due = need_text(b.next_action, "Next step"), b.due or c.today + timedelta(days=3)
         o.brief.frozen_on = c.today
-        feedback(c, o.company.name, 4, "Accepted", b.accept_reason or "Relevant signal", b.scope, o.direction_version, b.comment or "", b.minutes, o.id)
+        fb = feedback(c, o.company.name, 4, "Accepted", b.accept_reason or "Relevant signal", b.scope, o.direction_version, b.comment or "", b.minutes, o.id)
         c.s.add(m.Decision(opportunity_id=o.id, step=4, decision="Accepted", by=c.actor, note=f"Rating {b.rating}, owner {b.owner}", on=c.today))
         log(c, o.id, "h", f"Accepted by {c.actor}: rating {b.rating}, owner {b.owner}")
-        CRM.mark(c, o)
-        J.enqueue(c.s, c.today, "first_draft", o.id, "event", f"Accepted at Step 4 by {c.actor}: write the first email", requested_by=c.actor)
+        CRM.mark(c, o)  # with an undo window the sync skips it until the window ends
+        job = J.enqueue(c.s, c.today, "first_draft", o.id, "event", f"Accepted at Step 4 by {c.actor}: write the first email", requested_by=c.actor)
+        if seconds:
+            c.s.flush()
+            U.hold_step4(c, o, "Accepted", before, seconds, fb.id, job)
     elif b.decision == "return":
         q = need_text(b.questions, "What the agent should find out")
         o.stage = "researching"
@@ -649,6 +657,8 @@ def step4(c: Ctx, opp_id: str, b) -> None:
         c.s.flush()
         if b.suggest_exclusion:
             propose_exclusion(c, o.company.name, o.company.domain, b.scope, f"Rejected at Step 4 by {c.actor}: {b.reason.lower()}.", fb)
+        if seconds:
+            U.hold_step4(c, o, "Rejected", before, seconds, fb.id)
     o.revision += 1
 
 
@@ -692,8 +702,15 @@ def outreach_row(c: Ctx, o: m.Opportunity) -> m.Outreach:
     return row
 
 
+def no_waiting_email(c: Ctx, o: m.Opportunity) -> None:
+    w = U.waiting_email(c.s, o.id)
+    if w is not None:
+        raise ActionError(f"The approved email to {w.to} is about to go out. Undo it first to change the draft.", 409, "queued")
+
+
 def save_draft(c: Ctx, opp_id: str, subject: str, body: str, angle: str | None, tone: str, channel: str | None) -> None:
     o = opp(c, opp_id, "identified")
+    no_waiting_email(c, o)
     r = outreach_row(c, o)
     r.subject, r.body, r.angle, r.tone, r.channel, r.status = need_text(subject, "Subject"), need_text(body, "Message"), angle, tone, channel, "draft"
     touch(c, o)
@@ -702,6 +719,7 @@ def save_draft(c: Ctx, opp_id: str, subject: str, body: str, angle: str | None, 
 
 def generate_draft(c: Ctx, opp_id: str, angle: str | None, tone: str) -> dict:
     o = opp(c, opp_id, "identified")
+    no_waiting_email(c, o)
     if tone not in ("standard", "brief"):
         raise ActionError("Tone must be standard or brief.")
     b = o.brief
@@ -763,6 +781,7 @@ def alerts(c: Ctx, follow_days: int) -> list[dict]:
 
 def mark_sent(c: Ctx, opp_id: str, via: str, on: date | None, follow_days: int) -> None:
     o = opp(c, opp_id, "identified")
+    no_waiting_email(c, o)
     r = outreach_row(c, o)
     r.status, r.sent_on, r.sent_via = "sent", on or c.today, need_text(via, "Channel")
     o.stage, o.next_action, o.next_due = "contacted", "Follow up if no reply", r.sent_on + timedelta(days=follow_days)
@@ -825,7 +844,7 @@ def email_preview(c: Ctx, opp_id: str, to: str | None = None, item_id: str | Non
     synthetic = sorted({x.group(1) for x in L._CITE.finditer(body) if x.group(1) in lib and lib[x.group(1)].synthetic})
     text = plain_email(body)
     return {"purpose": purpose, "to": to, "subject": subject, "body": text, "inThread": bool(r and r.mail_thread_id and purpose != "first"),
-            "seenHash": mail_hash(to, subject, text),
+            "seenHash": mail_hash(to, subject, text), "waiting": U.email_view(c.s, o.id),
             "blocked": (f"The draft cites a SYNTHETIC demo document ({', '.join(synthetic)}). Replace that sentence first." if synthetic else None)}
 
 
@@ -844,13 +863,17 @@ def record_mail_sent(c: Ctx, o: m.Opportunity, purpose: str, on: date | None = N
     CRM.mark(c, o)
 
 
-def email_out(c: Ctx, opp_id: str, to: str, mode: str, seen_hash: str, item_id: str | None = None) -> dict:
-    """A person's click: put the email in their Gmail drafts (mode draft) or send it now (mode send).
-    seen_hash must match email_preview, so exactly what the person looked at goes out."""
+def email_out(c: Ctx, opp_id: str, to: str, mode: str, seen_hash: str, item_id: str | None = None, delay: int = 0) -> dict:
+    """A person's click: put the email in their Gmail drafts (mode draft) or send it (mode send).
+    seen_hash must match email_preview, so exactly what the person looked at goes out.
+    delay: seconds to wait before sending, so the person can undo (api/undo.py); 0 sends now."""
     from api.toolkit.mail import MailError
     if mode not in ("draft", "send"):
         raise ActionError("Mode must be draft or send.")
     box = mailbox(c)
+    waiting = U.waiting_email(c.s, opp_id)
+    if waiting is not None:
+        raise ActionError(f"An email to {waiting.to} is about to go out. Undo it first, or wait until it is sent.", 409, "queued")
     p = email_preview(c, opp_id, to, item_id)
     if p["blocked"]:
         raise ActionError(p["blocked"], 409, "synthetic")
@@ -864,6 +887,21 @@ def email_out(c: Ctx, opp_id: str, to: str, mode: str, seen_hash: str, item_id: 
     if it is not None and it.status == "new":  # an inbox draft must still be valid before anything goes out
         from api import autonomy as AU
         AU.check_still_valid(c, it, o, it.payload_hash)
+    seconds = U.window(delay)
+    if mode == "send" and seconds:
+        try:
+            if r.mail_draft_id and box.draft_exists(r.mail_draft_id):
+                raise ActionError("A Gmail draft for this opportunity is waiting in Gmail. Send or delete it there first.", 409, "draft_waiting")
+        except MailError as e:
+            raise ActionError(str(e), 502, "mail_failed") from None
+        return U.queue_email(c, o, p, it, seconds)
+    return deliver_email(c, o, p, it, mode, box, how=f" by {c.actor}")
+
+
+def deliver_email(c: Ctx, o: m.Opportunity, p: dict, it, mode: str, box, how: str = "") -> dict:
+    """Put the email in Gmail drafts or send it, and record it. p: purpose, to, subject, body (already checked)."""
+    from api.toolkit.mail import MailError
+    r = outreach_row(c, o)
     try:
         if r.mail_draft_id and box.draft_exists(r.mail_draft_id):
             raise ActionError("A Gmail draft for this opportunity is waiting in Gmail. Send or delete it there first.", 409, "draft_waiting")
@@ -881,6 +919,7 @@ def email_out(c: Ctx, opp_id: str, to: str, mode: str, seen_hash: str, item_id: 
     if o.contact and not o.contact.email:
         o.contact.email = p["to"]
     if it is not None and it.status == "new":
+        from api import autonomy as AU
         AU.apply_item(c, it.id, "apply", it.payload_hash)
     if mode == "draft":
         r.mail_draft_id, r.mail_draft_purpose = res["draft_id"], p["purpose"]
@@ -888,7 +927,7 @@ def email_out(c: Ctx, opp_id: str, to: str, mode: str, seen_hash: str, item_id: 
         log(c, o.id, "h", f"{c.actor} put the {p['purpose']} email in Gmail drafts for {p['to']}. Nothing was sent; "
                           "the workspace records it once it is sent from Gmail.")
         return {"mode": "draft", "to": p["to"], "draftId": res["draft_id"], "threadId": r.mail_thread_id}
-    record_mail_sent(c, o, p["purpose"], how=f" by {c.actor}")
+    record_mail_sent(c, o, p["purpose"], how=how)
     return {"mode": "send", "to": p["to"], "messageId": res["message_id"], "threadId": r.mail_thread_id}
 
 
@@ -1585,7 +1624,7 @@ def analyze_feedback(c: Ctx, scope: str) -> dict:
     shared = scope != "consultant"
     base = current_direction(c, None if shared else c.actor)
     latest = {}
-    for f in c.s.scalars(select(m.Feedback).order_by(m.Feedback.on)):
+    for f in c.s.scalars(select(m.Feedback).where(m.Feedback.withdrawn_by.is_(None)).order_by(m.Feedback.on)):
         latest[f.subject] = f
     eligible = [f for f in latest.values() if f.direction_version == base.version and
                 (f.scope in ("theme", "cgs") if shared else f.scope == "consultant" and f.by == c.actor)]

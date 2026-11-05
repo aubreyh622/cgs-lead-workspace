@@ -3,21 +3,24 @@ import { html, day, daysBetween, href, plural } from "../lib.js";
 import { STAGE_LABELS } from "../options.js";
 import { emptyState } from "../shell.js";
 import { linkFor } from "./links.js";
+import { suggestionLists } from "./team.js";
 
 export const title = "Home";
 
 export async function load(ctx) {
   const enc = encodeURIComponent;
-  const [opps, cands, inbox, alerts] = await Promise.all([
+  const [opps, cands, inbox, alerts, direction, lessons] = await Promise.all([
     ctx.api.get("/opportunities"),
     ctx.api.get("/candidates?status=new"),
     ctx.api.get(`/inbox?owner=${enc(ctx.me)}`),
     ctx.api.get("/alerts"),
+    ctx.api.get("/direction"),
+    ctx.api.get("/lessons"),
   ]);
   // Research that stopped needs a person; the list view does not carry research status, so ask for those few.
   const researching = opps.filter((o) => o.stage === "researching");
   const details = await Promise.all(researching.map((o) => ctx.api.get(`/opportunities/${enc(o.id)}`).catch(() => null)));
-  return { opps, cands, inbox, alerts, stuck: details.filter((d) => d && d.research && ["failed", "paused"].includes(d.research.status)) };
+  return { opps, cands, inbox, alerts, direction, lessons, stuck: details.filter((d) => d && d.research && ["failed", "paused"].includes(d.research.status)) };
 }
 
 function whenLabel(due, today) {
@@ -43,6 +46,11 @@ function queue(data, ctx) {
       link: o && ["draft", "reply"].includes(i.kind) && ["identified", "contacted", "nurture"].includes(o.stage) ? href("outreach", { item: i.id })
         : o ? linkFor(o) : href("agents") });
   }
+  for (const o of opps.filter((x) => x.owner === ctx.me && x.crm && x.crm.conflicts && x.crm.conflicts.length)) {
+    const where = o.crm.provider === "insightly" ? "Insightly" : "The CRM";
+    items.push({ rank: 1, tag: ["warn", `Changed in ${where === "The CRM" ? "the CRM" : where}`], title: `${where} and the workspace disagree on ${o.company}`,
+      sub: `${o.crm.conflicts.map((x) => x.label).join(", ")}. ${where} keeps its value until you decide.`, link: linkFor(o) });
+  }
   for (const d of stuck) {
     const why = d.research.status === "failed" ? (d.research.error || "Research failed.") : d.research.pauseReason === "budget" ? "Paused: it reached its budget." : "Paused.";
     items.push({ rank: 1, tag: ["bad", "Research stopped"], title: `Research on ${d.company.name} needs you`, sub: why, link: href("companies", { tab: "research" }) });
@@ -54,6 +62,17 @@ function queue(data, ctx) {
   for (const o of opps.filter((x) => x.stage === "active" && x.owner === ctx.me && x.assessment && x.assessment.readiness === "Ready")) {
     items.push({ rank: 2, tag: ["good", "Ready"], title: `Send the pack for ${o.company}`,
       sub: "The rules say Ready. Send it for approval.", link: href("qualification", { tab: "active", id: o.id }) });
+  }
+  // Direction changes and lessons wait on the Agents page (inbox items are listed above).
+  const sug = suggestionLists(inbox, data.direction, data.lessons);
+  for (const p of sug.props) {
+    items.push({ rank: 3, tag: ["warn", "Agent suggestion"],
+      title: p.type === "exclude" ? `Leave ${p.target} out of future searches` : (p.title || `Change ${p.field}`),
+      sub: "A change to the research direction, waiting for a person to apply or dismiss it.", link: href("agents") });
+  }
+  for (const l of sug.lessons) {
+    items.push({ rank: 3, tag: ["warn", "Agent suggestion"], title: l.text,
+      sub: `A lesson for the ${l.agent.toLowerCase()}, proposed by ${l.proposedBy}.`, link: href("agents") });
   }
   const review = opps.filter((o) => o.stage === "review");
   for (const o of review) {

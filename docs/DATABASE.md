@@ -16,14 +16,15 @@ Code reaches the file through SQLAlchemy, a translator layer. To move to a share
 | `research_briefs` | the brief: dated facts, hypothesis, flags, priority | 3 | research agent; frozen at Step 4 |
 | `decisions` | a human decision at Step 4 or Step 8 | 4, 8 | person only |
 | `outreach` | the message draft and when it was sent and answered; with email on, the address used and the Gmail thread and waiting draft ids | 5 | Outreach agent drafts, person sends |
-| `crm_links` | which CRM (Insightly) records belong to an opportunity: lead (and its own BCC address), status last written, and after Qualification the organization, contact and opportunity; notes already copied; the last sync error | 4-8 | CRM sync, after a person acts |
+| `outbound_emails` | an email a person approved with an undo window: exactly what they approved, when it goes out, and whether it was sent, undone, failed or not sent because the server was stopped | 5 | person approves, the undo clock sends |
+| `crm_links` | which CRM (Insightly) records belong to an opportunity: lead (and its own BCC address), status last written, and after Qualification the organization, contact and opportunity; notes already copied; the last sync error; for the read-back: the values Insightly held after the last write, fields a person kept as Insightly has them, open conflicts, what the last read saw (status, CRM opportunity stage and state, task done) and when; the next step's task | 4-8 | CRM sync, after a person acts |
 | `notes` | an email or meeting notes, in the original words | 6 | person |
 | `proposals` | an AI suggestion (a score, condition or blocker) with its quote | 6 | Evidence agent |
 | `evidence` | what a person confirmed, and how (accepted, edited, manual review) | 6–7 | person only |
 | `suggestions` | an AI-suggested next action, not yet agreed | 7 | Next-step agent, or the manager's triage |
 | `tasks` | an agreed action with an owner and a date | 6–7 | person only |
 | `packs` | a frozen qualification pack sent for Step 8 approval | 7–8 | person |
-| `feedback` | why someone skipped, accepted, returned or rejected something | 1, 4 | person |
+| `feedback` | why someone skipped, accepted, returned or rejected something; marked withdrawn when the decision was undone (the learning loop ignores it) | 1, 4 | person |
 | `direction_versions` | an approved research direction; never edited, only added to | learning loop | person approves |
 | `direction_proposals` | a suggested change to the direction, waiting for approval | learning loop | AI or person proposes |
 | `agent_runs` | one AI call: agent, model, prompt version, success or failure | all | system |

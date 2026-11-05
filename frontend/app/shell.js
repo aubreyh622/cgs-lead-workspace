@@ -21,16 +21,35 @@ function modeBadge(config) {
   return html`<span class="mode live" title="Real public companies. Every email and CRM write still needs a person's click.">Live data</span>`;
 }
 
-// The CRM the backend is set up with, as /api/config reports it. "Connected" is not claimed: it says what is switched on.
-function crmStatus(config) {
-  if (!config) return "";
-  const off = !config.crm || config.crm === "off" || config.crmMode === "disabled";
-  const name = config.crm === "insightly" ? "Insightly" : config.crm === "mock" ? "Test CRM" : "CRM";
-  const mode = off ? "off" : config.crmMode === "write_approved" ? "writes after approval" : "read only";
-  return html`<span class="crm-status" title="CRM setting from the server">${name}: ${mode}</span>`;
+// When the workspace last synced, from its own records: a time today, otherwise a date.
+function syncedWhen(iso) {
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return "";
+  const sameDay = t.toDateString() === new Date().toDateString();
+  return sameDay ? t.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : t.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
-export function header({ page, counts, config, users, me }) {
+// The CRM sync state (GET /api/crm/state, read from the workspace database; the CRM itself is not called). "Connected"
+// is not claimed: it says what is switched on, when the last sync happened, and what is waiting or failed.
+export function crmStatus(config, state) {
+  if (!config) return "";
+  const provider = state ? state.provider : config.crm;
+  const mode = state ? state.mode : config.crmMode;
+  const name = provider === "insightly" ? "Insightly" : provider === "mock" ? "Test CRM" : "CRM";
+  const link = href("agents", { tab: "controls" });
+  // On a narrow window only the name and the dot show, unless something failed or waits; the title keeps the full text.
+  const chip = (dot, detail, title, keep = false) => html`<a class="crm-status" href="${link}" title="${name}${detail}. ${title}">
+    <span class="with-dot ${dot}"><span>${name}<span class="crm-detail ${keep ? "keep" : ""}">${detail}</span></span></span></a>`;
+  if (!provider || provider === "off" || mode === "disabled") return chip("", ": off", "The workspace does not read or write a CRM.");
+  if (!state || !state.writes) return chip("", ": read only", "The workspace checks the CRM for duplicates but writes nothing.");
+  if (state.failed) return chip("fail", `: ${state.failed} not synced`, "A sync failed. Open the controls to see why and try again.", true);
+  if (state.conflicts) return chip("wait", `: ${state.conflicts} to check`, "Someone changed a lead in the CRM and the workspace says something else. A person decides on each opportunity's page.", true);
+  if (state.pending) return chip("wait", `: ${state.pending} waiting to sync`, "These changes go to the CRM after the request that made them, or at the daily sync.", true);
+  if (state.lastSyncedAt) return chip("done", ` synced ${syncedWhen(state.lastSyncedAt)}`, "Every accepted lead is in step with the CRM.");
+  return chip("", ": nothing synced yet", "Leads go to the CRM once a person accepts a company at Step 4.");
+}
+
+export function header({ page, counts, config, users, me, crm }) {
   return html`
   <div class="top-in">
     <a class="brand" href="${href("home")}">
@@ -42,11 +61,11 @@ export function header({ page, counts, config, users, me }) {
         <a href="${href(id)}" ${page === id || (id === "companies" && page === "sources") ? html`aria-current="page"` : ""}>${icon(ic)}${label}${counts[id] ? html`<span class="count" aria-label="${counts[id]} waiting">${counts[id]}</span>` : ""}</a>`)}
     </nav>
     <div class="top-side">
-      ${crmStatus(config)}
+      ${crmStatus(config, crm)}
       ${modeBadge(config)}
       ${me ? html`
       <span class="avatar round" aria-hidden="true">${initials(me)}</span>
-      <label class="person"><span class="person-label">Acting as</span>
+      <label class="person"><span class="person-label sr-only">Acting as</span>
         <select data-shell="person" aria-label="Acting as">
           ${users.map((u) => html`<option value="${u}" ${u === me ? "selected" : ""}>${u}</option>`)}
         </select>
@@ -62,8 +81,43 @@ export function crmLinks(crm) {
   const where = crm.provider === "insightly" ? "Insightly" : "the CRM";
   const links = [[crm.leadUrl, `Lead in ${where}`], [crm.opportunityUrl, `Opportunity in ${where}`]]
     .map(([u, text]) => [safeUrl(u), text]).filter(([u]) => u);
+  const deal = crm.dealStage || crm.dealState
+    ? `${where === "the CRM" ? "CRM" : where}: ${crm.dealState && crm.dealState !== "OPEN" ? crm.dealState.toLowerCase() : crm.dealStage}` : "";
   return html`${links.map(([u, text]) => html`<a class="tag link-tag" href="${u}" target="_blank" rel="noopener noreferrer">${icon("link", 14)}${text}</a>`)}
+    ${deal ? html`<span class="tag ${crm.dealState === "WON" ? "good" : crm.dealState && crm.dealState !== "OPEN" ? "bad" : ""}" title="The CRM opportunity's stage at the last read-back">${deal}</span>` : ""}
     ${crm.lastError ? html`<span class="tag bad" title="${crm.lastError}">CRM sync failed</span>` : ""}`;
+}
+
+// Fields someone changed in the CRM that differ from the workspace: the CRM keeps its value until a person decides.
+// Pages add actions.crmResolve = resolveCrm.
+export function crmConflicts(oppId, crm) {
+  const list = (crm && crm.conflicts) || [];
+  if (!list.length) return "";
+  const where = crm.provider === "insightly" ? "Insightly" : "the CRM";
+  const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+  return html`<div class="notice warn crm-conflicts" role="status">${icon("alert")}<div style="flex:1;min-width:0">
+    <b>Changed in ${where}: ${list.length === 1 ? "one field differs" : `${list.length} fields differ`} from the workspace</b>
+    <p class="meta">${cap(where)} keeps its value until you decide. Nothing is overwritten.</p>
+    <ul class="conflict-list">${list.map((x) => html`<li>
+      <span class="what"><b>${cap(x.label)}</b>
+        <span class="meta">${cap(where)}: ${x.crm || "(empty)"}</span>
+        <span class="meta">Workspace: ${x.workspace}</span></span>
+      <span class="actions">
+        <button type="button" class="btn small" data-act="crmResolve" data-id="${oppId}" data-field="${x.field}" data-use="crm">Keep ${where}'s</button>
+        <button type="button" class="btn small" data-act="crmResolve" data-id="${oppId}" data-field="${x.field}" data-use="workspace">Use the workspace's</button>
+      </span></li>`)}</ul>
+  </div></div>`;
+}
+
+export async function resolveCrm(t, e, ctx) {
+  t.disabled = true;
+  try {
+    await ctx.api.post(`/opportunities/${encodeURIComponent(t.dataset.id)}/crm/resolve`, { field: t.dataset.field, use: t.dataset.use });
+    ctx.refresh();
+  } catch (err) {
+    t.disabled = false;
+    toast(err.message || "That did not work.");
+  }
 }
 
 export function chooser(users, problem) {
@@ -82,19 +136,34 @@ export function chooser(users, problem) {
 // ---------- toasts: for background events and things not visible on screen ----------
 let toastSeq = 0;
 
-export function toast(message, { link, timeout = 5000 } = {}) {
+// action: { label, run } adds a button, for example Undo; it runs once, then the toast closes.
+// key names what the toast is about, so dropToast(key) can close it when that is settled elsewhere.
+export function toast(message, { link, action, key, timeout = 5000 } = {}) {
   const region = document.getElementById("toasts");
   if (!region) return;
   const id = `toast-${++toastSeq}`;
   const el = document.createElement("div");
   el.className = "toast";
   el.id = id;
+  if (key) el.dataset.key = key;
   el.innerHTML = String(html`
     <div>${message}${link ? html` <a href="${link.href}">${link.label}</a>` : ""}</div>
-    <button type="button" class="btn ghost" aria-label="Dismiss">${icon("close", 16)}</button>`);
-  el.querySelector("button").addEventListener("click", () => el.remove());
+    ${action ? html`<button type="button" class="toast-action" data-toast="action">${action.label}</button>` : ""}
+    <button type="button" class="btn ghost" data-toast="close" aria-label="Dismiss">${icon("close", 16)}</button>`);
+  el.querySelector("[data-toast=close]").addEventListener("click", () => el.remove());
+  if (action) {
+    el.querySelector("[data-toast=action]").addEventListener("click", (e) => {
+      e.currentTarget.disabled = true;
+      el.remove();
+      action.run();
+    });
+  }
   region.appendChild(el);
   setTimeout(() => el.remove(), timeout);
+}
+
+export function dropToast(key) {
+  document.querySelectorAll("#toasts .toast[data-key]").forEach((el) => { if (el.dataset.key === key) el.remove(); });
 }
 
 // ---------- shared page pieces ----------
@@ -138,6 +207,6 @@ export function dock(state, open, data, me) {
       })}</ul>`}
   </section>` : ""}
   <button type="button" class="dock-pill" data-shell="dock" aria-expanded="${open ? "true" : "false"}">
-    <span class="with-dot ${state.running ? "run" : state.paused ? "" : "done"}"><b>${summary}</b>${state.waiting ? `, ${state.waiting} waiting for you` : ""}</span>
+    <span class="with-dot ${state.running ? "run" : state.paused ? "" : "done"}"><span><b>${summary}</b>${state.waiting ? `, ${state.waiting} from agents waiting for you` : ""}</span></span>
   </button>`;
 }

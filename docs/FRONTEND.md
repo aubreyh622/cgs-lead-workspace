@@ -19,8 +19,25 @@ integrated app, which has its own interface.
 
 Tabs and selections live in the URL (`#/companies?tab=review&id=ostrander`), so a link opens the same view.
 
-Every page also has the agent dock at the bottom: a pill with the number of agent tasks running, queued or waiting
-for a person (or "paused"), which opens a panel with each agent's state.
+Every page also has the agent dock at the bottom: a pill with the number of agent tasks running or queued (or
+"paused") and how many items the agents prepared that wait for this person, which opens a panel with each agent's
+state. The pill's number is the sum of that panel's agent rows.
+
+Counts follow one rule: a number equals what you see when you open it. Each navigation badge equals its page's list
+(Agents: the suggestions on the Agents page), and Home's To do lists everything that waits for the person, agent
+suggestions included. The header shows the CRM sync state (`GET /api/crm/state`): synced and when, how many wait or
+failed or need a decision, or read only or off; it links to the agent controls, where a failed sync can be retried
+and the read-back run. A field someone changed in the CRM shows as a notice on the opportunity's Outreach and
+Qualification pages ("Keep Insightly's" or "Use the workspace's") and as a To do on the owner's Home.
+
+Undo (`app/undo.js`, `api/undo.py`): Approve and send waits 10 seconds before the email goes out. The toast offers Undo,
+and the email's page shows when it goes out with Undo and Send now; a send that failed or did not go out says so there.
+Accepting or rejecting at Step 4 can be undone from its toast for 10 seconds, before anything reaches the CRM or the
+agents (returning to research starts at once, so it has no undo). Skipping a candidate offers Undo in its toast, and the
+Skipped candidates list keeps an Undo button.
+
+The page supports windows from 1024px wide. Below 1400px the header hides the brand text and the CRM sync time (a
+failed or waiting count stays); below 1200px it also hides the navigation icons and the avatar.
 
 ## Files
 
@@ -33,6 +50,7 @@ frontend/
     lib.js            html`` escaping template, icons, dates, URL helpers
     shell.js          header, chooser, toasts, loading/empty/error states
     forms.js          busy buttons, "what is missing" lines, tab keys, one write then redraw
+    undo.js           the Undo toast, the waiting-email notice and its Undo and Send now buttons
     options.js        choices the backend accepts (tests keep them equal to api/services.py)
     styles.css        DESIGN.md tokens and every style; no colour outside :root
     pages/
@@ -99,8 +117,8 @@ when the person moves to another item.
 | Accessibility audit | `python tools/a11y_audit.py http://127.0.0.1:8800 "Alex Morgan"` | A running server, Playwright |
 
 The end-to-end test starts its own server on a fresh demo database (agents run only when asked, mock mail, no CRM)
-and clicks through: research a candidate, accept it, let the outreach agent draft, approve and send, record the
-reply, close Meridian's gaps, send the pack, and approve it as another person.
+and clicks through: research a candidate, accept it (undo that from the toast, then accept again and let the window
+pass), let the outreach agent draft, approve and send (then Send now instead of waiting), record the reply, close Meridian's gaps, send the pack, and approve it as another person.
 
 Playwright is not in `requirements.lock`. To install it: `pip install playwright` then `python -m playwright install
 chromium`.

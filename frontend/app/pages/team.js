@@ -74,14 +74,37 @@ export async function loadAgent(ctx, params) {
   return { mode: "agent", agent, tab, ...b, runs: runs.filter((r) => r.agent === agent.name), perms, trials };
 }
 
+// ---------- what waits for a person ----------
+// The suggestions the Agents page lists: direction changes, lessons, and inbox items that are not emails. The Agents
+// navigation count uses the same list, so the badge always equals what the page shows.
+export function suggestionLists(inbox, direction, lessons) {
+  return {
+    props: direction.proposals.filter((p) => p.status === "pending"),
+    lessons: lessons.filter((l) => l.status === "proposed"),
+    items: inbox.filter((i) => i.status === "new" && !["draft", "reply"].includes(i.kind)),
+  };
+}
+
+export function suggestionCount(inbox, direction, lessons) {
+  const s = suggestionLists(inbox, direction, lessons);
+  return s.props.length + s.lessons.length + s.items.length;
+}
+
+// How many items one agent prepared that wait for this person. The dock adds these up, so its "waiting for you" equals
+// the sum of the agent rows it opens.
+export function agentWaiting(a, inbox, direction, lessons) {
+  let n = inbox.filter((i) => i.status === "new" && i.agent === a.name).length;
+  if (a.slug === "direction") n += direction.proposals.filter((p) => p.status === "pending" && p.origin !== "manual").length;
+  if (a.slug === "manager") n += lessons.filter((l) => l.status === "proposed" && l.proposedBy === "Manager agent").length;
+  return n;
+}
+
 // ---------- what each agent is doing now ----------
 export function agentState(a, d, me) {
   const mine = d.jobs.filter((j) => j.agent === a.name);
   const running = mine.filter((j) => j.status === "running");
   const queued = mine.filter((j) => j.status === "queued");
-  let waiting = d.inbox.filter((i) => i.agent === a.name).length;
-  if (a.slug === "direction") waiting += d.direction.proposals.filter((p) => p.status === "pending" && p.origin !== "manual").length;
-  if (a.slug === "manager") waiting += d.lessons.filter((l) => l.status === "proposed" && l.proposedBy === "Manager agent").length;
+  const waiting = agentWaiting(a, d.inbox, d.direction, d.lessons);
   const lastDone = mine.find((j) => j.status === "done");
   if (d.overview.paused) return { label: "Paused", cls: "", dot: "", now: queued.length ? `${plural(queued.length, "job")} waiting until the agents resume` : "Nothing new starts while paused" };
   if ((d.overview.pausedAgents || []).includes(a.name)) {
@@ -179,9 +202,7 @@ function proposalTitle(p) {
 
 function suggestions(d, ctx, st) {
   const byId = Object.fromEntries(d.opps.map((o) => [o.id, o]));
-  const props = d.direction.proposals.filter((p) => p.status === "pending");
-  const lessons = d.lessons.filter((l) => l.status === "proposed");
-  const items = d.inbox.filter((i) => !["draft", "reply"].includes(i.kind));
+  const { props, lessons, items } = suggestionLists(d.inbox, d.direction, d.lessons);
   const drafts = d.inbox.filter((i) => ["draft", "reply"].includes(i.kind)).length;
   const total = props.length + lessons.length + items.length;
   return html`
@@ -242,8 +263,10 @@ function suggestions(d, ctx, st) {
 // ---------- one agent ----------
 export function detail(d, ctx, st) {
   const a = d.agent;
-  const s = agentState(a, d, ctx.me);
   const last = d.runs[0];
+  const s = agentState(a, d, ctx.me);
+  // Some work (research picked by a person) runs outside the task board, so "no jobs" can still mean AI runs happened.
+  if (s.now === "No work yet" && last) s.now = `Last worked ${day(last.on, ctx.today)}`;
   const tabs = DETAIL_TABS;
   const paused = (d.overview.pausedAgents || []).includes(a.name);
   return html`
@@ -254,7 +277,7 @@ export function detail(d, ctx, st) {
       <div>
         <h1>${a.name}</h1>
         <p class="row-flex" style="gap:8px;margin-top:4px"><b class="with-dot ${s.dot}" style="font-weight:500">${s.label}</b><span class="meta">${s.now}</span></p>
-        <p class="meta-3">${last ? `Last AI run ${day(last.on, ctx.today)}: ${last.model}, prompt ${last.prompt}.` : "No AI run recorded yet."}</p>
+        <p class="meta-3">${last ? `Last AI run ${day(last.on, ctx.today)}: ${runModel(last.model)}, instructions version ${runVersion(last.prompt)}.` : "No AI run recorded yet."}</p>
       </div>
     </div>
     ${PAUSABLE.includes(a.name) ? html`
@@ -316,10 +339,24 @@ export function trialRow(t, ctx) {
   </li>`;
 }
 
+// What an AI run's model and prompt fields mean, in plain words.
+function runModel(model) {
+  if (!model) return "model not recorded";
+  if (model === "demo-fixture") return "a prepared demo example";
+  if (model.startsWith("demo") || model.startsWith("rules")) return "demo text rules, no AI";
+  return model;
+}
+
+function runVersion(prompt) {
+  const v = String(prompt || "").match(/(\d+(?:\.\d+)*)\s*$/);
+  return v ? v[1] : "not recorded";
+}
+
 function agentOverview(d, ctx) {
   const a = d.agent;
   const m = monthStats(a, d, ctx.today);
-  const calls = d.runs.filter((r) => r.on >= addDays(ctx.today, -30)).reduce((n, r) => n + (r.calls || 0), 0);
+  const recent = d.runs.filter((r) => r.on >= addDays(ctx.today, -30));
+  const calls = recent.reduce((n, r) => n + (r.calls || 0), 0);
   const does = (d.overview.agents.find((x) => x.agent === a.name) || {}).does || [];
   return html`
   <div class="two-col">
@@ -336,10 +373,11 @@ function agentOverview(d, ctx) {
       <section class="card card-body">
         <h2 class="section-title">The last 30 days</h2>
         <ul class="kv">
-          <li><span>Jobs</span><span>${m.jobs}</span></li>
-          <li><span>Done</span><span>${m.done}</span></li>
-          <li><span>Failed</span><span>${m.failed}</span></li>
+          <li><span>AI runs</span><span>${recent.length}</span></li>
           <li><span>AI requests</span><span>${calls}</span></li>
+          <li><span>Task-board jobs</span><span>${m.jobs}</span></li>
+          <li><span>Jobs done</span><span>${m.done}</span></li>
+          <li><span>Jobs failed</span><span>${m.failed}</span></li>
           <li><span>Used as is</span><span>${m.used ? `${m.used}${m.judged < 5 ? " (small sample)" : ""}` : "Not measured yet"}</span></li>
         </ul>
       </section>

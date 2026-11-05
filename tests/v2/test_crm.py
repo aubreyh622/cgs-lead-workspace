@@ -64,6 +64,17 @@ class FakeInsightly:
             return httpx.Response(200, json={"NOTE_ID": 1})
         if path.endswith("/Links"):
             return httpx.Response(200, json=[] if req.method == "GET" else {"LINK_ID": 1})
+        if path == "Opportunities/45":
+            return httpx.Response(200, json={"OPPORTUNITY_ID": 45, "OPPORTUNITY_NAME": "Deal", "OPPORTUNITY_STATE": "WON", "STAGE_ID": 92,
+                                             "DATE_UPDATED_UTC": "2026-11-05 10:00:00"})
+        if path == "Tasks" and req.method == "POST":
+            tid = self.new_id()
+            self.tasks = getattr(self, "tasks", {})
+            self.tasks[tid] = {**body, "TASK_ID": tid, "COMPLETED": False}
+            return httpx.Response(200, json=self.tasks[tid])
+        if path == "Tasks" and req.method == "PUT":
+            self.tasks[body["TASK_ID"]].update(body)
+            return httpx.Response(200, json=self.tasks[body["TASK_ID"]])
         return httpx.Response(500, text="unexpected " + path)
 
 
@@ -210,6 +221,23 @@ def test_a_failed_sync_keeps_the_action_and_is_retried(tmp_path):
     o = get(api, "corvane")
     assert o["crmSync"] == "synced" and o["crm"]["lastError"] is None
     assert [x["workspace_id"] for x in crm.leads.values()].count("corvane") == 1  # the retry did not create a second lead
+
+
+def test_the_header_state_counts_failed_syncs_and_the_last_sync_without_calling_the_crm(tmp_path):
+    api = make(tmp_path)
+    crm = api.app.state.crm
+    before = api.get("/api/crm/state", headers=ME).json()
+    assert before["provider"] == "mock" and before["writes"] and before["failed"] == 0
+    post(api, "/api/candidates/c1/pick")
+    crm.fail_next = "Insightly answered 503: busy"
+    accept(api, "corvane")
+    st = api.get("/api/crm/state", headers=ME).json()
+    assert st["failed"] == before["failed"] + 1
+    post(api, "/api/crm/sync")
+    st = api.get("/api/crm/state", headers=ME).json()
+    assert st["failed"] == 0 and st["pending"] == 0 and st["lastSyncedAt"]
+    off = make(tmp_path / "off", mode="disabled").get("/api/crm/state", headers=ME).json()
+    assert off["provider"] == "off" and not off["writes"] and off["lastSyncedAt"] is None
 
 
 def test_the_email_is_bcc_to_the_lead_so_the_crm_logs_it(tmp_path):

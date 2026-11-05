@@ -76,7 +76,7 @@ def feedback(request: Request):
     with db(request).session() as s:
         return [{"id": f.id, "subject": f.subject, "step": f.step, "outcome": f.outcome, "reason": f.reason, "comment": f.comment,
                  "scope": f.scope, "by": f.by, "on": views.iso(f.on), "minutes": f.minutes, "directionVersion": f.direction_version}
-                for f in s.scalars(select(m.Feedback).order_by(m.Feedback.on.desc())).all()]
+                for f in s.scalars(select(m.Feedback).where(m.Feedback.withdrawn_by.is_(None)).order_by(m.Feedback.on.desc())).all()]
 
 
 @router.get("/agent-runs", tags=["agents"], summary="Recent AI calls")

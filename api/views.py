@@ -69,6 +69,9 @@ def detail(s: Session, o: m.Opportunity) -> dict:
         "status": out_reach.status, "subject": out_reach.subject, "body": out_reach.body, "sentOn": iso(out_reach.sent_on),
         "via": out_reach.sent_via, "replyOn": iso(out_reach.reply_on), "replyText": out_reach.reply_text,
         "toEmail": out_reach.to_email, "emailThread": bool(out_reach.mail_thread_id), "gmailDraftWaiting": bool(out_reach.mail_draft_id)}
+    from api import undo as U
+    out["outreach"]["waiting"] = U.email_view(s, o.id)  # an approved email in its undo window
+    out["undo"] = U.view(o)
     task = s.scalars(select(m.ResearchTask).where(m.ResearchTask.opportunity_id == o.id).order_by(m.ResearchTask.started_at.desc())).first()
     out["research"] = None if not task else {"status": task.status, "progress": task.progress, "pauseReason": task.pause_reason,
                                              "error": task.error, "log": task.log}

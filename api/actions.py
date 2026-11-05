@@ -247,6 +247,13 @@ def skip(cand_id: str, body: Skip, c: S.Ctx = Actor):
     return {"ok": True}
 
 
+@router.post("/candidates/{cand_id}/unskip", tags=["step 1"], summary="Undo a skip: the candidate is new again and its feedback is withdrawn")
+def unskip(cand_id: str, c: S.Ctx = Actor):
+    from api import undo as U
+    U.unskip(c, cand_id)
+    return {"ok": True}
+
+
 @router.post("/opportunities", tags=["step 1"], summary="Add one lead by hand; research starts at once")
 def add(body: ManualLead, c: S.Ctx = Actor):
     return {"id": S.add_manual(c, body.company, body.domain, body.name, body.title, body.source, body.notes)}
@@ -274,6 +281,8 @@ class Step4(BaseModel):
     scope: Scope = "theme"
     minutes: float | None = Field(None, description="Optional review time. Leave empty if not measured; it is never counted as zero.")
     revision: int | None = None
+    undo_seconds: int = Field(0, ge=0, le=30, description="Accept or reject: the decision can be undone for this long, and the CRM "
+                                                         "write and the agents' work wait until then. 0 = at once")
 
 
 class ContactIn(BaseModel):
@@ -291,8 +300,15 @@ class Sibling(BaseModel):
 
 @router.post("/opportunities/{opp_id}/step4", tags=["step 4"], summary="Accept, return or reject a new opportunity")
 def step4(opp_id: str, body: Step4, c: S.Ctx = Actor):
+    from api import undo as U
     S.step4(c, opp_id, body)
-    return {"ok": True}
+    return {"ok": True, "undo": U.view(c.s.get(m.Opportunity, opp_id))}
+
+
+@router.post("/opportunities/{opp_id}/step4/undo", tags=["step 4"], summary="Undo an accept or reject while its undo window is open")
+def step4_undo(opp_id: str, c: S.Ctx = Actor):
+    from api import undo as U
+    return U.undo_step4(c, opp_id)
 
 
 @router.post("/opportunities/{opp_id}/contact", tags=["step 4"], summary="Confirm the contact's name and role")
@@ -367,6 +383,7 @@ class EmailOut(BaseModel):
     mode: Literal["draft", "send"]
     seenHash: str
     itemId: str | None = None
+    delay: int = Field(0, ge=0, le=30, description="send only: seconds to wait so the person can undo; 0 sends now")
 
 
 @router.get("/opportunities/{opp_id}/outreach/email", tags=["step 5"],
@@ -378,7 +395,19 @@ def email_preview(opp_id: str, to: str | None = None, itemId: str | None = None,
 @router.post("/opportunities/{opp_id}/outreach/email", tags=["step 5"],
              summary="A person puts the email in their Gmail drafts (mode draft) or sends it now (mode send); seenHash comes from the preview")
 def email_out(opp_id: str, body: EmailOut, c: S.Ctx = Actor):
-    return S.email_out(c, opp_id, body.to, body.mode, body.seenHash, body.itemId)
+    return S.email_out(c, opp_id, body.to, body.mode, body.seenHash, body.itemId, body.delay)
+
+
+@router.post("/outbound/{out_id}/undo", tags=["step 5"], summary="Undo an approved email while it waits: nothing is sent")
+def outbound_undo(out_id: str, c: S.Ctx = Actor):
+    from api import undo as U
+    return U.undo_email(c, out_id)
+
+
+@router.post("/outbound/{out_id}/send-now", tags=["step 5"], summary="Send an approved email now instead of waiting for the undo window")
+def outbound_send_now(out_id: str, c: S.Ctx = Actor):
+    from api import undo as U
+    return U.send_now(c, out_id)
 
 
 @router.post("/mail/sync", tags=["step 5"], summary="Check the email threads now: replies go to the inbox, drafts sent from Gmail are recorded")
@@ -411,6 +440,45 @@ def crm_status(request: Request, c: S.Ctx = Actor):
     rows = c.s.scalars(select(m.Opportunity).where(m.Opportunity.crm_sync.in_(("sync_pending", "sync_failed", "synced"))))
     out["opportunities"] = [{"id": o.id, "company": o.company.name, "stage": o.stage, "crmSync": o.crm_sync, "crm": CRM.view(o)} for o in rows]
     return out
+
+
+@router.get("/crm/state", tags=["crm"], summary="The CRM sync state from the workspace database alone (no call to the CRM): mode, last sync, waiting and failed counts")
+def crm_state(request: Request, c: S.Ctx = Actor):
+    from sqlalchemy import func, select
+    from api import crm_sync as CRM
+    crm = getattr(request.app.state, "crm", None)
+    counts = dict(c.s.execute(select(m.Opportunity.crm_sync, func.count()).group_by(m.Opportunity.crm_sync)).all())
+    from datetime import timezone
+    utc = lambda t: t.replace(tzinfo=timezone.utc) if t is not None and t.tzinfo is None else t  # SQLite returns naive UTC times
+    last, pulled = utc(c.s.scalar(select(func.max(m.CrmLink.synced_at)))), utc(c.s.scalar(select(func.max(m.CrmLink.pulled_at))))
+    conflicts = sum(1 for x in c.s.scalars(select(m.CrmLink.conflicts)) if x)
+    return {"provider": crm.name if crm else "off", "mode": c.settings.crm_mode, "reads": CRM.reads_on(c), "writes": CRM.writes_on(c),
+            "lastSyncedAt": last.isoformat() if last else None, "lastReadAt": pulled.isoformat() if pulled else None,
+            "pending": counts.get("sync_pending", 0), "failed": counts.get("sync_failed", 0), "conflicts": conflicts}
+
+
+@router.post("/crm/pull", tags=["crm"], summary="Read back now what changed in the CRM: edits there (kept for a person to decide), the CRM opportunity's stage, tasks done")
+def crm_pull_now(c: S.Ctx = Actor):
+    from api import crm_sync as CRM
+    if not CRM.reads_on(c):
+        raise S.ActionError(f"The CRM is off (CRM_MODE={c.settings.crm_mode}).", 409, "crm_off")
+    res = CRM.pull(c)
+    if CRM.writes_on(c):  # what the read-back found out of step goes out now
+        res["sync"] = CRM.sync(c)
+    return res
+
+
+class ResolveIn(BaseModel):
+    field: str = Field(description="The lead field the CRM and the workspace disagree on, from crm.conflicts")
+    use: Literal["workspace", "crm"] = Field(description="workspace: write the workspace value to the CRM. crm: keep the CRM's value")
+
+
+@router.post("/opportunities/{opp_id}/crm/resolve", tags=["crm"], summary="Decide one disagreement between the CRM and the workspace")
+def crm_resolve(opp_id: str, body: ResolveIn, c: S.Ctx = Actor):
+    from api import crm_sync as CRM
+    o = S.opp(c, opp_id)
+    CRM.resolve(c, o, body.field, body.use)
+    return {"ok": True, "crm": CRM.view(o)}
 
 
 @router.post("/crm/sync", tags=["crm"], summary="Sync the opportunities waiting for it (or all, to fill an empty CRM) now")

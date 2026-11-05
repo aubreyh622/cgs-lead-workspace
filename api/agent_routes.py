@@ -301,8 +301,9 @@ class ItemAction(BaseModel):
     action: Literal["apply", "send", "done", "dismiss"]
     payload_hash: str | None = Field(None, description="The payloadHash you saw. Send it, and apply refuses any other version")
     to: str | None = Field(None, description="send only: the address you approved (see GET /api/opportunities/{id}/outreach/email?itemId=...)")
+    delay: int = Field(0, ge=0, le=30, description="send only: seconds to wait so the person can undo; 0 sends now")
 
 
 @router.post("/inbox/{item_id}", summary="Apply, finish or dismiss what an agent prepared; an email draft can be approved and sent at once (action send)")
 def act(item_id: str, body: ItemAction, c: S.Ctx = Actor):
-    return AU.apply_item(c, item_id, body.action, body.payload_hash, body.to)
+    return AU.apply_item(c, item_id, body.action, body.payload_hash, body.to, body.delay)

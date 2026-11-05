@@ -133,10 +133,18 @@ function teamView(d, ctx) {
   </div>`;
 }
 
+function lastRead(crm) {
+  const times = (crm.opportunities || []).map((x) => x.crm && x.crm.pulledAt).filter(Boolean).sort();
+  if (!times.length) return "Not yet";
+  const t = new Date(times[times.length - 1]);
+  return t.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
 function crmCard(crm) {
   if (!crm) return "";
   if (crm.error) return html`<section class="card card-body"><h2 class="section-title">CRM</h2><div class="notice bad">${icon("alert")}<span>${crm.error}</span></div></section>`;
   const waiting = (crm.opportunities || []).filter((x) => x.crmSync !== "synced");
+  const disagree = (crm.opportunities || []).filter((x) => x.crm && x.crm.conflicts && x.crm.conflicts.length);
   return html`
   <section class="card card-body stack" aria-labelledby="crm-h">
     <h2 id="crm-h" class="section-title" style="margin:0">CRM</h2>
@@ -144,10 +152,16 @@ function crmCard(crm) {
       <li><span>Provider</span><span>${crm.provider}</span></li>
       <li><span>Mode</span><span>${crm.mode}</span></li>
       <li><span>Writes</span><span>${crm.writes ? "On, after a person's action" : "Off"}</span></li>
+      <li><span>Last read-back</span><span>${lastRead(crm)}</span></li>
     </ul>
     ${crm.error ? html`<div class="notice bad">${icon("alert")}<span>${crm.error}</span></div>` : ""}
     ${waiting.length ? html`<p class="meta">${plural(waiting.length, "opportunity", "opportunities")} waiting to sync or failed: ${waiting.map((x) => x.company).join(", ")}.</p>` : html`<p class="meta">Nothing waiting to sync.</p>`}
-    ${crm.writes && waiting.length ? html`<button type="button" class="btn small" data-act="crmSync">Sync now</button>` : ""}
+    ${disagree.length ? html`<p class="meta">Changed in the CRM, waiting for a person: ${disagree.map((x) => html`<a href="${linkFor(x)}">${x.company}</a>`).reduce((a, b) => html`${a}, ${b}`)}.</p>` : ""}
+    <div class="actions">
+      ${crm.writes && waiting.length ? html`<button type="button" class="btn small" data-act="crmSync">Sync now</button>` : ""}
+      ${crm.reads ? html`<button type="button" class="btn small" data-act="crmPull">Read back from the CRM now</button>` : ""}
+    </div>
+    <p class="meta-3">The read-back runs with the daily check. It notes edits made in the CRM, the CRM opportunity's stage and tasks done there; it never changes a stage here.</p>
     ${st.err("crm")}
   </section>`;
 }
@@ -482,6 +496,12 @@ export const actions = {
     const f = form.elements;
     st.write("settings", form.querySelector("[type=submit]"), ctx, () => ctx.api.patch("/agents",
       { ai_budget: Number(f.ai_budget.value), patrol_hour: Number(f.patrol_hour.value), manager_mode: f.manager_mode.value }));
+  },
+  crmPull(t, e, ctx) {
+    st.write("crm", t, ctx, () => ctx.api.post("/crm/pull"), (res) => {
+      st.ui.notice = [{ text: `Read back ${plural(res.read, "opportunity", "opportunities")} from the CRM: ${plural(res.changes, "new change")} there.`
+        + (res.failed ? ` ${res.failed} could not be read: ${res.errors.join("; ")}` : ""), cls: res.failed ? "warn" : "good" }];
+    });
   },
   crmSync(t, e, ctx) {
     st.write("crm", t, ctx, () => ctx.api.post("/crm/sync"), () => { st.ui.notice = [{ text: "CRM sync ran. The list shows what is still waiting.", cls: "good" }]; });

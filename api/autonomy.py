@@ -105,6 +105,8 @@ def patrol(c: S.Ctx) -> list[m.AgentJob]:
     from api import crm_sync as CRM
     if CRM.writes_on(c) and s.scalar(select(m.Opportunity.id).where(m.Opportunity.crm_sync.in_(("sync_pending", "sync_failed"))).limit(1)):
         add("crm_sync", None, "Opportunities waiting to be synced to the CRM (Insightly)")
+    elif CRM.reads_on(c) and s.scalar(select(m.CrmLink.opportunity_id).where(m.CrmLink.lead_id.is_not(None)).limit(1)):
+        add("crm_sync", None, "Daily read-back of the CRM (Insightly): edits made there, stages, tasks done")
     for o in s.scalars(select(m.Opportunity)):
         if o.stage == "contacted":
             r = s.get(m.Outreach, o.id)
@@ -547,14 +549,22 @@ def fallback(c, job, o, requests: list[dict], events: list[dict], why: str) -> s
 
 
 def do_crm_sync(c, job, o):
+    """Read back what changed in the CRM first (it may mark opportunities to sync), then write what is waiting."""
     from api import crm_sync as CRM
+    got = CRM.pull(c)
     res = CRM.sync(c)
-    if res.get("off"):
-        return "skipped", "Writing to the CRM is off."
-    text = f"Synced {res['synced']} opportunit{'y' if res['synced'] == 1 else 'ies'} to the CRM."
-    if res["failed"]:
-        text += f" {res['failed']} failed: " + "; ".join(res["errors"][:3])
-    return "done", text
+    if got.get("off") and res.get("off"):
+        return "skipped", "The CRM is off."
+    parts = []
+    if not got.get("off"):
+        parts.append(f"Read back {got['read']} opportunit{'y' if got['read'] == 1 else 'ies'} from the CRM: {got['changes']} new change(s) there.")
+        if got["failed"]:
+            parts.append(f"{got['failed']} could not be read: " + "; ".join(got["errors"][:3]))
+    if not res.get("off"):
+        parts.append(f"Synced {res['synced']} opportunit{'y' if res['synced'] == 1 else 'ies'} to the CRM.")
+        if res["failed"]:
+            parts.append(f"{res['failed']} failed: " + "; ".join(res["errors"][:3]))
+    return "done", " ".join(parts)
 
 
 def do_mail_sync(c, job, o):
@@ -802,7 +812,7 @@ def check_still_valid(c: S.Ctx, it: m.InboxItem, o: m.Opportunity | None, seen_h
                                 "Dismiss it and ask for a new draft.", 409, "stale")
 
 
-def approve_and_send(c: S.Ctx, it: m.InboxItem, o: m.Opportunity | None, seen_hash: str | None, to: str | None) -> dict:
+def approve_and_send(c: S.Ctx, it: m.InboxItem, o: m.Opportunity | None, seen_hash: str | None, to: str | None, delay: int = 0) -> dict:
     """A person approves an email draft and it goes out at once through the mail connector (Gmail).
     The approval covers exactly what they saw: the draft (seen_hash = its payloadHash) and the address (to)."""
     if it.kind != "draft" or o is None:
@@ -813,11 +823,13 @@ def approve_and_send(c: S.Ctx, it: m.InboxItem, o: m.Opportunity | None, seen_ha
         raise S.ActionError("Say which address to send to.", 400, "no_address")
     check_still_valid(c, it, o, seen_hash)
     p = S.email_preview(c, o.id, to, it.id)
-    sent = S.email_out(c, o.id, p["to"], "send", p["seenHash"], it.id)  # also applies the item
+    sent = S.email_out(c, o.id, p["to"], "send", p["seenHash"], it.id, delay)  # also applies the item, once it is sent
+    if sent["mode"] == "queued":
+        return {"status": "queued", "note": f"Approved by {c.actor}. It goes to {p['to']} in {sent['seconds']} seconds unless undone.", "sent": sent}
     return {"status": "applied", "note": f"Approved by {c.actor} and sent to {p['to']} through {S.mailbox(c).name}.", "sent": sent}
 
 
-def apply_item(c: S.Ctx, item_id: str, action: str, seen_hash: str | None = None, to: str | None = None) -> dict:
+def apply_item(c: S.Ctx, item_id: str, action: str, seen_hash: str | None = None, to: str | None = None, delay: int = 0) -> dict:
     """action: apply (use what the agent prepared), send (an email draft: approve it and send it now to `to`),
     done (seen, nothing to change) or dismiss (not useful).
     seen_hash: the payloadHash the person saw; when given, apply refuses anything else (send requires it)."""
@@ -828,7 +840,7 @@ def apply_item(c: S.Ctx, item_id: str, action: str, seen_hash: str | None = None
         raise S.ActionError(f"This item is already {it.status}.", 409, "wrong_status")
     o = c.s.get(m.Opportunity, it.opportunity_id) if it.opportunity_id else None
     if action == "send":
-        return approve_and_send(c, it, o, seen_hash, to)
+        return approve_and_send(c, it, o, seen_hash, to, delay)
     note = ""
     if action == "apply":
         check_still_valid(c, it, o, seen_hash)
