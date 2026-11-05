@@ -354,6 +354,9 @@ def run_research(c: Ctx, o: m.Opportunity) -> None:
     background (Gemini + Tavily); sync_research() collects the brief when it is done."""
     task = latest_task(c, o)
     if not c.demo:
+        # forget an earlier run first (a retry): while this one starts, sync_research must not check the old run,
+        # which may be gone after a restart, and mark this task failed (seen live, 5 Nov 2026)
+        task.external_run_id = None
         # save first: the web search and the research start below can take seconds, and SQLite lets only one
         # connection write at a time, so holding unsaved changes here would block the agents and other people
         c.s.commit()

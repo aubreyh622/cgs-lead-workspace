@@ -197,6 +197,19 @@ class OpenAIProvider(Provider):
         return Turn(text, calls, Usage(u.get("input_tokens"), u.get("output_tokens")), out)
 
 
+def _strict(schema):
+    """The schema for Claude's strict tool use: every object closed to other fields (additionalProperties false)."""
+    if isinstance(schema, dict):
+        out = {k: _strict(v) for k, v in schema.items()}
+        if out.get("type") == "object":
+            out.setdefault("additionalProperties", False)
+            out.setdefault("properties", {})
+        return out
+    if isinstance(schema, list):
+        return [_strict(x) for x in schema]
+    return schema
+
+
 class ClaudeProvider(Provider):
     """Anthropic Messages API over plain HTTP, so tests can use the same fake transport as the other companies."""
     name = "claude"
@@ -234,7 +247,9 @@ class ClaudeProvider(Provider):
                                                         + ([{"type": "text", "text": msg["note"]}] if msg.get("note") else [])})
         content, usage = self._checked(self.transport(self.url, self._headers(), {
             "model": self.model, "max_tokens": 4096, "system": system, "messages": msgs,
-            "tools": [{"name": t["name"], "description": t["description"], "input_schema": t["parameters"]} for t in tools]}))
+            # strict: Claude returns arguments that match the schema exactly (each one a field of its own)
+            "tools": [{"name": t["name"], "description": t["description"], "input_schema": _strict(t["parameters"]), "strict": True}
+                      for t in tools]}))
         calls = [ToolCall(b.get("id", ""), b.get("name", ""), b.get("input") or {}) for b in content if b.get("type") == "tool_use"]
         text = "".join(b.get("text", "") for b in content if b.get("type") == "text")
         return Turn(text, calls, usage, content)

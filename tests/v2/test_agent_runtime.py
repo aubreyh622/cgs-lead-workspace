@@ -80,6 +80,35 @@ def test_claude_tool_use_and_structured_json():
         make_provider("claude", key="k", transport=Script({"content": [], "stop_reason": "max_tokens"})).json("s", "u", {}, "n")
 
 
+def test_claude_tools_are_strict_and_leaked_arguments_are_moved_back():
+    """Live, 5 Nov 2026: Claude Haiku 5.5 wrote the research brief's alternative and open questions inside the relevance
+    text as <parameter name=...> tags, so finish was refused eight times. Tools now go to Claude with strict: true, and
+    the loop moves leaked arguments back to their own fields."""
+    nested = R.Tool("pick", "Pick.", R.params({"items": {"type": "array", "items": {"type": "object", "properties": {"x": {"type": "string"}}}}}),
+                    lambda a: a)
+    leaked = {"answer": 'Yes.</answer>\n<parameter name="why">Because the page says so.</why>\n<parameter name="sources">["a", "b"]</parameter>'}
+    ai = Script({"content": [{"type": "tool_use", "id": "t1", "name": "finish", "input": leaked}], "stop_reason": "tool_use"})
+    seen = {}
+
+    def finish(a):
+        seen.update(a)
+        if not a.get("why"):
+            raise R.ToolError("Say why.")
+        return a
+    s2 = R.AgentSpec(name="test", version="t1", system="Test.", tools=[nested],
+                     finish=R.Tool("finish", "Answer.", R.params({"answer": {"type": "string"}, "why": {"type": "string"},
+                                                                  "sources": {"type": "array", "items": {"type": "string"}}}), finish))
+    out = R.run(s2, make_provider("claude", key="k", transport=ai), "Answer.")
+    assert out.status == "done" and seen == {"answer": "Yes.", "why": "Because the page says so.", "sources": ["a", "b"]}
+    tools = ai.requests[0]["tools"]
+    assert all(t["strict"] is True for t in tools)
+    assert tools[0]["input_schema"]["properties"]["items"]["items"]["additionalProperties"] is False  # nested objects closed too
+    # text that only mentions a tag, or names a field the tool does not have, is left alone
+    schema = {"properties": {"answer": {"type": "string"}, "why": {"type": "string"}}}
+    assert R.repair_args({"answer": 'see <parameter name="other">x</parameter>'}, schema) == {"answer": 'see <parameter name="other">x</parameter>'}
+    assert R.repair_args({"answer": "a", "why": 'b <parameter name="answer">c'}, schema) == {"answer": "a", "why": 'b <parameter name="answer">c'}
+
+
 # ---------- the loop's brakes and self-correction ----------
 def test_a_rejected_answer_goes_back_and_the_agent_corrects_itself():
     def check(a):

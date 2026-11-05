@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+import re
 from typing import Any, Callable
 
 from api.llm import Provider, Usage
@@ -65,6 +66,40 @@ def _short(value, n=300) -> str:
     return text if len(text) <= n else text[:n] + "..."
 
 
+_PARAM = re.compile(r'<parameter name="([A-Za-z_][A-Za-z0-9_]*)">')
+_CLOSE = re.compile(r"(?:\s*</[A-Za-z_][A-Za-z0-9_]*>)+\s*$")
+
+
+def repair_args(args: dict, schema: dict) -> dict:
+    """Some models (seen live with Claude Haiku 5.5, 5 Nov 2026) write the later arguments of a call inside an earlier
+    string, as <parameter name="x">...</parameter> text. Move that text back to the arguments the schema names when they
+    are missing. Anything else is left as it is, so the tool's own checks still decide."""
+    props = (schema or {}).get("properties") or {}
+    out = dict(args)
+    for key, value in args.items():
+        if not isinstance(value, str) or not _PARAM.search(value):
+            continue
+        parts = _PARAM.split(value)  # [text before, name1, text1, name2, text2, ...]
+        found = {}
+        for name, text in zip(parts[1::2], parts[2::2]):
+            if name in props and name != key and not out.get(name):
+                found[name] = _CLOSE.sub("", text).strip()
+        if not found:
+            continue
+        out[key] = _CLOSE.sub("", parts[0]).strip()
+        for name, text in found.items():
+            kind = props[name].get("type")
+            if kind == "array":
+                try:
+                    text = json.loads(text)
+                except ValueError:
+                    text = [text]
+            elif kind == "boolean":
+                text = text.lower() == "true"
+            out[name] = text
+    return out
+
+
 def run(spec: AgentSpec, provider: Provider, task: str, may_call: Callable[[], bool] = lambda: True) -> Outcome:
     """Run one agent on one task. may_call() is asked before every AI request (the daily budget)."""
     tools = {t.name: t for t in spec.tools + [spec.finish]}
@@ -102,6 +137,7 @@ def run(spec: AgentSpec, provider: Provider, task: str, may_call: Callable[[], b
                 try:
                     # a null optional argument counts as left out; otherwise str(None) would reach the tools as "None"
                     args = {k: v for k, v in call.args.items() if v is not None} if isinstance(call.args, dict) else {}
+                    args = repair_args(args, tool.parameters)
                     content = tool.run(args)
                 except ToolError as e:
                     content = {"error": str(e)}

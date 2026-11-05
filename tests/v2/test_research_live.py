@@ -3,7 +3,9 @@ import json
 import sqlite3
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
+from api import models as m
 from api.discovery_agent import check_nominations
 from api.llm import make_provider
 from api.main import create_app
@@ -115,6 +117,26 @@ def test_live_research_without_a_brief_is_a_visible_failure(tmp_path):
     assert o["stage"] == "researching" and o["brief"]["facts"][0]["src"] == "Public source"  # the placeholder brief was not replaced
     assert api.post(f"/api/opportunities/{oid}/research/retry", headers=ME).status_code == 200
     assert len(bridge.started) == 2
+
+
+def test_a_retry_never_looks_at_the_old_run(tmp_path):
+    """Live, 5 Nov 2026: a retry kept the old run's id while the new run started, so the page's sync checked the old run
+    (gone after a restart) and marked the task failed. Now the old id is cleared before the new run starts."""
+    bridge = FakeBridge(card=None, final="incomplete")
+    api = live(tmp_path, bridge)
+    oid = api.post("/api/candidates/c2/pick", headers=ME).json()["opportunities"][0]
+    api.post("/api/research/sync", headers=ME)
+    assert api.post("/api/research/sync", headers=ME).json()["updates"][0]["status"] == "failed"
+    seen = []
+    app = api.app
+
+    def start(company, domain, consultant):  # what a sync running at the same moment would find
+        with app.state.db.session() as s:
+            seen.append([t.external_run_id for t in s.scalars(select(m.ResearchTask).where(m.ResearchTask.opportunity_id == oid))])
+        return "run-2"
+    bridge.start = start
+    assert api.post(f"/api/opportunities/{oid}/research/retry", headers=ME).status_code == 200
+    assert seen and all(x is None for x in seen[0])
 
 
 def test_research_needs_a_domain(tmp_path):
