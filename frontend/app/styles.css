@@ -349,7 +349,14 @@ details > summary:hover { color: var(--link); }
 .agent-icon.big { width: 56px; height: 56px; border-radius: 14px; }
 .agent-name { flex: 1; font-size: 18px; font-weight: 500; }
 .agent-now { padding: 12px 14px; background: var(--canvas); border-radius: 10px; font-size: 15px; line-height: 22px; }
-.agent-card .tag .dot { width: 7px; height: 7px; }
+.with-dot { display: inline-flex; align-items: center; gap: 8px; }
+.with-dot::before { content: ""; flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-4); }
+.with-dot.run::before { background: var(--info-dot); animation: pulse 1600ms ease-in-out infinite; }
+.with-dot.wait::before { background: var(--accent); }
+.with-dot.fail::before { background: var(--danger-ink); }
+.with-dot.done::before { background: var(--success-ink); }
+.tag.with-dot { gap: 6px; }
+.tag.with-dot::before { flex-basis: 7px; width: 7px; height: 7px; }
 .sug-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(520px, 1fr)); gap: 16px; }
 .prose .section-title { margin-top: 18px; }
 .prose .section-title:first-child { margin-top: 0; }

@@ -202,9 +202,9 @@ function researchRow(o, ctx) {
     <span class="what">
       <b>${o.company.name}</b>
       <span class="meta">${o.title}. ${o.source.note}</span>
-      <span class="row-flex meta" style="margin-top:6px"><span class="dot ${status[0]}" aria-hidden="true"></span>${status[1]}</span>
+      <span class="meta with-dot ${status[0]}" style="margin-top:6px">${status[1]}</span>
       ${r.log && r.log.length ? html`<ul class="steps">${r.log.slice(-6).map((l) => html`<li>${icon("check", 14)}<span>${l.m || l.message || JSON.stringify(l)}</span></li>`)}
-        ${r.status === "running" ? html`<li class="now"><span class="dot run" aria-hidden="true"></span><span>Working on the next step</span></li>` : ""}</ul>` : ""}
+        ${r.status === "running" ? html`<li class="now"><span class="with-dot run">Working on the next step</span></li>` : ""}</ul>` : ""}
       ${r.error ? html`<div class="notice bad" style="margin-top:8px">${icon("alert")}<span>${r.error}</span></div>` : ""}
       ${err ? html`<div style="margin-top:8px">${inlineError(err)}</div>` : ""}
     </span>

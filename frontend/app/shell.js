@@ -133,12 +133,11 @@ export function dock(state, open, data, me) {
       : data.error ? html`<p class="meta" style="padding:12px 18px">The agents could not be loaded.</p>`
       : html`<ul>${AGENTS.map((a) => {
         const s = agentState(a, data, me);
-        return html`<li><a href="${href("agents", { agent: a.slug })}"><span class="row-flex" style="gap:10px;flex-wrap:nowrap"><span class="dot ${s.dot}" aria-hidden="true"></span><b>${a.name}</b><span class="meta-3" style="margin-left:auto">${s.label}</span></span>
+        return html`<li><a href="${href("agents", { agent: a.slug })}"><span class="row-flex" style="gap:10px;flex-wrap:nowrap"><b class="with-dot ${s.dot}">${a.name}</b><span class="meta-3" style="margin-left:auto">${s.label}</span></span>
           <span class="meta dock-now">${s.now}</span></a></li>`;
       })}</ul>`}
   </section>` : ""}
   <button type="button" class="dock-pill" data-shell="dock" aria-expanded="${open ? "true" : "false"}">
-    <span class="dot ${state.running ? "run" : state.paused ? "" : "done"}" aria-hidden="true"></span>
-    <span><b>${summary}</b>${state.waiting ? `, ${state.waiting} waiting for you` : ""}</span>
+    <span class="with-dot ${state.running ? "run" : state.paused ? "" : "done"}"><b>${summary}</b>${state.waiting ? `, ${state.waiting} waiting for you` : ""}</span>
   </button>`;
 }

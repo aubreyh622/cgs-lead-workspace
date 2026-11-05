@@ -160,7 +160,7 @@ export function overview(d, ctx, st) {
         <span class="row-flex" style="flex-wrap:nowrap">
           <span class="agent-icon" aria-hidden="true">${icon(a.icon, 20)}</span>
           <b class="agent-name">${a.name}</b>
-          <span class="tag ${s.cls}"><span class="dot ${s.dot}" aria-hidden="true"></span>${s.label}</span>
+          <span class="tag ${s.cls} with-dot ${s.dot}">${s.label}</span>
         </span>
         <span class="meta">${a.job}</span>
         <span class="agent-now">${s.now}</span>
@@ -253,7 +253,7 @@ export function detail(d, ctx, st) {
       <span class="agent-icon big" aria-hidden="true">${icon(a.icon, 28)}</span>
       <div>
         <h1>${a.name}</h1>
-        <p class="row-flex" style="gap:8px;margin-top:4px"><span class="dot ${s.dot}" aria-hidden="true"></span><b style="font-weight:500">${s.label}</b><span class="meta">${s.now}</span></p>
+        <p class="row-flex" style="gap:8px;margin-top:4px"><b class="with-dot ${s.dot}" style="font-weight:500">${s.label}</b><span class="meta">${s.now}</span></p>
         <p class="meta-3">${last ? `Last AI run ${day(last.on, ctx.today)}: ${last.model}, prompt ${last.prompt}.` : "No AI run recorded yet."}</p>
       </div>
     </div>
