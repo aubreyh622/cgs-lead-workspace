@@ -114,6 +114,7 @@ class ResearchBrief(Base):
     recommendation: Mapped[dict] = mapped_column(JSON, default=dict)   # {decision: accept|return|reject, reason}
     suggested: Mapped[dict] = mapped_column(JSON, default=dict)        # {owner, next, due}
     usage: Mapped[dict] = mapped_column(JSON, default=dict)            # {searches, pages, calls}
+    contacts: Mapped[Optional[list]] = mapped_column(JSON)             # up to 3 people the sources name: [{name, title, url, why}]
     frozen_on: Mapped[Optional[date]] = mapped_column(Date)            # set when accepted at Step 4
     opportunity: Mapped[Opportunity] = relationship(back_populates="brief")
 
@@ -236,6 +237,8 @@ class Note(Base):
     on: Mapped[date] = mapped_column(Date)
     text: Mapped[str] = mapped_column(Text)                            # original text is always kept, even if analysis fails
     added_by: Mapped[str] = mapped_column(String(100), default="")
+    # Set when the evidence agent has read the note: {"on", "proposals", "dropped", "summary"}. Null = not read yet.
+    analysis: Mapped[Optional[dict]] = mapped_column(JSON)
 
 
 class Proposal(Base):

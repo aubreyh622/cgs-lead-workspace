@@ -57,6 +57,26 @@ class ResearchBridge:
             raise LLMError(str(e), "config") from None
 
 
+AGENT_DECISIONS = {"accept": "accept", "send_back": "return", "not_now": "reject"}
+
+
+def recommendation(verdict: dict | None, ready: bool, flags: list, card: dict) -> dict:
+    """The research agent's own recommendation (basis "agent") when it gave one; the code checks can only overrule an
+    accept, never turn a send-back into an accept. Without one, the checks decide (basis "checks"), which is not a
+    judgement of whether the company is worth pursuing."""
+    checks = ({"decision": "accept", "reason": "The company is named in its dated, quoted sources and a contact was found. "
+                                               "Whether it is worth pursuing (fit, timing, value) is your call."} if ready and not flags
+              else {"decision": "return", "reason": "Resolve the flags below before accepting."} if ready
+              else {"decision": "return", "reason": "The research agent could not complete a reviewable brief: "
+                    + "; ".join(card.get("research_gaps", [])[:2])})
+    if not verdict or verdict.get("decision") not in AGENT_DECISIONS:
+        return {**checks, "basis": "checks"}
+    decision = AGENT_DECISIONS[verdict["decision"]]
+    if decision == "accept" and checks["decision"] != "accept":
+        return {"decision": "return", "basis": "agent", "reason": verdict.get("reason", ""), "overruled": "accept", "checks": checks["reason"]}
+    return {"decision": decision, "basis": "agent", "reason": verdict.get("reason", "")}
+
+
 def card_to_brief(card: dict, owner: str, due: str, usage: dict) -> tuple[dict, dict | None]:
     """Turn Aubrey's company card into the v2 brief. Returns (brief, verified person or None)."""
     r = card["research"]
@@ -77,6 +97,7 @@ def card_to_brief(card: dict, owner: str, due: str, usage: dict) -> tuple[dict, 
         flags.append({"type": "Conflicting evidence", "text": c})
     people = r.get("people") or []
     person = {"name": people[0]["name"], "title": people[0]["role"]} if people else None
+    contacts = [{"name": p["name"], "title": p["role"], "url": p.get("url", ""), "why": p.get("why", "")} for p in people[:3]]
     if not person:
         flags.append({"type": "No contact found", "text": r.get("suggested_next_investigation", "No verified contact in public sources.")})
     for issue in (card.get("validation_issues") or [])[:2]:
@@ -87,17 +108,15 @@ def card_to_brief(card: dict, owner: str, due: str, usage: dict) -> tuple[dict, 
     brief = {
         "facts": facts, "hypothesis": r["problem_hypothesis"], "relevance": r["cgs_relevance"], "alternative": r["alternative_explanation"],
         "unknowns": r.get("unanswered_questions", [])[:4], "flags": flags,
-        "priority": {"tier": 1, "tierWhy": "Revenue to CGS is not estimated from public research.",
-                     "authority": (comps.get("buyer_access") or {}).get("assessment") or "unknown",
+        # No revenue tier: public research does not show what the work is worth (it is estimated at Qualification).
+        # The relationship comes from the CRM and workspace checks at Step 4, not from the brief.
+        "priority": {"tier": None, "tierWhy": "Revenue to CGS is not estimated from public research.",
+                     "authority": (comps.get("buyer_access") or {}).get("assessment") or None,
                      "authorityWhy": (comps.get("buyer_access") or {}).get("reason", ""),
-                     "relationship": "Unknown", "relationshipWhy": "Check CGS records (not connected yet).",
+                     "relationship": None, "relationshipWhy": "",
                      "fit": band, "fitWhy": (comps.get("capability_fit") or {}).get("reason", ""), "confidence": r.get("confidence", "low").capitalize()},
-        # Set by code from the checks above, not a judgement of whether the company is worth pursuing (basis "checks").
-        "recommendation": ({"decision": "accept", "basis": "checks", "reason": "The company is named in its dated, quoted sources and a "
-                            "contact was found. Whether it is worth pursuing (fit, timing, value) is your call."} if ready and not flags
-                           else {"decision": "return", "basis": "checks", "reason": "Resolve the flags below before accepting."} if ready
-                           else {"decision": "return", "basis": "checks", "reason": "The research agent could not complete a reviewable brief: "
-                                 + "; ".join(card.get("research_gaps", [])[:2])}),
+        "recommendation": recommendation(r.get("verdict"), ready, flags, card),
+        "contacts": contacts,
         "suggested": {"owner": owner, "next": "Send tailored outreach", "due": due},
         "usage": {"searches": usage.get("searches", 0), "pages": usage.get("extractions", 0), "calls": usage.get("model_calls", 0)},
     }

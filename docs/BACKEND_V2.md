@@ -179,8 +179,11 @@ Agents work like employees: they notice work, do it, and hand the result to a pe
 | 4 | Accept, return or reject; undo | `POST /api/opportunities/{id}/step4`, `POST …/step4/undo` | Accept needs the duplicate check; reject “Other” needs a comment; review time is optional and never counted as zero. `undo_seconds` (up to 30, accept or reject) opens an undo window: the CRM write and the outreach agent's draft wait until it ends. Undo puts the opportunity back in Step 4, adds an “Undone” decision and withdraws the feedback; refused after the window or once something else changed |
 | 4 | Confirm a contact; save another opportunity at the same company | `POST …/contact`, `POST …/siblings` | Confirming needs where it was verified |
 | 5 | Save the draft; record sent, follow-up, nurture | `PUT …/outreach/draft`, `POST …/outreach/sent`, `/followup`, `POST …/nurture` | Moving to nurture withdraws the lead's unsent email drafts from the inbox (a reconnect email is drafted at the review date) |
-| 6 | Record a reply | `POST …/outreach/reply` | Any reply makes the opportunity Active at once; the label comes after |
-| 6 | Add notes and get suggestions | `POST …/notes` | The note is saved even if analysis fails; a client quote that is not in the notes is thrown away |
+| 5 | Edit an agent's email draft before approving it | `PUT /api/inbox/{id}/draft` | Only a new draft, only the version the person saw (`payload_hash`); returns the item with a new `payloadHash`, which is what they then approve. The agent's text is kept in `data.original`; the scorecard counts drafts used after an edit (`usedAfterEdit`) |
+| 5 | Nurture: change the review date, reconnect now, close | `POST …/nurture/review`, `POST …/nurture/reconnect`, `POST …/close` | The date needs a reason and cannot be in the past. Reconnect now queues the research agent's refresh at once (`research_refresh`, trigger `person`): news leads to a reconnect draft for the owner. Close needs a reason from the Step 8 list ("Other" needs a comment), records a Step 8 "Closed" decision and withdraws unsent drafts |
+| 6 | Record a reply | `POST …/outreach/reply` | Any reply makes the opportunity Active at once; the label comes after. The evidence agent then reads the reply for evidence in the background (`note_evidence` job); its proposals wait for the owner's review |
+| 6 | Add notes and get suggestions | `POST …/notes` | The note is saved even if analysis fails; a client quote that is not in the notes is thrown away. The evidence agent's closing summary (what it proposed, what is still unknown) is kept with the note (`notes.analysis`) |
+| 6 | Read a note saved earlier for evidence | `POST …/notes/{note_id}/analyze` | Active or Awaiting approval only; the same checks as for new notes |
 | 6 | Accept, edit or reject a suggestion | `POST /api/proposals/{id}` | Edit and reject need a reason; replacing a confirmed value needs a reason |
 | 6–7 | Review a score, condition, revenue or blocker by hand; edit the need statement | `POST …/review`, `PATCH …/need` | Every change needs a reason and marks a submitted pack out of date |
 | 7 | Get up to 3 next actions; turn one into a task; tick a task | `POST …/suggestions`, `POST /api/suggestions/{id}/task`, `POST /api/tasks/{id}/toggle` | A suggestion becomes a task only with an owner and date; finishing a task never changes a score |
@@ -283,7 +286,10 @@ judgment.
 ## Discovery agent (multi-agent step 4)
 
 `discover_with_agent()` in `api/discovery_agent.py`, prompt version `discovery-agent-1.0`. Step 1 in live mode and the
-weekly `discovery_round` job both use it (now `discovery-agent-1.2`, see Discovery memory below). The agent picks its own searches instead of running a fixed list.
+weekly `discovery_round` job both use it (now `discovery-agent-1.3`, see Discovery memory below). The agent picks its own searches instead of running a fixed list.
+Since 1.3 it is asked for the company's own website when the source shows it; code keeps the domain only when the
+source text names it, or the source is on that site and the site carries a word of the company's name, and never a
+news, social, university or government site (`company_site`). Research then starts from that website.
 
 **Automatic searches and how many (B2, 5 Nov 2026).** `POST /api/candidates/recommend` takes `count` (1-10, default 10):
 the agent is told the round's limit and code refuses nominations past it. The fixed weekly round became the main
@@ -378,7 +384,7 @@ the `gap_actions` job (a stalled opportunity, or a pack the approver returned). 
 
 ## Research agent (multi-agent step 6)
 
-`api/research_agent.py`, prompt version `research-agent-1.2`. One agent for everything looked up on the public web about a
+`api/research_agent.py`, prompt version `research-agent-1.3`. One agent for everything looked up on the public web about a
 company, with three tasks that share the same web tools, limits and checks:
 
 | Task | When | Result |
@@ -386,6 +392,16 @@ company, with three tasks that share the same web tools, limits and checks:
 | brief | Picking a candidate or adding an opportunity (Steps 2-3) | The Step 4 brief |
 | contact | Another agent asks for a person named only by role (`person_lookup`) | A suggested contact in the owner's inbox |
 | refresh | A nurture review date, or the manager asks (`research_refresh`) | News since the brief, and a reconnect draft for a deferred client |
+
+In the brief task the agent records up to 3 people the pages name (`add_contact`: name, title, the page, the sentence
+that names them, why they matter), best first; the first becomes the contact if none is on record, and all are shown at
+Step 4 (`research_briefs.contacts`) with a LinkedIn search link the person opens themselves (agents never read LinkedIn).
+At `finish` it gives its own recommendation (accept, send back or not now) with a reason; the brief shows it with
+`basis: "agent"`. The code checks can only overrule an accept: when the identity is not confirmed, a flag stands (for
+example "Same company?") or the brief is incomplete, the recommendation becomes "send back" with `overruled: "accept"` and
+the checks' reason. A brief without the agent's recommendation keeps the checks' result (`basis: "checks"`). The brief
+sets no revenue tier (public research does not show what the work is worth; it is estimated at Qualification) and no
+relationship (Step 4 shows what the Insightly check and the check for other CGS work found).
 
 The contact and refresh tasks run as the agents' own work: they check the daily AI budget before every AI request and stop when it
 is used up (news recorded before the stop is kept). A brief that a person starts is not stopped by the agents' budget, like the

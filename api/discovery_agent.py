@@ -154,6 +154,24 @@ NOT_COMPANY_SITES = ("linkedin", "wikipedia", "bloomberg", "reuters", "crunchbas
 NOT_COMPANY_ENDINGS = (".edu", ".gov", ".mil", ".ac.uk", ".edu.au", ".gc.ca")
 
 
+def company_site(raw: str, company: str, source_url: str, source_text: str) -> str:
+    """The website domain a nomination gives, kept only when the source shows it and it can be the company's own: the
+    source text names it, or the source is on that site and the site carries a word of the company's name. Never a news,
+    social, university or government site."""
+    from urllib.parse import urlparse
+    dom = re.sub(r"^https?://", "", (raw or "").strip().lower()).split("/")[0].removeprefix("www.")
+    if not dom or "." not in dom:
+        return ""
+    if any(x in dom for x in NOT_COMPANY_SITES) or dom.endswith(NOT_COMPANY_ENDINGS):
+        return ""
+    host = (urlparse(source_url).hostname or "").lower()
+    on_site = host == dom or host.endswith("." + dom)
+    words = [w for w in re.findall(r"[a-z0-9]+", company.lower()) if len(w) > 3 and w not in GENERIC_NAME_WORDS]
+    if dom in (source_text or "").lower():
+        return dom
+    return dom if on_site and any(w in dom.replace("-", "") for w in words) else ""
+
+
 def resolve_domain(search, company: str) -> str:
     """Find the official website for a company name with one search. A result is taken when its host carries every
     distinctive word of the name, or all but one when the result's own title or text names the company in full (a
@@ -182,7 +200,7 @@ def resolve_domain(search, company: str) -> str:
 # its own searches, changes a query when results are thin, reads a page when the preview is not enough, checks whether a
 # company is already known or excluded, and nominates one company at a time. Code checks each nomination at once; a
 # rejection goes back to the agent with the reason. Nominations are hints for a person to pick from, not evidence in a brief.
-AGENT_VERSION = "discovery-agent-1.2"  # 1.1: check_company and nominate consult the CRM; 1.2: what_worked_before
+AGENT_VERSION = "discovery-agent-1.3"  # 1.1: check_company and nominate consult the CRM; 1.2: what_worked_before; 1.3: the website
 MAX_AGENT_SEARCHES = 6   # each real search costs one Tavily credit
 MAX_READS = 6
 PREVIEW = 300
@@ -202,6 +220,8 @@ How to work:
   merger, nominate the company to approach, not "A and B"), the source url, one
   sentence on what happened, a 2-4 word signal label, and the sentence from the source that shows the signal, copied
   word for word. Add a person only if the source names them in one of the buyer roles. Never guess a name.
+  Give the company's own website domain when the source shows it (a press release often ends with an About section and
+  the site): research then starts from the right website. Never give the news site's domain.
 - Nominate when the match is plausible: a person reviews every nomination before any research. Skip consulting firms,
   resellers and anything the exclusions rule out.
 - If the direction lists problems, work problem by problem: search for each problem's signals, and give the problem_id
@@ -324,9 +344,7 @@ def discovery_agent(search, direction: dict, intent: str, known: set[str], today
         if len(quote) < 15 or not quote_in_text(quote, source):
             drop("quote_not_in_source", "The quote must be a sentence from that source, copied word for word "
                                         "(read the page if the preview is cut off).")
-        dom = str(args.get("domain", "")).strip().lower().removeprefix("www.")
-        if dom and dom not in text and dom not in url.lower():
-            dom = ""
+        dom = company_site(str(args.get("domain", "")), name, url, text)
         if is_excluded(dom):
             drop("excluded", "The research direction excludes that company's website.")
         if _norm(name) in known:

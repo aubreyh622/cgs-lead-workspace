@@ -40,6 +40,9 @@ def detail(s: Session, o: m.Opportunity) -> dict:
     rows = lambda model, *order: s.scalars(select(model).where(model.opportunity_id == o.id).order_by(*order)).all()
     b = o.brief
     out = summary(o)
+    # notes the evidence agent is about to read (a queued or running job)
+    reading = {(j.payload or {}).get("note_id") for j in s.scalars(select(m.AgentJob).where(
+        m.AgentJob.opportunity_id == o.id, m.AgentJob.kind == "note_evidence", m.AgentJob.status.in_(("queued", "running"))))}
     out.update({
         "source": {"type": o.source_type, "note": o.source_note}, "directionVersion": o.direction_version,
         "replyLabel": o.reply_label, "snoozedUntil": iso(o.snoozed_until), "revision": o.revision,
@@ -49,9 +52,10 @@ def detail(s: Session, o: m.Opportunity) -> dict:
         "company": {"id": o.company.id, "name": o.company.name, "domain": o.company.domain, "domainBy": o.company.domain_by, "industry": o.company.industry, "hq": o.company.hq},
         "brief": None if not b else {"facts": b.facts, "hypothesis": b.hypothesis, "relevance": b.relevance, "alternative": b.alternative,
                                      "unknowns": b.unknowns, "flags": b.flags, "priority": b.priority, "recommendation": b.recommendation,
-                                     "suggested": b.suggested, "usage": b.usage, "frozenOn": iso(b.frozen_on)},
-        "notes": [{"id": n.id, "type": n.type, "on": iso(n.on), "text": n.text} for n in rows(m.Note, m.Note.on)],
-        "proposals": [{"id": p.id, "kind": p.kind, "key": p.key, "value": p.value, "quote": p.quote, "why": p.why,
+                                     "suggested": b.suggested, "usage": b.usage, "contacts": b.contacts or [], "frozenOn": iso(b.frozen_on)},
+        "notes": [{"id": n.id, "type": n.type, "on": iso(n.on), "text": n.text, "analysis": n.analysis,
+                   "reading": n.id in reading} for n in rows(m.Note, m.Note.on)],
+        "proposals": [{"id": p.id, "noteId": p.note_id, "kind": p.kind, "key": p.key, "value": p.value, "quote": p.quote, "why": p.why,
                        "evidenceType": p.evidence_type, "status": p.status, "reason": p.reason} for p in rows(m.Proposal, m.Proposal.id)],
         "evidence": [{"kind": e.kind, "key": e.key, "value": e.value, "quote": e.quote, "evidenceType": e.evidence_type,
                       "how": e.how, "reason": e.reason, "by": e.by, "on": iso(e.on)} for e in rows(m.Evidence, m.Evidence.id)],

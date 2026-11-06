@@ -309,6 +309,17 @@ class ItemAction(BaseModel):
     delay: int = Field(0, ge=0, le=30, description="send only: seconds to wait so the person can undo; 0 sends now")
 
 
+class DraftEdit(BaseModel):
+    subject: str
+    body: str
+    payload_hash: str | None = Field(None, description="The payloadHash you saw; an edit of any other version is refused")
+
+
+@router.put("/inbox/{item_id}/draft", summary="Change an agent's email draft before approving it; returns the item with its new payloadHash")
+def edit_draft(item_id: str, body: DraftEdit, c: S.Ctx = Actor):
+    return AU.edit_draft(c, item_id, body.subject, body.body, body.payload_hash)
+
+
 @router.post("/inbox/{item_id}", summary="Apply, finish or dismiss what an agent prepared; an email draft can be approved and sent at once (action send)")
 def act(item_id: str, body: ItemAction, c: S.Ctx = Actor):
     return AU.apply_item(c, item_id, body.action, body.payload_hash, body.to, body.delay)

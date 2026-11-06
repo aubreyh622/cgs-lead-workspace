@@ -53,8 +53,23 @@ Accepting or rejecting at Step 4 can be undone from its toast for 10 seconds, be
 agents (returning to research starts at once, so it has no undo). Skipping a candidate offers Undo in its toast, and the
 Skipped candidates list keeps an Undo button.
 
-Qualification keeps one lead's first screen short: the six conditions with what the rules say and what is still
-missing, evidence waiting for review, and the next step with Add notes (Send for approval when the rules say Ready; for
+Companies, Ready to decide: facts that cite the same page name it once, and news over a year old is marked; long
+paragraphs read as points. Priority shows only cells with something in them: no revenue tier from public research
+("Not estimated"), contact authority from the brief or the job title, and the relationship from the Insightly check and
+the check for other CGS work. Who to contact lists up to 3 people with their source and a LinkedIn search link. The
+accept form's duplicate confirmation follows the checks: when they ran and found nothing, the person confirms only what
+the checks cannot see. Send back offers the brief's open questions and flags as cards to tick. Sources has a back link
+to Companies.
+
+Outreach: an agent's draft has Edit; the edited text is what the person approves. Nurture shows why and when the lead
+was moved, the review date and what happens then, with Reconnect now, Change the review date, Record a reply and Close
+the lead.
+
+Qualification keeps one lead's first screen short: a "Next:" line that says what to do now (and the evidence agent's
+last summary), the six conditions with what the rules say, and "To reach Ready": every gap, one per question, including
+the score threshold (Q 70), the top three first, each with what to ask and a button to confirm it by hand; the questions
+can be copied for the next call. Then evidence waiting for review, and the next step with Add notes (notes can be loaded
+from a text file or a .vtt/.srt transcript) (Send for approval when the rules say Ready; for
 an approver, the quick decision). Scores and their reviews, the client need, tasks, the manager agent's memory, the
 pack and the history are folded sections; a section stays open or closed while the person moves between leads.
 

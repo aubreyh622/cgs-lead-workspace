@@ -583,7 +583,11 @@ def sync_research(c: Ctx) -> list[dict]:
             flag = same_news_flag(c, o, brief["facts"])
             if flag:  # a flag means the checks did not all pass
                 brief["flags"] = [flag] + brief["flags"]
-                brief["recommendation"] = {"decision": "return", "basis": "checks", "reason": "Resolve the flags below before accepting."}
+                rec = brief["recommendation"] or {}
+                if rec.get("basis") != "agent":
+                    brief["recommendation"] = {"decision": "return", "basis": "checks", "reason": "Resolve the flags below before accepting."}
+                elif rec.get("decision") == "accept":  # the checks overrule the agent's accept, never its other advice
+                    brief["recommendation"] = {**rec, "decision": "return", "overruled": "accept", "checks": "Resolve the flags below before accepting."}
             for k, v in brief.items():
                 setattr(o.brief, k, v)
             if person and not o.contact.name:
@@ -1179,17 +1183,64 @@ def to_nurture(c: Ctx, opp_id: str, review_on: date | None, reason: str) -> None
     CRM.mark(c, o)
 
 
+def nurture_review(c: Ctx, opp_id: str, review_on: date, reason: str) -> None:
+    """A person moves the nurture review date (earlier or later)."""
+    o = opp(c, opp_id, "nurture")
+    reason = need_text(reason, "Reason")
+    if review_on < c.today:
+        raise ActionError("Choose today or a later date.", 400, "bad_date")
+    old = o.next_due
+    o.next_due = review_on
+    touch(c, o)
+    log(c, o.id, "h", f"Nurture review moved by {c.actor} from {old.isoformat() if old else 'no date'} to {review_on.isoformat()}: {reason}")
+    CRM.mark(c, o)
+
+
+def reconnect_now(c: Ctx, opp_id: str) -> dict:
+    """Do the review now instead of waiting for the date: the research agent checks for news, and when it finds some the
+    outreach agent drafts a reconnect email for the owner to approve."""
+    o = opp(c, opp_id, "nurture")
+    job = J.enqueue(c.s, c.today, "research_refresh", o.id, "person", f"{c.actor} asked to reconnect now, before the review date",
+                    requested_by=c.actor)
+    return {"queued": job is not None, "already": job is None}
+
+
+def close_lead(c: Ctx, opp_id: str, reason: str, comment: str | None) -> None:
+    """Close a lead in nurture: the client will not come back to this. Recorded as a decision, like a close at Step 8."""
+    o = opp(c, opp_id, "nurture")
+    if reason not in CLOSE_REASONS:
+        raise ActionError(f"Reason must be one of {CLOSE_REASONS}.")
+    comment = (comment or "").strip()
+    if reason == "Other" and not comment:
+        raise ActionError("Say why: the reason is Other.", 400, "reason_required")
+    no_waiting_email(c, o)
+    for it in c.s.scalars(select(m.InboxItem).where(m.InboxItem.opportunity_id == o.id, m.InboxItem.kind == "draft", m.InboxItem.status == "new")):
+        it.status, it.decided_by = "dismissed", f"{c.actor} closed the lead"
+    o.stage = "closed"
+    c.s.add(m.Decision(opportunity_id=o.id, step=8, decision="Closed", by=c.actor, role="Lead owner", on=c.today,
+                       note=reason + (f": {comment}" if comment else "") + " (closed from nurture)"))
+    touch(c, o)
+    o.revision += 1
+    log(c, o.id, "h", f"Closed from nurture by {c.actor}: {reason}" + (f". {comment}" if comment else ""))
+    CRM.mark(c, o)
+
+
 def record_reply(c: Ctx, opp_id: str, text: str, on: date | None) -> dict:
     o = opp(c, opp_id, "contacted", "identified", "nurture")  # nurture: the client answered a reconnect email
     text = need_text(text, "Reply text")
     r = outreach_row(c, o)
     r.status, r.reply_on, r.reply_text = "replied", on or c.today, text
-    c.s.add(m.Note(id=new_id("n"), opportunity_id=o.id, type="Email reply", on=r.reply_on, text=text, added_by=c.actor))
+    reply_note = m.Note(id=new_id("n"), opportunity_id=o.id, type="Email reply", on=r.reply_on, text=text, added_by=c.actor)
+    c.s.add(reply_note)
     o.stage = "active"  # any reply moves the opportunity to Active at once, whatever it says
     o.next_action, o.next_due = "Hold the first conversation", r.reply_on + timedelta(days=7)
     touch(c, o)
     log(c, o.id, "h", f"Reply recorded by {c.actor}; stage set to Active")
     CRM.mark(c, o)
+    c.s.flush()
+    # The reply may already say something about need, timing or budget: the evidence agent reads it for the owner to review.
+    J.enqueue(c.s, c.today, "note_evidence", o.id, "event", "The client replied: read the reply for qualification evidence",
+              {"note_id": reply_note.id}, requested_by=c.actor)
     try:
         label, _ = run_agent(c, "Evidence agent", o, "reply-demo-1.4", lambda: A.label_reply(text),
                              live=lambda p: L.label_reply(p, text), live_prompt=L.LABEL_PROMPT_VERSION)
@@ -1218,7 +1269,25 @@ def add_note(c: Ctx, opp_id: str, type_: str, on: date | None, text: str, analyz
         notify_manager(c, o, "notes", f"New {type_.lower()} from {c.actor}")
         return {"noteId": note.id, "proposals": 0}
     c.s.commit()  # the original text is saved even if analysis fails
+    res = read_note(c, o, note)
+    notify_manager(c, o, "notes", f"New {note.type.lower()} from {c.actor}")
+    return res
+
+
+def analyze_note(c: Ctx, opp_id: str, note_id: str) -> dict:
+    """The evidence agent reads a note saved earlier (for example the client's first reply)."""
+    o = opp(c, opp_id, "active", "approval")
+    note = c.s.get(m.Note, note_id)
+    if note is None or note.opportunity_id != o.id:
+        raise ActionError("No such note for this opportunity.", 404, "not_found")
+    return read_note(c, o, note)
+
+
+def read_note(c: Ctx, o: m.Opportunity, note: m.Note) -> dict:
+    """The evidence agent reads one note and proposes evidence for a person to review. Its closing summary (what it
+    proposed and what is still unknown) is kept with the note."""
     star = o.company_id == "corvane" and o.title.startswith("Scaling AI")
+    summary: list[str] = []
     asks: list[dict] = []
     trace: list[dict] = []
 
@@ -1230,6 +1299,8 @@ def add_note(c: Ctx, opp_id: str, type_: str, on: date | None, text: str, analyz
         trace.extend(out.trace)
         if out.status != "done" and not record["kept"]:
             raise LLMError(f"The evidence agent stopped without an answer: {out.reason}", "invalid_output")
+        if isinstance(out.result, dict) and out.result.get("summary"):
+            summary.append(str(out.result["summary"]))
         return (record["kept"], record["dropped"]), out.usage
 
     from api.evidence_agent import VERSION as EVIDENCE_AGENT_VERSION
@@ -1267,8 +1338,9 @@ def add_note(c: Ctx, opp_id: str, type_: str, on: date | None, text: str, analyz
                          {"role": ask["role"], "quote": ask["quote"]}, requested_by="Evidence agent", live=not c.demo)
         if job:
             handoffs.append(ask["role"])
-    notify_manager(c, o, "notes", f"New {note.type.lower()} from {c.actor}")
-    return {"noteId": note.id, "proposals": kept, "droppedForInvalidQuote": dropped, "droppedOther": others, "handoffs": handoffs}
+    note.analysis = {"on": c.today.isoformat(), "proposals": kept, "dropped": dropped, "summary": summary[0][:500] if summary else None}
+    return {"noteId": note.id, "proposals": kept, "droppedForInvalidQuote": dropped, "droppedOther": others, "handoffs": handoffs,
+            "summary": note.analysis["summary"]}
 
 
 ROLE_WORDS = {"ceo": "chief executive", "cfo": "chief financial", "coo": "chief operating", "cio": "chief information",

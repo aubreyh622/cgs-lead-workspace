@@ -179,6 +179,7 @@ function detail(d, ctx) {
   ${headerBlock(o, ctx)}
   ${noticeBlock()}
   ${o.stage === "approval" ? approvalBlock(o, ctx, "card") : ""}
+  ${o.stage === "active" ? nowLine(o, ctx) : ""}
   ${conditionsSummary(o, live && o.stage === "active")}
   ${live ? proposalsBlock(o, ctx) : ""}
   ${o.stage === "active" ? nextBlock(o, ctx, tasks) : ""}
@@ -234,12 +235,89 @@ function conditionsSummary(o, live) {
       <div class="actions"><button type="submit" class="btn primary" disabled>Clear the blocker</button>${cancelBtn}<span class="missing" data-missing>Give a reason.</span></div>
       ${err("review")}
     </form>` : html`<div>${openBtn("blocker", "Clear the blocker…")}</div>`}` : ""}
-    ${live && a.gaps.length ? html`
-    <div>
-      <p class="sub-title">Still missing</p>
-      <ul class="gaps compact">${a.gaps.map((g) => html`<li><b>${g.label}</b><span class="meta">Ask: ${g.question}</span></li>`)}</ul>
-    </div>` : ""}
+    ${live ? readyList(o, a) : ""}
     <p class="meta-3">${a.coverage ? `Qualification score ${q} of 100, with ${a.coverage}% of the evidence weight confirmed.` : "No score is confirmed yet."} Priority ${a.priority}. Rules ${a.ruleVersion}; no AI calculates these numbers.</p>
+  </div>`;
+}
+
+// Everything between this lead and Ready, in one list: the rules' gaps (one per question), and the score threshold,
+// which the rules only name once nothing else is missing. Each item says what to ask, and can be confirmed here by hand.
+const Q_NEEDED = 70;
+
+function toReady(o, a) {
+  const byQuestion = new Map();
+  for (const g of a.gaps.filter((x) => x.key !== "Q")) {
+    const same = byQuestion.get(g.question);
+    if (same) { same.also.push(g.label); same.keys.push(g.key); } else byQuestion.set(g.question, { label: g.label, also: [], keys: [g.key], ask: g.question });
+  }
+  const items = [...byQuestion.values()];
+  if (a.ql < Q_NEEDED) {
+    const up = DIMS.filter((k) => o.scores[k] !== null && o.scores[k] !== undefined && o.scores[k] < 5)
+      .map((k) => ({ k, step: rules.weights[k] / 5 })).sort((x, y) => y.step - x.step).slice(0, 3);
+    const short = Math.round((Q_NEEDED - a.ql) * 10) / 10;
+    items.push({ label: `Qualification score ${Math.round(a.ql * 10) / 10}, needs ${Q_NEEDED}`, also: [], keys: up.map((x) => `raise:${x.k}`),
+      hint: `${short} points short.${up.length ? ` One step up adds ${up.map((x) => `${x.step} on ${rules.labels[x.k]}`).join(", ")}.` : ""} Scores still pending add to it once confirmed.`,
+      ask: "Which business outcomes and practical commitments can be validated next?" });
+  }
+  const last = (k) => k === "H" || k === "revenue";
+  return [...items.filter((x) => !x.keys.some(last)), ...items.filter((x) => x.keys.some(last))];
+}
+
+function fixButtons(o, item) {
+  return item.keys.map((k) => {
+    if (k === "revenue") return openBtn("ready:revenue", "Estimate it…", "btn small");
+    if (k.startsWith("condition:")) return openBtn(`ready:cond:${k.slice(10)}`, "Confirm by hand…", "btn small", `Confirm by hand: ${rules.conditions[k.slice(10)]}`);
+    const dim = k.startsWith("raise:") ? k.slice(6) : k;
+    return openBtn(`ready:score:${dim}`, `${k.startsWith("raise:") ? "Review" : "Confirm"} ${rules.labels[dim]}…`, "btn small");
+  });
+}
+
+function fixForm(o, item) {
+  for (const k of item.keys) {
+    if (k === "revenue" && isOpen("ready:revenue")) return revenueForm(o);
+    if (k.startsWith("condition:") && isOpen(`ready:cond:${k.slice(10)}`)) return reviewForm(o, "cond", k.slice(10), o.conditions[k.slice(10)]);
+    const dim = k.startsWith("raise:") ? k.slice(6) : k;
+    if (DIMS.includes(dim) && isOpen(`ready:score:${dim}`)) return reviewForm(o, "score", dim, o.scores[dim]);
+  }
+  return "";
+}
+
+function readyList(o, a) {
+  const items = toReady(o, a);
+  if (!items.length) return "";
+  const row = (x) => html`<li><b>${x.label}</b>${x.also.length ? html`<span class="meta-3">Also: ${x.also.join("; ")}</span>` : ""}
+    ${x.hint ? html`<span class="meta">${x.hint}</span>` : ""}<span class="meta">Ask: ${x.ask}</span>
+    <span class="actions" style="margin-top:6px">${fixButtons(o, x)}</span>${fixForm(o, x)}</li>`;
+  const open = items.slice(3).some((x) => fixForm(o, x));
+  return html`
+  <div>
+    <div class="row-flex"><p class="sub-title" style="margin:0">To reach Ready</p><span class="meta">${plural(items.length, "thing")} left</span>
+      <button type="button" class="btn ghost small" style="margin-left:auto" data-act="copyQuestions" data-text="${items.map((x) => `- ${x.ask}`).join("\n")}">Copy the questions for the next call</button></div>
+    <ul class="gaps compact">${items.slice(0, 3).map(row)}</ul>
+    ${items.length > 3 ? html`<details ${open ? "open" : ""}><summary class="meta">${plural(items.length - 3, "more")}</summary><ul class="gaps compact">${items.slice(3).map(row)}</ul></details>` : ""}
+  </div>`;
+}
+
+// One sentence on what to do now, and what the evidence agent said after reading the latest notes.
+function nowLine(o, ctx) {
+  const a = o.assessment;
+  const unread = [...o.notes].reverse().find((n) => !n.analysis && !o.proposals.some((p) => p.noteId === n.id));
+  const pending = o.proposals.filter((p) => p.status === "pending").length;
+  const read = [...o.notes].reverse().find((n) => n.analysis && n.analysis.summary);
+  let text, extra = "";
+  if (a && a.readiness === "Ready") text = "Send the pack for approval (below).";
+  else if (unread && unread.reading) text = `The evidence agent is reading the ${unread.type.toLowerCase()} of ${day(unread.on, ctx.today)}. What it proposes appears here for you to review.`;
+  else if (pending) text = `Review the ${plural(pending, "item")} the evidence agent proposed (below).`;
+  else if (unread) {
+    text = `The ${unread.type.toLowerCase()} of ${day(unread.on, ctx.today)} has not been read for evidence yet.`;
+    extra = html`<button type="button" class="btn small" data-act="readNote" data-id="${o.id}" data-note="${unread.id}">Ask the evidence agent to read it</button>${err("readNote")}`;
+  } else if (!o.notes.some((n) => n.type !== "Email reply") && !o.evidence.length) text = "Hold the first conversation, then add its notes (Next step, below).";
+  else text = "Ask what the list below still needs in the next conversation, or confirm by hand what you already know.";
+  return html`
+  <div class="block"><div class="now-line"><p><b>Next:</b> ${text}</p>${extra}
+    ${read ? html`<div class="suggestion" style="margin-top:10px">${icon("bulb", 20)}<div><b>What the evidence agent said</b><p class="meta">${read.analysis.summary}</p>
+      <p class="meta-3">Evidence agent, after the ${read.type.toLowerCase()} of ${day(read.on, ctx.today)}: ${plural(read.analysis.proposals, "item")} proposed.</p></div></div>` : ""}
+  </div>
   </div>`;
 }
 
@@ -400,6 +478,9 @@ function notesForm(o, ctx) {
       </div>
       <label class="field">Notes <span class="hint">Write what was said. Quote the client where you can; the agent may only cite words that are here.</span>
         <textarea name="text" rows="8" required></textarea></label>
+      <label class="field">Or load them from a file <span class="hint">A text file or a meeting transcript (.txt, .md, .vtt, .srt). For Word or PDF, copy the text in.</span>
+        <input type="file" name="file" accept=".txt,.md,.vtt,.srt,text/plain,text/vtt" data-act="noteFile" data-on="change"></label>
+      <p class="meta-3" data-file role="status"></p>
       <label class="check"><input type="checkbox" name="analyze" checked>Ask the evidence agent for proposals</label>
       <div class="actions"><button type="submit" class="btn primary" disabled>Save notes</button>${cancelBtn}<span class="missing" data-missing>Write the notes.</span></div>
       ${err("note")}
@@ -463,7 +544,12 @@ function revenueBlock(o, ctx, live) {
   <div class="block">
     <div class="row-flex"><h3 class="sub-title" style="margin:0">CGS revenue estimate</h3><span>${revenueText(o.revenue)}</span>
       ${live && !isOpen("revenue") ? openBtn("revenue", "Change…", "btn ghost small", "Change the revenue estimate") : ""}</div>
-    ${isOpen("revenue") ? html`
+    ${isOpen("revenue") ? revenueForm(o) : ""}
+  </div>`;
+}
+
+function revenueForm(o) {
+  return html`
     <form class="panel-form" style="margin-top:10px" data-act="revenueForm" data-on="submit input" data-id="${o.id}" data-revision="${o.revision}">
       <div class="form-grid">
         <label class="field">Low (USD)<input type="number" name="low" min="1" step="any" value="${o.revenue ? o.revenue.low : ""}"></label>
@@ -473,8 +559,7 @@ function revenueBlock(o, ctx, live) {
       <label class="field">Reason<textarea name="reason" rows="2" required></textarea></label>
       <div class="actions"><button type="submit" class="btn primary" disabled>Save estimate</button>${cancelBtn}<span class="missing" data-missing>Give a reason.</span></div>
       ${err("review")}
-    </form>` : ""}
-  </div>`;
+    </form>`;
 }
 
 function needBlock(o, ctx, live) {
@@ -672,6 +757,21 @@ function historyBlock(o, ctx) {
   </div>`;
 }
 
+// A transcript file (WebVTT or SubRip) as plain lines: "Speaker: words", without cue numbers and times.
+function transcriptText(raw) {
+  const out = [];
+  for (const block of raw.replace(/\r/g, "").split(/\n{2,}/)) {
+    if (/^(WEBVTT|NOTE|STYLE|REGION)\b/.test(block.trim())) continue;
+    const lines = block.split("\n").filter((l) => l.trim() && !/^\d+$/.test(l.trim()) && !/-->/.test(l));
+    for (const l of lines) {
+      const voice = l.match(/^<v(?:\.[^ >]*)?\s+([^>]+)>(.*?)(?:<\/v>)?$/);
+      const text = (voice ? `${voice[1].trim()}: ${voice[2]}` : l).replace(/<[^>]+>/g, "").trim();
+      if (text && text !== out[out.length - 1]) out.push(text);
+    }
+  }
+  return out.join("\n");
+}
+
 // ---------- actions ----------
 async function busy(button, fn) {
   if (button) { button.classList.add("busy"); button.disabled = true; }
@@ -756,6 +856,43 @@ export const actions = {
       if ((res.handoffs || []).length) n.push({ text: `The research agent was asked to find: ${res.handoffs.join(", ")}.`, cls: "" });
       ui.notice = n;
     });
+  },
+
+  async noteFile(t) {
+    const file = t.files && t.files[0];
+    const form = t.closest("form");
+    const line = form.querySelector("[data-file]");
+    if (!file) return;
+    if (!/\.(txt|md|vtt|srt|text)$/i.test(file.name) && !(file.type || "").startsWith("text/")) {
+      line.textContent = `${file.name} is not a text file. For Word or PDF, copy the text in.`;
+      t.value = "";
+      return;
+    }
+    if (file.size > 300 * 1024) {
+      line.textContent = `${file.name} is larger than 300 KB. Paste the part of the conversation that matters.`;
+      t.value = "";
+      return;
+    }
+    let text = await file.text();
+    if (/\.(vtt|srt)$/i.test(file.name) || /^WEBVTT/.test(text)) text = transcriptText(text);
+    const area = form.elements.text;
+    area.value = area.value.trim() ? `${area.value.trim()}\n\n${text}` : text;
+    if (/\.(vtt|srt)$/i.test(file.name)) form.elements.type.value = "Meeting notes";
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+    line.textContent = `Loaded ${file.name}. Check the text before you save it.`;
+  },
+  readNote(t, e, ctx) {
+    write("readNote", t, ctx, () => ctx.api.post(`/opportunities/${enc(t.dataset.id)}/notes/${enc(t.dataset.note)}/analyze`), (res) => {
+      ui.notice = [{ text: `The evidence agent proposed ${plural(res.proposals, "item")} for you to review.`, cls: "good" }];
+    });
+  },
+  async copyQuestions(t, e, ctx) {
+    try {
+      await navigator.clipboard.writeText(t.dataset.text);
+      ctx.toast("Copied the questions for the next call.");
+    } catch {
+      ctx.toast("The browser did not allow copying. Select the questions in the list instead.");
+    }
   },
 
   // manual review: score, condition, blocker

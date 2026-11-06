@@ -199,6 +199,17 @@ main:focus { outline: none; }
 .chip { height: 32px; padding: 0 12px; border: 1px solid var(--border-control); border-radius: 999px; background: var(--surface); font-size: 13px; cursor: pointer; }
 .chip:hover { background: var(--surface-muted); }
 .chip:active { background: var(--surface-pressed); }
+.now-line { padding: 12px 14px; border-radius: 8px; background: var(--surface-muted); }
+.now-line > p { margin: 0 0 8px; }
+.now-line > p:only-child { margin: 0; }
+/* Whole-sentence options to tick (the short pill .chip is for a few words) */
+.tick-cards { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+.tick-cards legend { padding: 0; margin-bottom: 8px; }
+.tick-card { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-control); border-radius: 8px;
+  background: var(--surface); font-size: 14px; line-height: 21px; cursor: pointer; }
+.tick-card input { margin-top: 3px; flex: none; }
+.tick-card:hover { background: var(--surface-muted); }
+.tick-card:has(input:checked) { border-color: var(--ink-2); background: var(--surface-muted); }
 
 /* ---------- notices ---------- */
 .notice { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: var(--r-control); font-size: 14px; line-height: 21px; background: var(--surface-muted); color: var(--ink-2); }
@@ -482,3 +493,9 @@ a.link-tag:hover { background: var(--surface-muted); }
 .notes-panel li a, .notes-panel .note-row { display: flex; flex-direction: column; gap: 2px; padding: 10px 18px; color: var(--ink); text-decoration: none; }
 .notes-panel li.unread { background: var(--selected); }
 .notes-panel .note-text { min-width: 0; }
+/* People the research names (Step 4) */
+.people { list-style: none; margin: 0 0 8px; padding: 0; }
+.people > li { padding: 8px 0; border-bottom: 1px solid var(--border-row); }
+.people > li:last-child { border-bottom: 0; }
+.people > li b { font-weight: 500; }
+.people .meta, .people .meta-3 { display: block; }

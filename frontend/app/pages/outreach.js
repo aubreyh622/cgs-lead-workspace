@@ -1,8 +1,8 @@
 // Outreach: Step 5 (first email, follow-ups, nurture) and the first reply that makes a lead Active.
 // Agents draft; a person approves the exact email and address before anything is sent.
-import { html, icon, day, addDays, href, plural, initials, sourceLink } from "../lib.js";
+import { html, icon, day, addDays, daysBetween, href, plural, initials, sourceLink, linkedinSearch } from "../lib.js";
 import { enc } from "../api.js";
-import { STAGE_LABELS } from "../options.js";
+import { STAGE_LABELS, CLOSE_REASONS } from "../options.js";
 import { emptyState, inlineError, crmLinks, crmConflicts, resolveCrm } from "../shell.js";
 import { UNDO_SECONDS, offerUndo, undoEmail, waitingNotice, emailWaits, undoEmailAct, sendNowAct } from "../undo.js";
 
@@ -244,7 +244,8 @@ function contactBlock(o) {
   <div class="block stack">
     <div class="row-flex"><h3 class="sub-title" style="margin:0">Contact</h3>${confirmed}${crmLinks(o.crm)}</div>
     ${crmConflicts(o.id, o.crm)}
-    <p>${c.name || "No person named yet"}${c.name ? html`, <span class="meta">${c.title}</span>` : ""}</p>
+    <p>${c.name || "No person named yet"}${c.name ? html`, <span class="meta">${c.title}</span>` : ""}
+      <a class="meta-3" style="margin-left:8px" href="${linkedinSearch([c.name || (c.title === "Contact to confirm" ? "" : c.title), o.company.name])}" target="_blank" rel="noopener noreferrer">Search on LinkedIn</a></p>
     <p class="meta">${c.email ? `Email: ${c.email}` : "No email address on file. Agents never guess one; add it when you send."}</p>
     ${panel ? html`
     <form class="panel-form" data-act="contactForm" data-on="submit input" data-id="${o.id}">
@@ -389,7 +390,7 @@ function replyPanel(o, ctx) {
   <div class="block">
     <form class="panel-form" data-act="replyForm" data-on="submit input" data-id="${o.id}">
       <h3 class="sub-title">Record the client's reply</h3>
-      <p class="meta">Any reply makes the lead Active (In conversation) at once. The evidence agent labels it; you can correct the label later.</p>
+      <p class="meta">Any reply makes the lead Active (In conversation) at once. The evidence agent labels it and reads it for qualification evidence, for you to review.</p>
       <label class="field">What they wrote<textarea name="text" rows="5" required></textarea></label>
       <label class="field">Received on<input type="date" name="on" value="${ctx.today}" max="${ctx.today}" required style="max-width:220px"></label>
       <div class="actions">
@@ -492,12 +493,14 @@ function agentDraft(d, ctx) {
   ${relatedBlock(d.related)}
   ${noticeBlock()}
   ${waitingNotice(o.outreach.waiting)}
-  ${draftBody(it.data.subject, it.data.body, facts, { to: (d.preview && d.preview.to) || "", confirmed: !!o.contact.confirmedBy, checks: true, blocked: d.preview && d.preview.blocked })}
+  ${it.data.editedBy ? html`<div class="block"><span class="tag info">Edited by ${it.data.editedBy}${it.data.editedOn ? `, ${day(it.data.editedOn, ctx.today)}` : ""}</span></div>` : ""}
+  ${m === "editItem" ? itemEditPanel(it) : draftBody(it.data.subject, it.data.body, facts, { to: (d.preview && d.preview.to) || "", confirmed: !!o.contact.confirmedBy, checks: true, blocked: d.preview && d.preview.blocked })}
   ${m === "send" ? sendPanel(d, { itemId: it.id, hash: it.payloadHash }) : ""}
   ${(!m || m === "contact") && !emailWaits(o.outreach.waiting) ? html`
   <div class="decision-bar">
     <div class="actions">
       ${d.mail.ready ? html`<button type="button" class="btn primary" data-act="mode" data-mode="send">Approve and send…</button>` : ""}
+      <button type="button" class="btn" data-act="mode" data-mode="editItem">Edit</button>
       <button type="button" class="btn ${d.mail.ready ? "" : "primary"}" data-act="inboxAct" data-do="apply" data-item="${it.id}" data-hash="${it.payloadHash}">
         ${purpose === "first" ? "Use it as my draft" : "Accept, I will send it myself"}</button>
       <button type="button" class="btn ghost" data-act="inboxAct" data-do="dismiss" data-item="${it.id}">Dismiss</button>
@@ -505,6 +508,24 @@ function agentDraft(d, ctx) {
     </div>
     <p class="meta-3" style="margin-top:8px">${purpose === "first" ? "Use it as my draft: you can then edit it, ask for a revision, or send it." : "After you send it yourself, record the follow-up under Waiting for a reply."}</p>
   </div>` : ""}`;
+}
+
+function itemEditPanel(it) {
+  return html`
+  <div class="block">
+    <form class="panel-form" data-act="itemEditForm" data-on="submit input" data-item="${it.id}" data-hash="${it.payloadHash}">
+      <h3 class="sub-title">Edit the draft</h3>
+      <p class="meta">Your version is the one you approve. The agent's text is kept, so it can learn from what you change. Text in [[f1|...]] marks a citation of the research brief: keep the mark, or delete it with its phrase. The client never sees the marks.</p>
+      <label class="field">Subject<input name="subject" value="${it.data.subject || ""}" required></label>
+      <label class="field">Message<textarea name="body" rows="12" required>${it.data.body || ""}</textarea></label>
+      <div class="actions">
+        <button type="submit" class="btn primary">Save my version</button>
+        <button type="button" class="btn ghost" data-act="mode" data-mode="">Cancel</button>
+        <span class="missing" data-missing></span>
+      </div>
+      ${inlineError(ui.error && ui.error.where === "itemEdit" ? ui.error.message : "")}
+    </form>
+  </div>`;
 }
 
 // ----- a client reply found by the mail rules -----
@@ -552,20 +573,76 @@ function waiting(d, ctx) {
   </div></div>` : ""}`;
 }
 
+// Nurture: the client does not need this now but may later. The lead waits here until its review date.
 function nurtureView(d, ctx) {
   const o = d.detail;
-  const why = [...o.activity].reverse().find((a) => /nurture/i.test(a.text));
+  const moved = [...o.activity].reverse().find((a) => /^Moved to nurture/.test(a.text));
+  const reason = moved ? moved.text.replace(/^Moved to nurture( at Step 8)? by [^:.]+[:.]?\s*/, "").replace(/\s*\d+ unsent email draft\(s\) withdrawn\.?$/, "") : "";
+  const by = moved && (moved.text.match(/ by ([^:.]+)/) || [])[1];
+  const due = o.next.due;
+  const left = due ? daysBetween(ctx.today, due) : null;
+  const asked = [...o.activity].reverse().find((a) => /asked to reconnect now/.test(a.text) && a.on === ctx.today);
+  const m = ui.mode;
   return html`
   ${header(`${o.contact.name || "Contact"} at ${o.company.name}`, contactLine(o))}
-  <div class="block stack">
-    <p>In nurture until ${o.next.due ? day(o.next.due, ctx.today) : "no date set"}.</p>
-    ${why ? html`<p class="meta">${why.text}</p>` : ""}
-  </div>
   ${noticeBlock()}
-  ${ui.mode === "reply" ? replyPanel(o, ctx) : html`
+  <div class="block stack">
+    <dl class="need">
+      <dt>Why</dt><dd>${reason || "No reason was recorded."}</dd>
+      <dt>Moved</dt><dd>${moved ? `${by ? `By ${by}, ` : ""}${day(moved.on, ctx.today)}` : "Not recorded"}</dd>
+      <dt>Review</dt><dd>${due ? html`${day(due, ctx.today)} <span class="meta">${left > 0 ? `in ${plural(left, "day")}` : left === 0 ? "today" : `${plural(-left, "day")} ago`}</span>` : "No date set"}</dd>
+    </dl>
+    <div class="notice">${icon("clock")}<span>On the review date the research agent checks ${o.company.name} for news since the brief. If it finds some, the outreach agent drafts a reconnect email that cites it, for ${o.owner || "the owner"} to approve; if not, ${o.owner || "the owner"} is told and decides. Nothing is sent on its own.${o.crm && o.crm.leadId ? " Insightly shows the lead as Nurture until then." : ""}</span></div>
+    ${asked && !ui.notice ? html`<div class="notice info">${icon("clock")}<span>Reconnect was asked for today. The research agent is checking for news; a notification follows when it is done.</span></div>` : ""}
+  </div>
+  ${m === "reply" ? replyPanel(o, ctx) : ""}
+  ${m === "review" ? reviewDatePanel(o, ctx) : ""}
+  ${m === "close" ? closePanel(o) : ""}
+  ${!m ? html`
   <div class="decision-bar"><div class="actions">
-    <button type="button" class="btn primary" data-act="mode" data-mode="reply">Record a reply…</button>
-  </div></div>`}`;
+    <button type="button" class="btn primary" data-act="reconnect" data-id="${o.id}" ${asked ? "disabled" : ""}>Reconnect now</button>
+    <button type="button" class="btn" data-act="mode" data-mode="review">Change the review date…</button>
+    <button type="button" class="btn" data-act="mode" data-mode="reply">Record a reply…</button>
+    <button type="button" class="btn ghost" data-act="mode" data-mode="close">Close the lead…</button>
+  </div>
+  <p class="meta-3" style="margin-top:8px">Reconnect now does the review today instead of waiting for the date.</p></div>` : ""}`;
+}
+
+function reviewDatePanel(o, ctx) {
+  return html`
+  <div class="block">
+    <form class="panel-form" data-act="reviewDateForm" data-on="submit input" data-id="${o.id}">
+      <h3 class="sub-title">Change the review date</h3>
+      <div class="form-grid">
+        <label class="field">Review on<input type="date" name="review_on" value="${o.next.due || addDays(ctx.today, 30)}" min="${ctx.today}" required></label>
+        <label class="field">Reason<input name="reason" required placeholder="For example: their budget round is in March"></label>
+      </div>
+      <div class="actions">
+        <button type="submit" class="btn primary" disabled>Save the date</button>
+        <button type="button" class="btn ghost" data-act="mode" data-mode="">Cancel</button>
+        <span class="missing" data-missing>Give a reason.</span>
+      </div>
+      ${inlineError(ui.error && ui.error.where === "review" ? ui.error.message : "")}
+    </form>
+  </div>`;
+}
+
+function closePanel(o) {
+  return html`
+  <div class="block">
+    <form class="panel-form" data-act="closeForm" data-on="submit input change" data-id="${o.id}">
+      <h3 class="sub-title">Close the lead</h3>
+      <p class="meta">The lead leaves nurture for good and no reconnect email is drafted. The reason is kept with the decision.</p>
+      <label class="field">Reason<select name="reason" required><option value="">Choose a reason</option>${CLOSE_REASONS.map((r) => html`<option>${r}</option>`)}</select></label>
+      <label class="field">Comment <span class="hint">Needed when the reason is Other.</span><textarea name="comment" rows="2"></textarea></label>
+      <div class="actions">
+        <button type="submit" class="btn primary" disabled>Close the lead</button>
+        <button type="button" class="btn ghost" data-act="mode" data-mode="">Cancel</button>
+        <span class="missing" data-missing>Choose a reason.</span>
+      </div>
+      ${inlineError(ui.error && ui.error.where === "close" ? ui.error.message : "")}
+    </form>
+  </div>`;
 }
 
 // ----- after the reply -----
@@ -750,6 +827,46 @@ export const actions = {
     if (!res) return;
     const label = res.replyLabel === "pending" ? "The reply label is pending: label it by hand on the Qualification page." : `The evidence agent labelled the reply: ${res.replyLabel}.`;
     moveOn(ctx, null, `Reply recorded; the lead is now In conversation. ${label}`, { href: href("qualification", { id }), label: "Open it" });
+  },
+  async itemEditForm(form, e, ctx) {
+    const f = form.elements;
+    const why = f.subject.value.trim() && f.body.value.trim() ? "" : "Write a subject and a message.";
+    if (e.type !== "submit") return missing(form, why);
+    if (why) return;
+    const ok = await attempt("itemEdit", form.querySelector("[type=submit]"), ctx, () =>
+      ctx.api.put(`/inbox/${enc(form.dataset.item)}/draft`, { subject: f.subject.value.trim(), body: f.body.value.trim(), payload_hash: form.dataset.hash }));
+    if (!ok) return;
+    ui.mode = null;
+    ui.notice = [{ text: "Saved your version. Approve and send it when it is ready.", cls: "good" }];
+    ctx.refresh();
+  },
+  async reconnect(t, e, ctx) {
+    const res = await attempt("reconnect", t, ctx, () => ctx.api.post(`/opportunities/${enc(t.dataset.id)}/nurture/reconnect`));
+    if (!res) return ctx.toast(ui.error.message);
+    ui.notice = [{ text: res.queued ? "The research agent checks for news now. If it finds some, a reconnect draft follows for you to approve."
+      : "The research agent is already checking this company.", cls: "good" }];
+    ctx.refresh();
+  },
+  async reviewDateForm(form, e, ctx) {
+    const f = form.elements;
+    const why = !f.review_on.value ? "Choose a date." : !f.reason.value.trim() ? "Give a reason." : "";
+    if (e.type !== "submit") return missing(form, why);
+    if (why) return;
+    const ok = await attempt("review", form.querySelector("[type=submit]"), ctx, () =>
+      ctx.api.post(`/opportunities/${enc(form.dataset.id)}/nurture/review`, { review_on: f.review_on.value, reason: f.reason.value.trim() }));
+    if (!ok) return;
+    ui.mode = null;
+    ui.notice = [{ text: `The review is now on ${day(f.review_on.value, ctx.today)}.`, cls: "good" }];
+    ctx.refresh();
+  },
+  async closeForm(form, e, ctx) {
+    const f = form.elements;
+    const why = !f.reason.value ? "Choose a reason." : f.reason.value === "Other" && !f.comment.value.trim() ? "Say why: the reason is Other." : "";
+    if (e.type !== "submit") return missing(form, why);
+    if (why) return;
+    const ok = await attempt("close", form.querySelector("[type=submit]"), ctx, () =>
+      ctx.api.post(`/opportunities/${enc(form.dataset.id)}/close`, { reason: f.reason.value, comment: f.comment.value.trim() }));
+    if (ok) moveOn(ctx, null, `Closed: ${f.reason.value}.`);
   },
   async nurtureForm(form, e, ctx) {
     const f = form.elements;

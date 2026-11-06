@@ -589,6 +589,34 @@ def reply(opp_id: str, body: Reply, c: S.Ctx = Actor):
     return S.record_reply(c, opp_id, body.text, body.on)
 
 
+class NurtureReview(BaseModel):
+    review_on: date
+    reason: str
+
+
+class CloseLead(BaseModel):
+    reason: str
+    comment: str | None = None
+
+
+@router.post("/opportunities/{opp_id}/nurture/review", tags=["step 5"], summary="Change the nurture review date")
+def nurture_review(opp_id: str, body: NurtureReview, c: S.Ctx = Actor):
+    S.nurture_review(c, opp_id, body.review_on, body.reason)
+    return {"ok": True}
+
+
+@router.post("/opportunities/{opp_id}/nurture/reconnect", tags=["step 5"],
+             summary="Review a nurture lead now: the research agent checks for news and the outreach agent drafts a reconnect email")
+def nurture_reconnect(opp_id: str, c: S.Ctx = Actor):
+    return S.reconnect_now(c, opp_id)
+
+
+@router.post("/opportunities/{opp_id}/close", tags=["step 5"], summary="Close a lead in nurture, with a reason")
+def close_lead(opp_id: str, body: CloseLead, c: S.Ctx = Actor):
+    S.close_lead(c, opp_id, body.reason, body.comment)
+    return {"ok": True}
+
+
 @router.post("/opportunities/{opp_id}/nurture", tags=["step 5"], summary="Move to nurture with a review date")
 def nurture(opp_id: str, body: Nurture, c: S.Ctx = Actor):
     S.to_nurture(c, opp_id, body.review_on, body.reason)
@@ -621,6 +649,12 @@ class Review(BaseModel):
 @router.post("/opportunities/{opp_id}/notes", tags=["step 6"], summary="Add conversation notes and get evidence proposals")
 def note(opp_id: str, body: NoteIn, c: S.Ctx = Actor):
     return S.add_note(c, opp_id, body.type, body.on, body.text, body.analyze)
+
+
+@router.post("/opportunities/{opp_id}/notes/{note_id}/analyze", tags=["step 6"],
+             summary="Ask the evidence agent to read a note saved earlier (for example the first reply) and propose evidence")
+def note_analyze(opp_id: str, note_id: str, c: S.Ctx = Actor):
+    return S.analyze_note(c, opp_id, note_id)
 
 
 @router.post("/proposals/{prop_id}", tags=["step 6"], summary="Accept, edit or reject an AI suggestion")

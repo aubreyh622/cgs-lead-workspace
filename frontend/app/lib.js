@@ -118,6 +118,12 @@ export function href(page, params = {}) {
 
 // A brief's source: the site's name as a link that opens in a new tab, with the date. Text that is not a web address
 // (a demo source such as "Company news") is shown as it is.
+// A LinkedIn people search the person opens in their own browser. Agents never read LinkedIn (its terms forbid
+// automated access); finding and checking the person stays a person's job.
+export function linkedinSearch(words) {
+  return `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(words.filter(Boolean).join(" "))}`;
+}
+
 export function sourceLink(src, date) {
   const url = /^https?:\/\//i.test(src || "") ? safeUrl(src) : "";
   let site = src;

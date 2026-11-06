@@ -354,6 +354,22 @@ def do_gap_actions(c, job, o):
     return "done", f"{n} suggestion{'s' if n != 1 else ''}; the owner turns them into tasks."
 
 
+def do_note_evidence(c, job, o):
+    if o.stage not in ("active", "approval"):
+        return "skipped", f"Stage is {o.stage}."
+    note = c.s.get(m.Note, (job.payload or {}).get("note_id", ""))
+    if note is None or note.opportunity_id != o.id:
+        return "skipped", "The note is gone."
+    if note.analysis is not None or c.s.scalar(select(m.Proposal.id).where(m.Proposal.note_id == note.id).limit(1)):
+        return "skipped", "The note was already read."
+    res = S.read_note(c, o, note)
+    n = res["proposals"]
+    if n:
+        J.to_inbox(c.s, c.today, job, "evidence", f"{n} evidence item{'s' if n != 1 else ''} to review for {o.company.name}",
+                   res.get("summary") or "From the client's reply.", {"note_id": note.id}, opp=o)
+    return "done", f"Read the client's reply: {n} item{'s' if n != 1 else ''} proposed for review." + (f" {res['summary']}" if res.get("summary") else "")
+
+
 def do_defer_nurture(c, job, o):
     if o.stage not in ("contacted", "active"):
         return "skipped", f"Stage is {o.stage}."
@@ -583,7 +599,7 @@ def do_mail_sync(c, job, o):
 
 
 HANDLERS = {"first_draft": do_first_draft, "followup_draft": do_followup_draft, "reconnect_draft": do_reconnect_draft, "research_refresh": do_research_refresh,
-            "person_lookup": do_person_lookup, "gap_actions": do_gap_actions, "defer_nurture": do_defer_nurture,
+            "person_lookup": do_person_lookup, "gap_actions": do_gap_actions, "defer_nurture": do_defer_nurture, "note_evidence": do_note_evidence,
             "ready_reminder": do_ready_reminder, "discovery_round": do_discovery_round, "feedback_review": do_feedback_review,
             "manager_review": do_manager_review, "manager_triage": do_manager_triage, "lessons_review": do_lessons_review, "mail_sync": do_mail_sync,
             "crm_sync": do_crm_sync}
@@ -810,6 +826,30 @@ def check_still_valid(c: S.Ctx, it: m.InboxItem, o: m.Opportunity | None, seen_h
         if clash:
             raise S.ActionError(f"The brief changed after this draft was written ({', '.join(clash)} now say something else). "
                                 "Dismiss it and ask for a new draft.", 409, "stale")
+
+
+def edit_draft(c: S.Ctx, item_id: str, subject: str, body: str, seen_hash: str | None) -> dict:
+    """A person changes an agent's email draft before approving it. The changed text is what they approve (a new
+    payloadHash); the agent's own text is kept with it, so the scorecard can count drafts used only after a change."""
+    it = c.s.get(m.InboxItem, item_id)
+    if it is None or it.kind != "draft":
+        raise S.ActionError("Only an email draft can be edited.", 404 if it is None else 400, "not_a_draft")
+    if it.status != "new":
+        raise S.ActionError("This draft was already decided.", 409, "decided")
+    o = c.s.get(m.Opportunity, it.opportunity_id) if it.opportunity_id else None
+    check_still_valid(c, it, o, seen_hash)
+    if o is not None:
+        S.no_waiting_email(c, o)
+    subject, body = S.need_text(subject, "Subject"), S.need_text(body, "Message")
+    data = dict(it.data or {})
+    data.setdefault("original", {"subject": data.get("subject", ""), "body": data.get("body", "")})
+    data.update(subject=subject, body=body, editedBy=c.actor, editedOn=c.today.isoformat())
+    it.data, it.body = data, body
+    it.payload_hash = J.payload_hash(it.kind, it.title, it.body, data)
+    if o is not None:
+        S.touch(c, o)
+        S.log(c, o.id, "h", f"{c.actor} edited the {data.get('purpose', 'email')} draft the {it.agent.lower()} wrote, before approving it")
+    return item_view(it)
 
 
 def approve_and_send(c: S.Ctx, it: m.InboxItem, o: m.Opportunity | None, seen_hash: str | None, to: str | None, delay: int = 0) -> dict:

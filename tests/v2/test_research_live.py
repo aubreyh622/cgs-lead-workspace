@@ -88,7 +88,7 @@ def test_card_to_brief_keeps_quotes_dates_and_the_person():
     assert f["quote"].startswith("Brightwater Valve today announced") and f["src"].startswith("https://brightwater.example") and f["date"] == "2026-10-02"
     assert person == {"name": "Marcus Hale", "title": "Chief Information Officer"}
     assert brief["recommendation"]["decision"] == "accept" and brief["usage"] == {"searches": 4, "pages": 6, "calls": 7}
-    assert brief["priority"]["tier"] == 1  # public research never sets CGS revenue
+    assert brief["priority"]["tier"] is None  # public research never sets CGS revenue
 
 
 def test_live_pick_runs_research_in_the_background(tmp_path):
@@ -212,7 +212,8 @@ def test_live_recommend_round(tmp_path):
     ardent = next(x for x in c if x["company"] == "Ardent Castings")
     assert ardent["person"] == "Maria Lopez" and ardent["sourceUrl"] == "https://news.example/ardent" and "Maria Lopez" in ardent["quote"]
     run = api.get("/api/agent-runs").json()[0]
-    assert run["agent"] == "Discovery agent" and run["prompt"] == "discovery-agent-1.2" and run["calls"] == ai.turns == 4
+    from api.discovery_agent import AGENT_VERSION
+    assert run["agent"] == "Discovery agent" and run["prompt"] == AGENT_VERSION and run["calls"] == ai.turns == 4
     steps = api.get(f"/api/agent-runs/{run['id']}").json()["trace"]
     assert any(s.get("tool") == "nominate" and "Write the company exactly" in str(s) for s in steps)  # Phantom Corp's rejection
 

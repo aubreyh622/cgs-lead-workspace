@@ -51,7 +51,8 @@ export async function load(ctx, params) {
 export function view(d, ctx) {
   const pending = d.direction.proposals.filter((p) => p.status === "pending").length;
   return html`
-  <div class="page-head">
+  <a class="back" href="${href("companies")}">${icon("back", 16)}Companies</a>
+  <div class="page-head" style="margin-top:12px">
     <div>
       <h1>Where companies come from</h1>
       <p>Ask the discovery agent for companies now, add one yourself, and set what the agents look for. Every change to the direction waits for a person's approval.</p>

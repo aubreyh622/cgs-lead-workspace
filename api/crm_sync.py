@@ -502,7 +502,7 @@ def matches(c, o: m.Opportunity) -> dict:
     found["summary"] = ("Nothing in the CRM for this company or person." if not any(found[k] for k in ("leads", "contacts", "organizations", "opportunities"))
                         else f"In the CRM: {len(found['leads'])} lead(s) ({len(open_leads)} open), {len(found['contacts'])} contact(s), "
                              f"{len(found['organizations'])} organization(s), {len(found['opportunities'])} opportunit{'y' if len(found['opportunities']) == 1 else 'ies'}.")
-    return {"off": False, "linked": view(o), **found}
+    return {"off": False, "linked": view(o), "searchedBy": ["company", "email"] if email else ["company"], **found}
 
 
 def mail_bcc(c, o: m.Opportunity) -> str:

@@ -77,9 +77,11 @@ def work(s, today: date, days: int = WINDOW_DAYS, owner: str | None = None, by_o
     for it in items:
         key = (it.owner if by_owner else None, _work_key(it, jobs))
         r = rows.setdefault(key, {**({"owner": it.owner} if by_owner else {}), "work": key[1], "agent": it.agent, "prepared": 0,
-                                  "used": 0, "dismissed": 0, "ignored": 0, "replaced": 0, "waiting": 0})
+                                  "used": 0, "usedAfterEdit": 0, "dismissed": 0, "ignored": 0, "replaced": 0, "waiting": 0})
         r["prepared"] += 1
         r[_outcome(it)] += 1
+        if _outcome(it) == "used" and (it.data or {}).get("original"):
+            r["usedAfterEdit"] += 1  # a person changed the agent's draft before using it
     out = [_rates(r) for r in rows.values() if not (by_owner and r.get("owner") is None)]
     return sorted(out, key=lambda r: (r.get("owner") or "", -r["prepared"], r["work"]))
 

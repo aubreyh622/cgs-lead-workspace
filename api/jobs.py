@@ -24,6 +24,7 @@ KINDS = {
     "reconnect_draft": ("Outreach agent", True, "Writes a reconnect draft that cites the company's latest news"),
     "research_refresh": ("Research agent", True, "Checks a company again for news since the last brief"),
     "person_lookup": ("Research agent", True, "Looks for a person another agent needs (for example the CFO who approves)"),
+    "note_evidence": ("Evidence agent", True, "Reads the client's first reply for qualification evidence, for the owner to review"),
     "gap_actions": ("Manager agent", True, "Suggests the next actions for an opportunity that has stalled or was returned"),
     "defer_nurture": ("Reminder rules", False, "Suggests moving a deferred opportunity to nurture on the month the client named"),
     "ready_reminder": ("Reminder rules", False, "Reminds the owner that the rules say Ready and the pack is not submitted"),
@@ -42,7 +43,8 @@ HANDOFF_CAP = 3        # handoffs per opportunity per day
 INBOX_DAYS = 14        # what an agent prepared expires after two weeks: news and drafts go out of date
 DEFAULTS = {"agents_paused": False, "paused_agents": [], "patrol_hour": 8, "follow_days": 7, "stall_days": 14}
 # Agents a person can pause one at a time. Their jobs stay on the board and wait; the rest of the board keeps running.
-# The evidence agent has no jobs on the board (it runs when a person saves notes), and the rules are paused with everything.
+# The evidence agent runs when a person saves notes; its one job (reading the first reply) is paused with everything,
+# as are the rules.
 PAUSABLE = ("Research agent", "Outreach agent", "Manager agent", "Discovery agent", "Direction agent")
 
 

@@ -44,7 +44,7 @@ def play(payload, *, evidence=None, draft=None, manager=None, discovery=None, ac
         return play_direction(payload)
     if "add_news" in names:  # the research agent's refresh task
         return play_refresh(payload)
-    if "set_contact" in names:  # the research agent's brief task (the outreach agent has add_fact too)
+    if "add_contact" in names:  # the research agent's brief task (the outreach agent has add_fact too)
         return play_research(payload, research or default_facts)
     if "suggest" in names:
         return play_actions(payload, actions or default_actions)

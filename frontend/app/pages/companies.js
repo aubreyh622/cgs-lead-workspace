@@ -1,5 +1,5 @@
 // Companies: Step 1 candidates, Steps 2-3 research, Step 4 decision, then accepted and set-aside lists.
-import { html, icon, day, addDays, daysBetween, href, plural, initials, safeUrl, sourceLink } from "../lib.js";
+import { html, icon, day, addDays, daysBetween, href, plural, initials, safeUrl, sourceLink, linkedinSearch } from "../lib.js";
 import { enc, ApiError } from "../api.js";
 import { SKIP_REASONS, REJECT_REASONS, ACCEPT_REASONS, SCOPES, STAGE_LABELS, RECOMMENDATION_LABELS } from "../options.js";
 import { emptyState, inlineError, dropToast } from "../shell.js";
@@ -82,7 +82,13 @@ export function instant(ctx, params, last) {
 }
 
 export function slots(d, ctx) {
-  return d.tab === "review" && d.current ? { checks: html`${crmCheck(d.crm)}${relatedCheck(d.related, ctx)}` } : {};
+  if (d.tab !== "review" || !d.current) return {};
+  const [value, why] = relationshipOf(d.crm, d.related);
+  return {
+    checks: html`${crmCheck(d.crm, d.current)}${relatedCheck(d.related, ctx)}`,
+    relationship: html`<div class="label">Relationship</div><div class="value">${value}</div><div class="meta-3">${why}</div>`,
+    duplicates: duplicateCheck(d),
+  };
 }
 
 export function changed(early, d) {
@@ -262,7 +268,7 @@ const byChecks = (rec) => !!rec && (rec.basis === "checks" || rec.reason === OLD
 function suggestTag(rec) {
   if (!rec) return "";
   const decision = rec.decision;
-  const [cls, text] = byChecks(rec)
+  const [cls, text] = byChecks(rec) || rec.overruled
     ? (decision === "accept" ? ["good", "Checks passed"] : ["warn", "Needs a look"])
     : { accept: ["good", "Suggested: accept"], return: ["warn", "Suggested: look again"], reject: ["", "Suggested: not now"] }[decision] || ["", decision];
   return html`<span class="tag ${cls}" style="margin-top:6px">${text}</span>`;
@@ -285,7 +291,7 @@ function reviewView(d, ctx) {
             ${suggestTag(d.suggested && d.suggested[x.id])}</span>
         </a>`)}
     </nav>
-    <section class="card detail" aria-labelledby="brief-h">${brief(o, d, ctx)}${decision(o, ctx)}</section>
+    <section class="card detail" aria-labelledby="brief-h">${brief(o, d, ctx)}${decision(o, d, ctx)}</section>
   </div>`;
 }
 
@@ -308,54 +314,120 @@ function brief(o, d, ctx) {
       <b>${rec.decision === "accept" ? "The brief passed the research checks" : "The brief needs another look"}</b>
       <p class="meta">${rec.reason === OLD_CHECKS_REASON ? "The company is named in its dated, quoted sources and a contact was found. Whether it is worth pursuing (fit, timing, value) is your call." : rec.reason}</p>
       <p class="meta-3">Checked by code, not judged by the research agent. Direction ${o.directionVersion || "unknown"}</p>` : html`
-      <b>The research agent suggests: ${RECOMMENDATION_LABELS[rec.decision] || rec.decision}</b>
+      <b>${rec.overruled ? "The research agent suggested accept, but the checks say: look again" : `The research agent suggests: ${RECOMMENDATION_LABELS[rec.decision] || rec.decision}`}</b>
       <p class="meta">${rec.reason}</p>
-      <p class="meta-3">Research agent, direction ${o.directionVersion || "unknown"}</p>`}
+      ${rec.overruled ? html`<p class="meta">Checks: ${rec.checks}</p>` : ""}
+      <p class="meta-3">${rec.basis === "agent" ? "The research agent's own judgement; code checks can only overrule an accept." : "Research agent"}, direction ${o.directionVersion || "unknown"}</p>`}
     </div></div>
   </div>` : ""}
   ${(b.flags || []).length ? html`<div class="block stack">${b.flags.map((f) => html`
     <div class="notice warn">${icon("alert")}<span><b>${f.type}.</b> ${f.text}</span></div>`)}</div>` : ""}
   <div class="block">
     <h3 class="sub-title">Why now: what the sources say</h3>
-    ${(b.facts || []).length ? html`<ol class="facts">${b.facts.map((f, i) => html`
-      <li><span class="n">${i + 1}</span><span>${f.text}<span class="meta-3" style="display:block">${sourceLink(f.src, f.date)}</span></span></li>`)}</ol>`
-    : html`<p class="meta">The brief has no sourced facts.</p>`}
+    ${(b.facts || []).length ? factList(b.facts, ctx) : html`<p class="meta">The brief has no sourced facts.</p>`}
   </div>
   <div class="block stack">
-    <div><h3 class="sub-title">What it might mean (not confirmed)</h3><p>${b.hypothesis || "No hypothesis written."}</p></div>
-    ${b.relevance ? html`<div><h3 class="sub-title">Why CGS</h3><p>${b.relevance}</p></div>` : ""}
-    ${b.alternative ? html`<div><h3 class="sub-title">Another explanation</h3><p>${b.alternative}</p></div>` : ""}
+    <div><h3 class="sub-title">What it might mean (not confirmed)</h3>${prose(b.hypothesis || "No hypothesis written.")}</div>
+    ${b.relevance ? html`<div><h3 class="sub-title">Why CGS</h3>${prose(b.relevance)}</div>` : ""}
+    ${b.alternative ? html`<div><h3 class="sub-title">Another explanation</h3>${prose(b.alternative)}</div>` : ""}
     ${(b.unknowns || []).length ? html`<div><h3 class="sub-title">Still unknown</h3><ul class="bullets">${b.unknowns.map((u) => html`<li>${u}</li>`)}</ul></div>` : ""}
   </div>
   ${Object.keys(p).length ? html`
   <div class="block">
     <h3 class="sub-title">Priority</h3>
-    <div class="grid-4">
-      ${metric("Revenue tier", p.tier ? `Tier ${p.tier}` : "Unknown", p.tierWhy)}
-      ${metric("Contact authority", p.authority, p.authorityWhy)}
-      ${metric("Relationship", p.relationship, p.relationshipWhy)}
-      ${metric("Fit with the direction", p.fit, p.fitWhy)}
-    </div>
+    <div class="grid-4">${priorityCells(o, d, ctx)}</div>
     ${p.confidence ? html`<p class="meta-3" style="margin-top:8px">Research agent's confidence in this brief: ${p.confidence}.</p>` : ""}
   </div>` : ""}
   <div class="block">
     <h3 class="sub-title">Who to contact</h3>
-    ${o.contact.name ? html`<p><b style="font-weight:500">${o.contact.name}</b>, ${o.contact.title}</p>
-      <p class="meta">${o.contact.email ? `Email: ${o.contact.email}` : "No email address found. Agents never guess one."}</p>`
-    : html`<p class="meta">No person is named in the sources yet. Role to find: ${o.contact.title}.</p>`}
+    ${contactList(o)}
   </div>
   <div class="block stack">
     <h3 class="sub-title">Checks</h3>
-    <div class="stack" data-slot="checks">${crmCheck(d.crm)}${relatedCheck(d.related, ctx)}</div>
+    <div class="stack" data-slot="checks">${crmCheck(d.crm, o)}${relatedCheck(d.related, ctx)}</div>
     ${b.usage ? html`<p class="meta-3">Research used ${plural(b.usage.searches || 0, "search", "searches")}, ${plural(b.usage.pages || 0, "page")} and ${plural(b.usage.calls || 0, "AI call")}.</p>` : ""}
   </div>`;
 }
 
-function metric(label, value, why) {
-  return html`<div class="metric"><div class="label">${label}</div><div class="value">${value || "Unknown"}</div>${why ? html`<div class="meta-3">${why}</div>` : ""}</div>`;
+// The contact on record first, then the other people the sources name (up to 3 in all). Each has a LinkedIn search
+// the person opens themselves.
+function contactList(o) {
+  const all = (o.brief && o.brief.contacts) || [];
+  const main = o.contact.name ? all.find((p) => p.name === o.contact.name) || { name: o.contact.name, title: o.contact.title } : null;
+  const people = [...(main ? [main] : []), ...all.filter((p) => !main || p.name !== main.name)].slice(0, 3);
+  const company = o.company.name;
+  const row = (p, i) => html`<li><span><b>${p.name}</b>, ${p.title}${i === 0 && main ? html` <span class="tag">On record</span>` : ""}
+    ${p.why ? html`<span class="meta">${p.why}</span>` : ""}
+    <span class="meta-3">${p.url ? html`Named in ${sourceLink(p.url)}. ` : ""}<a href="${linkedinSearch([p.name, company])}" target="_blank" rel="noopener noreferrer">Search on LinkedIn</a></span></span></li>`;
+  return html`
+    ${people.length ? html`<ul class="people">${people.map(row)}</ul>` : html`<p class="meta">No person is named in the sources yet.</p>`}
+    ${main ? html`<p class="meta">${o.contact.email ? `Email: ${o.contact.email}` : "No email address found. Agents never guess one."}</p>` : ""}
+    <p class="meta-3">Role to find: ${o.contact.title || "not set"}. <a href="${linkedinSearch([o.contact.title === "Contact to confirm" ? "" : o.contact.title, company])}" target="_blank" rel="noopener noreferrer">Search LinkedIn for this role</a> (opens in your browser; agents do not read LinkedIn).</p>`;
 }
 
-function crmCheck(crm) {
+function metric(label, value, why, slot) {
+  return html`<div class="metric" ${slot ? html`data-slot="${slot}"` : ""}><div class="label">${label}</div><div class="value">${value || "Unknown"}</div>${why ? html`<div class="meta-3">${why}</div>` : ""}</div>`;
+}
+
+// Facts that cite the same page sit together and name it once. News over a year old is marked: it may not be "now".
+function factList(facts, ctx) {
+  const groups = [];
+  for (const f of facts) {
+    const g = groups.find((x) => x.src === f.src);
+    if (g) g.facts.push(f); else groups.push({ src: f.src, date: f.date, facts: [f] });
+  }
+  let n = 0;
+  return html`<ol class="facts">${groups.map((g) => {
+    const age = daysBetween(g.date, ctx.today);
+    return g.facts.map((f, i) => html`
+      <li><span class="n">${++n}</span><span>${f.text}${i === g.facts.length - 1 ? html`<span class="meta-3" style="display:block">${sourceLink(g.src, g.date === "undated" ? "undated" : day(g.date, ctx.today))}${
+        age !== null && age > 365 ? html` <span class="tag warn">Over a year old</span>` : ""}</span>` : ""}</span></li>`);
+  })}</ol>`;
+}
+
+// A long paragraph reads better as points: one per sentence.
+function prose(text) {
+  const parts = String(text).length > 240 ? String(text).split(/(?<=[.!?])\s+(?=[A-Z0-9"“(])/).map((x) => x.trim()).filter(Boolean) : [];
+  return parts.length > 2 ? html`<ul class="bullets">${parts.map((x) => html`<li>${x}</li>`)}</ul>` : html`<p>${text}</p>`;
+}
+
+// Who a job title usually speaks for, when the brief does not say.
+function authorityOf(title) {
+  const t = ` ${String(title || "").toLowerCase()} `;
+  if (/\b(chief|ceo|cfo|coo|cio|cto|cdo|president|owner|founder)\b/.test(t) && !/\bvice president\b/.test(t)) return ["Executive", "From the job title: usually approves budget."];
+  if (/\b(vp|svp|evp|vice president|general manager)\b/.test(t)) return ["Senior leader", "From the job title: usually holds the budget for their area."];
+  if (/\b(director|head of)\b/.test(t)) return ["Director", "From the job title: usually shapes the budget, may not approve it."];
+  if (/\bmanager\b/.test(t)) return ["Manager", "From the job title: usually recommends, rarely approves."];
+  return null;
+}
+
+// What the CRM check and the check for other CGS work found, as the relationship with the company.
+function relationshipOf(crm, related) {
+  if (!crm || !related || crm.pending || related.pending) return ["Checking…", "Insightly and other CGS work are being checked."];
+  if (crm.error || related.error) return ["Not checked", "A check could not run: see Checks below."];
+  const inCrm = !crm.off && ["leads", "contacts", "organizations", "opportunities"].some((k) => (crm[k] || []).length);
+  const other = (related.other_opportunities || []).length;
+  if (inCrm || other) return ["Known to CGS", [inCrm && "Records in Insightly", other && "other CGS work"].filter(Boolean).join(" and ") + ": see Checks below."];
+  if (crm.off) return ["No other CGS work", "The CRM is off, so Insightly was not checked."];
+  return ["None found", "Nothing in Insightly or in other CGS work."];
+}
+
+const vague = (v) => !v || /^(unknown|none known|n\/a)$/i.test(String(v).trim());
+
+function priorityCells(o, d, ctx) {
+  const p = (o.brief && o.brief.priority) || {};
+  // Briefs from before 5 Nov 2026 say "Tier 1" with "not estimated": that is no tier.
+  const estimated = p.tier && !/not estimated/i.test(p.tierWhy || "");
+  const authority = !vague(p.authority) ? [p.authority, p.authorityWhy] : o.contact && o.contact.title ? authorityOf(o.contact.title) : null;
+  const rel = !vague(p.relationship) ? [p.relationship, p.relationshipWhy] : relationshipOf(d.crm, d.related);
+  return html`
+    ${metric("Revenue tier", estimated ? `Tier ${p.tier}` : "Not estimated", estimated ? p.tierWhy : "Public research does not show what the work would be worth to CGS. It is estimated at Qualification.")}
+    ${authority ? metric("Contact authority", authority[0], authority[1]) : ""}
+    ${metric("Relationship", rel[0], rel[1], vague(p.relationship) ? "relationship" : "")}
+    ${!vague(p.fit) ? metric("Fit with the direction", p.fit, p.fitWhy) : ""}`;
+}
+
+function crmCheck(crm, o) {
   if (!crm) return "";
   if (crm.pending) return html`<div class="notice" role="status">${icon("clock")}<span>Checking the CRM for this company and person…</span></div>`;
   if (crm.error) return html`<div class="notice bad">${icon("alert")}<span>The CRM could not be checked: ${crm.error}</span></div>`;
@@ -363,7 +435,9 @@ function crmCheck(crm) {
   const found = ["leads", "contacts", "organizations", "opportunities"].some((k) => (crm[k] || []).length);
   const records = [["leads", "Lead"], ["contacts", "Contact"], ["organizations", "Organization"], ["opportunities", "Opportunity"]]
     .flatMap(([k, kind]) => (crm[k] || []).map((x) => ({ kind, name: x.name || x.company || x.id, url: safeUrl(x.url), status: x.status })));
-  return html`<div class="notice ${found ? "warn" : "good"}">${icon(found ? "alert" : "check")}<span>${crm.summary}
+  const byName = crm.searchedBy && !crm.searchedBy.includes("email") && o && o.contact && o.contact.name;
+  return html`<div class="notice ${found ? "warn" : "good"}">${icon(found ? "alert" : "check")}<span>${crm.summary}${byName
+    ? html` <span class="meta-3">Insightly was searched by company name only: ${o.contact.name} has no email address to search by.</span>` : ""}
     ${records.length ? html`<ul class="crm-found">${records.slice(0, 8).map((x) => html`<li>${x.kind}: ${x.url
       ? html`<a href="${x.url}" target="_blank" rel="noopener noreferrer">${x.name}</a>` : x.name}${x.status ? html` <span class="meta-3">(${x.status})</span>` : ""}</li>`)}</ul>` : ""}</span></div>`;
 }
@@ -379,9 +453,9 @@ function relatedCheck(rel, ctx) {
   </span></div>`;
 }
 
-function decision(o, ctx) {
+function decision(o, d, ctx) {
   const err = ui.error && ui.error.where === "step4" ? ui.error.message : "";
-  if (ui.mode === "accept") return html`<div class="block">${acceptForm(o, ctx)}${inlineError(err)}</div>`;
+  if (ui.mode === "accept") return html`<div class="block">${acceptForm(o, d, ctx)}${inlineError(err)}</div>`;
   if (ui.mode === "return") return html`<div class="block">${returnForm(o)}${inlineError(err)}</div>`;
   if (ui.mode === "reject") return html`<div class="block">${rejectForm(o)}${inlineError(err)}</div>`;
   return html`
@@ -399,7 +473,22 @@ function formData(o) {
   return html`data-id="${o.id}" data-revision="${o.revision}" data-name="${o.company.name}"`;
 }
 
-function acceptForm(o, ctx) {
+// The automatic checks cover Insightly (by company name, and by email when there is one) and other CGS work in the
+// workspace. When they ran and found nothing, the person confirms only what they cannot see: relationships known to
+// colleagues, a parent company, a new name. Otherwise they check by hand.
+function duplicateCheck(d) {
+  const crm = d.crm || {}, rel = d.related || {};
+  const ran = !crm.pending && !rel.pending && !crm.error && !rel.error && !crm.off;
+  const clean = ran && !["leads", "contacts", "organizations", "opportunities"].some((k) => (crm[k] || []).length) && !(rel.other_opportunities || []).length;
+  const text = clean
+    ? "The automatic checks found nothing in Insightly or in other CGS work. I know of no other relationship with this company (for example through a colleague, a parent company or an earlier name)."
+    : crm.pending || rel.pending ? "I checked for an existing relationship and for duplicates (in Insightly and with colleagues). The automatic checks are still running."
+    : ran ? "I looked at what the checks found above and there is no duplicate (in Insightly or with colleagues)."
+    : "I checked Insightly and with colleagues for an existing relationship or a duplicate: the automatic check did not run.";
+  return html`<label class="check"><input type="checkbox" name="duplicates_checked">${text}</label>`;
+}
+
+function acceptForm(o, d, ctx) {
   const s = (o.brief && o.brief.suggested) || {};
   const owner = ctx.users.includes(s.owner) ? s.owner : ctx.me;
   const due = s.due && daysBetween(ctx.today, s.due) >= 0 ? s.due : addDays(ctx.today, 3);
@@ -431,7 +520,7 @@ function acceptForm(o, ctx) {
     <label class="field">Comment for the direction agent <span class="hint">Optional. What made this company worth it.</span>
       <textarea name="comment" rows="2"></textarea>
     </label>
-    <label class="check"><input type="checkbox" name="duplicates_checked">I checked for an existing relationship and for duplicates (in the CRM and with colleagues).</label>
+    <div data-slot="duplicates">${duplicateCheck(d)}</div>
     <div class="actions">
       <button type="submit" class="btn primary" disabled>Accept company</button>
       <button type="button" class="btn ghost" data-act="mode" data-mode="">Cancel</button>
@@ -442,12 +531,14 @@ function acceptForm(o, ctx) {
 
 function returnForm(o) {
   const b = o.brief || {};
-  const chips = [...(b.unknowns || []).map((u) => `Find out: ${u}.`), ...(b.flags || []).map((f) => `Resolve: ${f.text}`)].slice(0, 4);
+  const stop = (t) => (/[.?!]$/.test(t.trim()) ? t.trim() : `${t.trim()}.`);
+  const ideas = [...(b.unknowns || []).map(stop), ...(b.flags || []).map((f) => `${f.type}: ${stop(f.text)}`)].slice(0, 6);
   return html`
   <form class="panel-form" data-act="returnForm" data-on="submit input" ${formData(o)} aria-labelledby="ret-h">
     <h3 id="ret-h" class="sub-title">Send back to the research agent</h3>
     <p class="meta">It researches again with your questions and brings the company back to Ready to decide.</p>
-    ${chips.length ? html`<div class="chips" aria-label="Start from the brief">${chips.map((c) => html`<button type="button" class="chip" data-act="chip" data-text="${c}">${c}</button>`)}</div>` : ""}
+    ${ideas.length ? html`<fieldset class="tick-cards"><legend class="meta">From the brief: tick what the agent should find out</legend>
+      ${ideas.map((c) => html`<label class="tick-card"><input type="checkbox" data-act="idea" data-on="change" data-text="${c}"><span>${c}</span></label>`)}</fieldset>` : ""}
     <label class="field">What should the agent find out?
       <textarea name="questions" rows="3" placeholder="For example: confirm who now leads the automation program." required></textarea>
     </label>
@@ -707,11 +798,13 @@ export const actions = {
     ctx.focusAfter = ui.mode ? ".panel-form select, .panel-form textarea" : "[data-act=mode][data-mode=accept]";
     ctx.refresh();
   },
-  chip(t) {
+  // A ticked idea joins the questions; unticked, it leaves them.
+  idea(t) {
     const area = t.closest("form").elements.questions;
-    area.value = area.value ? `${area.value}\n${t.dataset.text}` : t.dataset.text;
+    const lines = area.value.split("\n").filter((l) => l.trim() && l.trim() !== t.dataset.text);
+    if (t.checked) lines.push(t.dataset.text);
+    area.value = lines.join("\n");
     area.dispatchEvent(new Event("input", { bubbles: true }));
-    area.focus();
   },
   acceptForm(form, e, ctx) {
     const f = form.elements;

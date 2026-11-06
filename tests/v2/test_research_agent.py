@@ -42,11 +42,11 @@ def test_facts_and_the_contact_come_only_from_pages_the_agent_read():
     with pytest.raises(R.ToolError, match="already recorded"):
         t["add_fact"]({"url": NEWS, "quote": quote, "fact": "The same again, in other words.", "category": "person"})
     with pytest.raises(R.ToolError, match="Read that page"):
-        t["set_contact"]({"name": "Priya Desai", "title": "Chief Digital Officer", "url": LEADERS, "quote": "Priya Desai, Chief Digital Officer"})
+        t["add_contact"]({"name": "Priya Desai", "title": "Chief Digital Officer", "url": LEADERS, "quote": "Priya Desai, Chief Digital Officer"})
     t["read_page"]({"url": LEADERS})
     with pytest.raises(R.ToolError, match="names this person"):
-        t["set_contact"]({"name": "Invented Person", "title": "COO", "url": LEADERS, "quote": "Gregory Hale, President and CEO."})
-    assert t["set_contact"]({"name": "Priya Desai", "title": "Chief Digital Officer (oversees the AI pilots)", "url": LEADERS,
+        t["add_contact"]({"name": "Invented Person", "title": "COO", "url": LEADERS, "quote": "Gregory Hale, President and CEO."})
+    assert t["add_contact"]({"name": "Priya Desai", "title": "Chief Digital Officer (oversees the AI pilots)", "url": LEADERS,
                              "quote": "Priya Desai, Chief Digital Officer, joined in August 2026 and reports to the CEO."})["accepted"]
     assert t["finish"](FINISH) == {"facts": 1, "contact": True}
     assert record["dropped"] == {"not_read": 2, "quote_not_found": 1, "duplicate": 1, "person_not_on_page": 1}
@@ -197,7 +197,7 @@ def test_refresh_keeps_only_news_since_the_brief_from_new_pages():
     spec, record = RA.refresh_agent(MockSearch(as_of=date(2027, 4, 2)), "Kessler Motion Controls", "kesslermotion.example",
                                     date(2026, 10, 2), {KESSLER_OLD})
     t = {x.name: x.run for x in spec.tools + [spec.finish]}
-    assert {x.name for x in spec.tools} >= {"add_news", "read_page"} and "set_contact" not in {x.name for x in spec.tools}
+    assert {x.name for x in spec.tools} >= {"add_news", "read_page"} and "add_contact" not in {x.name for x in spec.tools}
     t["company_pages"]({"topic": "news"})
     old = t["read_page"]({"url": KESSLER_OLD})["text"].split(". ")[0] + "."
     with pytest.raises(R.ToolError, match="already a source in the brief"):
