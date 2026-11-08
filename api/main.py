@@ -243,6 +243,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 app = create_app()
 
 
+def port_in_use(port: int) -> bool:
+    """True when something already answers on 127.0.0.1:port, such as the workspace started twice."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
 def main():
     import uvicorn
     s = app.state.settings
@@ -252,6 +260,18 @@ def main():
     if "onedrive" in str(s.db_path).lower():
         print(f"Warning: the database {s.db_path} is in a OneDrive folder. Syncing can damage a database that is in use. "
               "Set CGS_V2_DB_PATH in .env to a folder outside OneDrive, for example C:/cgs-data/workspace-v2.sqlite3.")
+    if port_in_use(s.port):
+        print(f"The workspace is already running on port {s.port}: open http://127.0.0.1:{s.port}/ "
+              "(a second copy on the same database would take over the first one's work).")
+        raise SystemExit(1)
+    from api.autonomy import recover_after_restart
+    back = recover_after_restart(app)
+    if back["requeued"] or back["failed"]:
+        print(f"Restart: {back['requeued']} agent job(s) the last run stopped in the middle of are back on the board"
+              + (f"; {back['failed']} failed after stopping in the middle too often" if back["failed"] else "") + ".")
+    if back["emails"]:
+        print(f"Restart: {back['emails']} email(s) were being sent when the workspace stopped. They may or may not have gone out; "
+              "the opportunity page asks you to check Gmail's Sent folder.")
     from api.undo import Clock
     app.state.clock = Clock(app).start()  # sends approved emails and ends Step 4 undo windows; runs even when agents are off
     if s.agent_worker:

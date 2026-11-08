@@ -657,6 +657,19 @@ def run_job(app, job_id: str) -> str:
         return job.status
 
 
+def recover_after_restart(app) -> dict:
+    """What a stopped workspace left half done: jobs left as running go back on the board (jobs.recover_running), and
+    emails left as sending become unknown (undo.recover_sending). The server process calls it once, before its clock
+    and worker start; a second server on the same database would take the first one's work, so api/main.py refuses to
+    start while its port is in use."""
+    from api import undo as U
+    with app.state.db.session() as s:
+        jobs = J.recover_running(s)
+        requeued = sum(1 for j in jobs if j.status == "queued")
+        failed = len(jobs) - requeued
+    return {"requeued": requeued, "failed": failed, "emails": U.recover_sending(app)}
+
+
 def queued(app) -> list[str]:
     """Queued jobs that may run now, oldest first (jobs waiting out a retry delay, and paused agents' jobs, are left out)."""
     with app.state.db.session() as s:

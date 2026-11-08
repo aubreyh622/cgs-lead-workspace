@@ -13,7 +13,8 @@ An undone decision stays in the records: the Step 4 decision gets an "Undone" en
 
 The Clock runs in the server process (python -m api.main), apart from the agent worker, so a paused agent team never
 holds a person's email. An email whose time passed more than STALE ago (the server was stopped) is not sent: the
-person approves it again."""
+person approves it again. An email the server stopped in the middle of sending is marked unknown and never sent again
+on its own (recover_sending): the person checks Gmail's Sent folder first, so a client never gets it twice."""
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
@@ -28,6 +29,8 @@ log_ = logging.getLogger("cgs.undo")
 
 MAX_SECONDS = 30
 STALE = timedelta(minutes=10)
+UNKNOWN = ("The workspace stopped while this email was being sent, so it may or may not have gone out. "
+           "Check the Sent folder in Gmail before you approve it again.")
 
 
 def utcnow() -> datetime:
@@ -194,6 +197,26 @@ def email_view(s, opp_id: str) -> dict | None:
         return None
     return {"id": row.id, "status": row.status, "purpose": row.purpose, "to": row.to, "subject": row.subject, "by": row.by,
             "itemId": row.item_id, "sendAt": aware(row.send_at).isoformat(), "seconds": seconds_left(row.send_at), "error": row.error}
+
+
+def recover_sending(app) -> int:
+    """After a restart: an email left as sending was going out when the workspace stopped. Gmail may have sent it, so it
+    is not sent again: it becomes unknown (the opportunity's next email is no longer held back by it) and the page and
+    the updates feed ask the person to check Gmail's Sent folder. Only the server process calls this, before its clock
+    starts (api/main.py). Returns how many emails were marked."""
+    from api.autonomy import agent_ctx
+    from api.services import log
+    with app.state.db.session() as s:
+        rows = list(s.scalars(select(m.OutboundEmail).where(m.OutboundEmail.status == "sending")))
+        if not rows:
+            return 0
+        c = agent_ctx(app, s)
+        for row in rows:
+            row.status, row.error, row.ended_at = "unknown", UNKNOWN, utcnow()
+            log(c, row.opportunity_id, "s", f"The workspace stopped while the {row.purpose} email to {row.to} approved by {row.by} "
+                                            "was being sent. It may or may not have gone out: check the Sent folder in Gmail before "
+                                            "approving it again.")
+    return len(rows)
 
 
 def queue_email(c, o: m.Opportunity, p: dict, it: m.InboxItem | None, seconds: int) -> dict:

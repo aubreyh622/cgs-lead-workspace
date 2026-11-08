@@ -223,6 +223,8 @@ The rules engine is `backend/rules.py` (rule version 1.1-proposed), unchanged fr
 - The server answers only requests addressed to 127.0.0.1 or localhost, and refuses changes sent from another website's page (Origin check). Every change needs the X-User header, which other websites cannot add without the server's permission.
 - Demo mode refuses a database file that holds live records. Live mode on the demo sample is allowed (the check scripts use it) and `GET /api/config` reports `demoData: true`.
 - Keep the database outside OneDrive: set `CGS_V2_DB_PATH` to a local folder. The server prints a warning when the file is in OneDrive.
+- **After a crash or a closed window** (`recover_after_restart` in api/autonomy.py, run by `python -m api.main` before its clock and worker start): an agent job left as `running` goes back on the board and starts over (otherwise its opportunity would stay "busy" for ever); after `MAX_TRIES` (3) such stops it fails instead. An approved email left as `sending` is **never sent again on its own**: Gmail may already have sent it, so it becomes `unknown`, no longer holds back the opportunity's next email, and the opportunity page, the activity log and the updates feed ask the person to check Gmail's Sent folder before approving it again. A CRM sync is saved per opportunity, so a rerun continues where it stopped.
+- **One server per database.** The server refuses to start when its port already answers (the workspace started twice), so a second copy cannot take over the first one's running work. Two servers on different ports must use different database files.
 
 ## Tool-using agents (multi-agent step 1)
 

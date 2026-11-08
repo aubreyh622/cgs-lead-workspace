@@ -192,7 +192,7 @@ class OutboundEmail(Base):
     body: Mapped[str] = mapped_column(Text)
     seen_hash: Mapped[str] = mapped_column(String(32))
     by: Mapped[str] = mapped_column(String(100))
-    status: Mapped[str] = mapped_column(String(12), default="queued", index=True)  # queued | sending | sent | undone | failed | expired
+    status: Mapped[str] = mapped_column(String(12), default="queued", index=True)  # queued | sending | sent | undone | failed | expired | unknown (stopped while sending)
     send_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

@@ -53,6 +53,9 @@ export function waitingNotice(w) {
         <button type="button" class="btn small ghost" data-act="sendNow" data-out="${w.id}">Send now</button></div>` : ""}
     </div></div></div>`;
   }
+  if (w.status === "unknown") {
+    return html`<div class="block"><div class="notice bad" role="alert">${icon("alert")}<span><b>The email to ${w.to} may or may not have gone out.</b> ${w.error || "The workspace stopped while it was being sent."}</span></div></div>`;
+  }
   const why = w.status === "expired" ? "The workspace was stopped before it went out." : w.error || "It could not be sent.";
   return html`<div class="block"><div class="notice bad" role="alert">${icon("alert")}<span><b>The email to ${w.to} was not sent.</b> ${why} Approve it again to send it.</span></div></div>`;
 }

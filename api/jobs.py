@@ -52,6 +52,7 @@ def paused_agents(s) -> set[str]:
     return {a for a in (setting(s, "paused_agents") or []) if a in PAUSABLE}
 DEFAULT_AI_BUDGET = 60
 RETRY_SECONDS = 60     # wait before retrying a temporary AI error; doubles with each attempt
+MAX_TRIES = 3          # a job the workspace stopped in the middle of this many times fails instead of starting over
 
 
 def default_ai_budget() -> int:
@@ -219,6 +220,22 @@ def claim(s, job_id: str) -> bool:
                     .execution_options(synchronize_session=False))
     s.commit()
     return res.rowcount == 1
+
+
+def recover_running(s) -> list[m.AgentJob]:
+    """After a restart: a job left as running belonged to the process that stopped. Nothing runs it any more, and the
+    lanes would treat its opportunity as busy for ever. Each goes back on the board and starts over (its unfinished
+    work was never saved), or fails once the workspace stopped in the middle of it MAX_TRIES times, so a job that
+    itself brings the workspace down cannot do so again and again. Only the server process calls this, before its
+    worker starts (api/main.py)."""
+    jobs = list(s.scalars(select(m.AgentJob).where(m.AgentJob.status == "running")))
+    for j in jobs:
+        if j.attempts >= MAX_TRIES:
+            finish(j, "failed", error=f"The workspace stopped while this ran, {j.attempts} times. Look at it before you queue it again.")
+        else:
+            j.status, j.retry_at = "queued", None
+            j.result = "Back on the board: the workspace stopped while this ran, so it starts over."
+    return jobs
 
 
 def retry_later(job: m.AgentJob, message: str) -> None:
