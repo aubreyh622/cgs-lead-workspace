@@ -15,7 +15,7 @@ integrated app, which has its own interface.
 | `#/sources` | Sources | 1 | Ask the discovery agent (and how many), automatic searches, add a company, set and approve the research direction, see what searches taught |
 | `#/outreach` | Outreach | 5 and the first reply | Approve and send email drafts, record what was sent, follow-ups, replies, nurture |
 | `#/qualification` | Qualification | 6-8 | Notes and evidence proposals, scores and conditions, tasks, the pack, the Step 8 decision |
-| `#/agents` | Agents | All | The six agent cards and their suggestions; each agent's own page (`?agent=research`) with its pause switch, instructions and, for the research agent, Try it on a company; the records: controls, task board, AI runs, permissions, lessons, scorecard |
+| `#/agents` | Agents | All | The six agent cards and their suggestions; each agent's own page (`?agent=research`) with its pause switch, instructions and, for the research agent, Try it on a company; the records: controls, task board, AI runs, permissions, lessons, team instructions (edit the three sections, each save a revision; a save over someone's newer revision is refused and the text stays on the page; restore an earlier revision, refused while changes are unsaved), scorecard |
 
 Tabs and selections live in the URL (`#/companies?tab=review&id=ostrander`), so a link opens the same view. When a page
 opens without a tab, the tab it chooses is written into the URL, so a later redraw (a brief finishing, a click elsewhere)

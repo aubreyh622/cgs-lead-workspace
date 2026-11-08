@@ -47,6 +47,7 @@ export function pageState() {
         if (after) after(res);
       } catch (e) {
         ui.error = { where, message: errorText(e) };
+        ui.notice = null; // the notice of an earlier action no longer describes the last one
       }
       ctx.refresh();
     },

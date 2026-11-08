@@ -27,10 +27,11 @@ Code reaches the file through SQLAlchemy, a translator layer. To move to a share
 | `feedback` | why someone skipped, accepted, returned or rejected something; marked withdrawn when the decision was undone (the learning loop ignores it) | 1, 4 | person |
 | `direction_versions` | an approved research direction; never edited, only added to | learning loop | person approves |
 | `direction_proposals` | a suggested change to the direction, waiting for approval | learning loop | AI or person proposes |
-| `agent_runs` | one AI call: agent, model, prompt version, success or failure | all | system |
+| `agent_runs` | one AI call: agent, model, prompt version, success or failure, and the team instructions revision in use (`team_revision`) | all | system |
 | `agent_jobs` | one piece of agent work on the task board: which agent, why (event, patrol or handoff), who asked, status and result | all | agents |
 | `manager_decisions` | one decision of the manager agent (shadow mode too): what kind of work, for which opportunity, why, the outcome; `scope` says whether the daily review or a triage made it | all | Manager agent |
 | `agent_lessons` | a lesson for one agent (L1, L2 ...): the text, the finding it rests on and its numbers, proposed, approved, rejected or retired (by whom, when, why), and how often it was in a prompt | learning loop | Manager agent or person proposes; person approves |
+| `team_instructions` | one saved revision of what CGS staff tell the agents (three sections of text), never changed: who saved it, when, why, the revision it started from, edit or restore | all agents' prompts | admins (CGS_ADMINS) |
 | `opportunity_memory` | the manager's notebook for one opportunity: a summary, and the promises each side made (who, what, due date, the quote and its note, open, done or dropped) | 6–8 | Manager agent; a person can close a promise |
 | `inbox_items` | what an agent prepared for a person (draft, facts, contact, suggestion, reminder) and what the person did with it | all | agents, people |
 | `activity` | one line of history for an opportunity | all | system |

@@ -323,3 +323,51 @@ def edit_draft(item_id: str, body: DraftEdit, c: S.Ctx = Actor):
 @router.post("/inbox/{item_id}", summary="Apply, finish or dismiss what an agent prepared; an email draft can be approved and sent at once (action send)")
 def act(item_id: str, body: ItemAction, c: S.Ctx = Actor):
     return AU.apply_item(c, item_id, body.action, body.payload_hash, body.to, body.delay)
+
+
+# ---------- team instructions: what CGS staff tell the agents in their own words (api/team_text.py) ----------
+class TeamTextIn(BaseModel):
+    sections: dict[str, str] = Field(..., description="Section key -> text; a section left out is saved empty")
+    baseRevision: int | None = Field(..., description="The revision you started from (null when nothing was saved yet); a stale one is refused")
+    reason: str = Field("", description="Optional: why, in a few words")
+
+
+class TeamTextRestore(BaseModel):
+    baseRevision: int | None
+
+
+def _team_text_call(c: S.Ctx, fn):
+    from api import team_text as TT
+    if not S.may_manage_permissions(c):
+        raise S.ActionError(f"Only {', '.join(c.settings.admins)} can change the team instructions (CGS_ADMINS in .env).", 403, "forbidden")
+    try:
+        row = fn(TT)
+    except TT.Stale as e:
+        raise S.ActionError(str(e), 409, "stale")
+    except TT.Invalid as e:
+        raise S.ActionError(str(e), 400, "invalid")
+    S.log(c, None, "h", f"{c.actor} saved the team instructions for the agents (revision {row.revision})")
+    return {**TT.view(row), "sectionsMeta": TT.catalog()}
+
+
+@router.get("/team-text", summary="The instructions CGS staff wrote for the agents: sections, who reads each, the revision in use")
+def team_text(request: Request, c: S.Ctx = Actor):
+    from api import team_text as TT
+    return {"current": TT.view(TT.latest(c.s)), "sectionsMeta": TT.catalog(), "canChange": S.may_manage_permissions(c),
+            "admins": list(c.settings.admins), "aiProvider": c.settings.ai_provider}
+
+
+@router.get("/team-text/history", summary="Every saved revision of the team instructions, newest first")
+def team_text_history(request: Request, c: S.Ctx = Actor):
+    from api import team_text as TT
+    return [TT.view(r) for r in c.s.scalars(select(m.TeamInstructions).order_by(m.TeamInstructions.revision.desc()))]
+
+
+@router.put("/team-text", summary="Save the team instructions as a new revision (refused if someone saved since baseRevision)")
+def save_team_text(body: TeamTextIn, c: S.Ctx = Actor):
+    return _team_text_call(c, lambda TT: TT.save(c.s, body.sections, body.baseRevision, c.actor, body.reason))
+
+
+@router.post("/team-text/{revision}/restore", summary="Go back to an earlier revision's text (saved as a new revision)")
+def restore_team_text(revision: int, body: TeamTextRestore, c: S.Ctx = Actor):
+    return _team_text_call(c, lambda TT: TT.restore(c.s, revision, body.baseRevision, c.actor))

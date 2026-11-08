@@ -15,6 +15,7 @@ const TABS = [
   ["runs", "AI runs"],
   ["permissions", "Permissions"],
   ["lessons", "Lessons"],
+  ["team", "Team instructions"],
   ["scorecard", "Scorecard"],
 ];
 const LESSON_AGENTS = ["Research agent", "Outreach agent", "Evidence agent", "Manager agent", "Discovery agent", "Direction agent"];
@@ -51,6 +52,7 @@ export async function load(ctx, params) {
     [data.perms, data.usage, data.history] = await Promise.all([ctx.api.get("/toolkit/permissions"), ctx.api.get("/toolkit/usage"), opt(ctx.api.get("/toolkit/permissions/history"))]);
   }
   if (tab === "lessons") [data.lessons, data.findings] = await Promise.all([ctx.api.get("/lessons"), opt(ctx.api.get("/lessons/findings"))]);
+  if (tab === "team") [data.team, data.teamHistory] = await Promise.all([ctx.api.get("/team-text"), ctx.api.get("/team-text/history")]);
   if (tab === "scorecard") [data.scorecard, data.decisions, data.rules] = await Promise.all([ctx.api.get("/manager/scorecard"), opt(ctx.api.get("/manager/decisions?limit=50")), ctx.api.get("/rules")]);
   return data;
 }
@@ -88,7 +90,7 @@ export function view(d, ctx) {
   ${st.notices()}
   ${tabBar("Agents", TABS, d.tab, { work: d.inbox.length || undefined })}
   <div id="panel" role="tabpanel" aria-labelledby="tab-${d.tab}">
-    ${{ controls: teamView, work: workView, runs: runsView, permissions: permissionsView, lessons: lessonsView, scorecard: scorecardView }[d.tab](d, ctx)}
+    ${{ controls: teamView, work: workView, runs: runsView, permissions: permissionsView, lessons: lessonsView, team: teamTextView, scorecard: scorecardView }[d.tab](d, ctx)}
   </div>`;
 }
 
@@ -385,6 +387,57 @@ function lessonsView(d, ctx) {
   </div>`;
 }
 
+// ----- team instructions (api/team_text.py) -----
+// What the person typed, kept until it is saved: a refused save (someone saved in between) redraws the page.
+let teamDraft = null;
+
+function teamTextView(d, ctx) {
+  const t = d.team, cur = t.current;
+  const base = cur ? cur.revision : null;
+  const text = (k) => (teamDraft ? teamDraft.sections[k] : cur && cur.sections[k]) || "";
+  const saved = (r) => `${r.savedBy}, ${day(r.savedAt.slice(0, 10), ctx.today)}`;
+  return html`
+  <div class="two-col">
+    <div class="main stack">
+      <section class="card card-body stack" aria-labelledby="tt-h">
+        <div class="row-flex"><h2 id="tt-h" class="section-title" style="margin:0">What CGS tells the agents</h2>
+          <span class="meta" style="margin-left:auto">${cur ? `Revision ${cur.revision}, ${saved(cur)}` : "Nothing saved yet"}</span></div>
+        <p class="meta">How CGS works, in your own words. Each section joins the end of the prompts of the agents that read it, from their next run,
+          and changes how they write and what they look for. It cannot change what an agent may use, the checks on its work (quotes, facts and
+          citations from their sources), or that a person approves before anything is sent or scored.</p>
+        <div class="notice warn">${icon("alert")}<span>This text goes to the AI provider (${t.aiProvider}) with every request of those agents.
+          Put CGS-confidential material here only once CGS has approved that provider (SoW section 9).</span></div>
+        ${t.canChange ? html`<form class="panel-form" data-act="teamSave" data-on="submit input" data-base="${base === null ? "" : base}">
+          ${t.sectionsMeta.map((s) => html`<label class="field">${s.title}
+            <span class="meta">Read by ${s.readBy.join(", ")}. ${s.hint} At most ${s.max} characters.</span>
+            <textarea name="${s.key}" rows="6" maxlength="${s.max}">${text(s.key)}</textarea></label>`)}
+          <label class="field">Why (optional)<input name="reason" value="${teamDraft ? teamDraft.reason : ""}"></label>
+          <div class="actions"><button type="submit" class="btn primary">Save as revision ${base === null ? 1 : base + 1}</button>
+            ${teamDraft ? html`<button type="button" class="btn ghost" data-act="teamDiscard">Discard changes</button><span class="meta">Not saved yet.</span>` : ""}</div>
+          ${st.err("team")}
+        </form>`
+        : html`${t.sectionsMeta.map((s) => html`<div><p class="sub-title" style="margin:0">${s.title}</p><p class="meta">Read by ${s.readBy.join(", ")}.</p>
+            <p style="white-space:pre-wrap">${(cur && cur.sections[s.key]) || "Nothing written."}</p></div>`)}
+          <p class="meta">Only ${t.admins.join(", ")} can change it (CGS_ADMINS).</p>`}
+      </section>
+    </div>
+    <aside class="side">
+      <section class="card card-body stack" aria-labelledby="tt-hist">
+        <h2 id="tt-hist" class="section-title" style="margin:0">Revisions</h2>
+        ${st.err("teamHist")}
+        ${d.teamHistory.length ? html`<ul class="history">${d.teamHistory.map((r) => html`<li>
+          <b>Revision ${r.revision}${r.revision === base ? " (in use)" : ""}</b>
+          <span class="meta">${saved(r)}. ${r.reason || (r.origin === "restore" ? "Restored." : "No reason given.")}</span>
+          <details><summary class="meta">The text</summary>${t.sectionsMeta.map((s) => r.sections[s.key] ? html`<p class="meta" style="white-space:pre-wrap"><b>${s.title}</b>
+            ${r.sections[s.key]}</p>` : "")}</details>
+          ${t.canChange && r.revision !== base ? html`<button type="button" class="btn small" data-act="teamRestore" data-rev="${r.revision}" data-base="${base}"
+            ${teamDraft ? html`disabled title="Save or discard your changes first"` : ""}>Use this text again</button>` : ""}
+        </li>`)}</ul>` : html`<p class="meta">Every save is kept here. Nothing yet.</p>`}
+      </section>
+    </aside>
+  </div>`;
+}
+
 function lessonRow(l, ctx) {
   const since = l.sinceApproved;
   return html`<li style="align-items:flex-start">
@@ -540,6 +593,29 @@ export const actions = {
       { reason: form.elements.reason.value.trim() }));
   },
 
+  teamSave(form, e, ctx) {
+    const sections = Object.fromEntries([...form.querySelectorAll("textarea")].map((x) => [x.name, x.value]));
+    const base = form.dataset.base === "" ? null : Number(form.dataset.base);
+    // the draft remembers the revision the person started from, so a newer save by someone else shows as a warning
+    teamDraft = { base: teamDraft ? teamDraft.base : base, sections, reason: form.elements.reason.value };
+    if (e.type !== "submit") return;
+    teamDraft.base = base; // saving now means: over the revision on the page
+    st.write("team", form.querySelector("[type=submit]"), ctx, () => ctx.api.put("/team-text", { sections, baseRevision: base, reason: form.elements.reason.value.trim() }),
+      (res) => { teamDraft = null; st.ui.notice = [{ text: `Saved as revision ${res.revision}. The agents that read it use it from their next run.`, cls: "good" }]; });
+  },
+  teamDiscard(t, e, ctx) {
+    teamDraft = null;
+    ctx.refresh();
+  },
+  teamRestore(t, e, ctx) {
+    if (teamDraft) { // typing does not redraw the page, so the button may still look available
+      st.ui.error = { where: "teamHist", message: "You have changes that are not saved. Save or discard them first." };
+      ctx.refresh();
+      return;
+    }
+    st.write("teamHist", t, ctx, () => ctx.api.post(`/team-text/${enc(t.dataset.rev)}/restore`, { baseRevision: t.dataset.base === "null" ? null : Number(t.dataset.base) }),
+      (res) => { teamDraft = null; st.ui.notice = [{ text: `The text of revision ${t.dataset.rev} is in use again, as revision ${res.revision}.`, cls: "good" }]; });
+  },
   lessonForm(form, e, ctx) {
     const f = form.elements;
     const why = f.text.value.trim() && f.why.value.trim() ? "" : "Write the text and why.";

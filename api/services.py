@@ -184,10 +184,12 @@ def score_delta_text(o: m.Opportunity, key: str, value) -> str:
 
 def record_run(c: Ctx, agent: str, o: m.Opportunity | None, prompt: str, calls: int, status="completed", error=None, subject="",
                model: str | None = None, usage=None) -> str:
+    from api.team_text import latest_revision
     rid = A.run_id()
     c.s.add(m.AgentRun(id=rid, agent=agent, opportunity_id=o.id if o else None, subject=subject or (o.company.name if o else ""),
                        model=model or (A.DEMO_MODEL if c.demo else "live-provider"), prompt_version=prompt, status=status, calls=calls,
-                       tokens_in=getattr(usage, "tokens_in", None), tokens_out=getattr(usage, "tokens_out", None), error=error, on=c.today))
+                       tokens_in=getattr(usage, "tokens_in", None), tokens_out=getattr(usage, "tokens_out", None), error=error, on=c.today,
+                       team_revision=latest_revision(c.s)))
     c.s.flush()
     return rid
 

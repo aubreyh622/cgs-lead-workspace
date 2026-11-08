@@ -416,6 +416,7 @@ class AgentRun(Base):
     error: Mapped[Optional[str]] = mapped_column(Text)
     on: Mapped[date] = mapped_column(Date)
     trace: Mapped[Optional[list]] = mapped_column(JSON)               # tool-using agents: every model turn and tool call
+    team_revision: Mapped[Optional[int]] = mapped_column(Integer)     # the CGS team instructions in use (team_instructions.revision)
 
 
 class Activity(Base):
@@ -538,6 +539,19 @@ class AgentLesson(Base):
     retired_reason: Mapped[str] = mapped_column(Text, default="")
     uses: Mapped[int] = mapped_column(Integer, default=0)             # how many agent runs had it in their prompt
     last_used_on: Mapped[Optional[date]] = mapped_column(Date)
+
+
+class TeamInstructions(Base):
+    """One saved version of the instructions CGS staff write for the agents in their own words (api/team_text.py). Every
+    save makes a new revision and none is ever changed, so any agent run can be traced to the text it read."""
+    __tablename__ = "team_instructions"
+    revision: Mapped[int] = mapped_column(Integer, primary_key=True)     # 1, 2, 3 ...; the highest is in use
+    sections: Mapped[dict] = mapped_column(JSON, default=dict)          # section key -> text (team_text.SECTIONS)
+    base_revision: Mapped[Optional[int]] = mapped_column(Integer)      # the revision the person edited; a stale one is refused
+    origin: Mapped[str] = mapped_column(String(20), default="edit")     # edit | restore
+    reason: Mapped[str] = mapped_column(Text, default="")
+    saved_by: Mapped[str] = mapped_column(String(100))
+    saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class DiscoverySearch(Base):

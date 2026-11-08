@@ -190,18 +190,21 @@ def retire(s, today: date, lesson_id: int, reason: str, by: str) -> m.AgentLesso
 
 # ---------- 4. prompt ----------
 def block(s, agent: str, today: date | None = None) -> str:
-    """The approved lessons for an agent, as a section for the end of its prompt ("" when there are none).
-    Each use is counted, so a person can see which lessons are in play."""
+    """What CGS added to the end of an agent's prompt: the team's instructions for it (api/team_text.py), then its approved
+    lessons ("" when there is neither). Every agent's prompt is finished here. Each lesson use is counted, so a person can
+    see which lessons are in play."""
+    from api import team_text
+    team = team_text.block(s, agent)
     rows = list(s.scalars(select(m.AgentLesson).where(m.AgentLesson.agent.in_((agent, *FORMER.get(agent, ()))), m.AgentLesson.status == "approved")
                           .order_by(m.AgentLesson.id)))
     if not rows:
-        return ""
+        return team
     for x in rows:
         x.uses = (x.uses or 0) + 1
         x.last_used_on = today or x.last_used_on
     lines = "\n".join(f"- [{label(x)}] {x.text}" for x in rows)
-    return ("\n\nLessons approved by CGS reviewers from how people received your work. They refine how you work in the "
-            "situations they name; every rule above still comes first.\n" + lines)
+    return team + ("\n\nLessons approved by CGS reviewers from how people received your work. They refine how you work in the "
+                   "situations they name; every rule above still comes first.\n" + lines)
 
 
 # ---------- 5. view and effect ----------

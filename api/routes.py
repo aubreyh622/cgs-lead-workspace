@@ -84,7 +84,7 @@ def agent_runs(request: Request, limit: int = Query(20, le=200)):
     with db(request).session() as s:
         from api.lessons import current_agent
         return [{"id": r.id, "agent": current_agent(r.agent), "recordedAs": r.agent, "subject": r.subject, "model": r.model, "prompt": r.prompt_version, "status": r.status,
-                 "calls": r.calls, "error": r.error, "on": views.iso(r.on), "steps": len(r.trace) if r.trace else None}
+                 "calls": r.calls, "error": r.error, "on": views.iso(r.on), "steps": len(r.trace) if r.trace else None, "teamRevision": r.team_revision}
                 for r in s.scalars(select(m.AgentRun).order_by(m.AgentRun.on.desc(), m.AgentRun.id.desc()).limit(limit)).all()]
 
 
@@ -97,7 +97,7 @@ def agent_run(request: Request, run_id: str):
         from api.lessons import current_agent
         return {"id": r.id, "agent": current_agent(r.agent), "recordedAs": r.agent, "subject": r.subject, "model": r.model, "prompt": r.prompt_version, "status": r.status,
                 "calls": r.calls, "tokensIn": r.tokens_in, "tokensOut": r.tokens_out, "error": r.error, "on": views.iso(r.on),
-                "trace": r.trace or []}
+                "teamRevision": r.team_revision, "trace": r.trace or []}
 
 
 @router.get("/knowledge", tags=["knowledge"], summary="Search the CGS library that agents may quote (K1)")

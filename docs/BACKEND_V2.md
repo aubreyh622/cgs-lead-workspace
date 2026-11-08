@@ -584,6 +584,30 @@ system learns, with a person in the loop:
 | POST | `/api/lessons/{id}/retire` | `{"reason"}`: takes an approved lesson out of the prompt |
 | POST | `/api/lessons/review` | Queue the manager's lessons review now (live mode) |
 
+**Team instructions** (`api/team_text.py`, table `team_instructions`, Agents page → Team instructions). What CGS staff tell
+the agents in their own words, without a code change, in three sections: *How we write to clients* (outreach agent),
+*How we judge a lead* (evidence and manager agents), *What to look for in research* (research and discovery agents); at
+most 2000 characters each. Each section joins the end of its readers' prompts through `lessons.block` (the one place every
+agent's prompt is finished), before the approved lessons, from their next run.
+- **What it changes and what it cannot.** It overrides the built-in prompts' style guidance (tone, wording, sign-off,
+  length, what to emphasise or look for). It never changes the hard rules (quotes and facts word for word, citations,
+  the rubric) and cannot change what the code enforces (the checks, permissions, a person approving before anything is
+  sent or scored). Found live with Claude: when the prompt said "the rules above win", the agent kept the built-in
+  sign-off over the team's; with the style-overrides wording it used the team's sign-off and still cited every fact.
+- **Versions.** Every save is a new revision; none is changed or deleted. A save names the revision it started from and is
+  refused (409 `stale`) when someone saved in between; the page keeps the person's text and says who saved. Going back is
+  a new revision (`origin: restore`). Each agent run records the revision in use (`agent_runs.team_revision`, shown on AI runs).
+- **Who.** The workspace admins (`CGS_ADMINS`), or anyone while none are named.
+- **SoW section 9.** The text goes to the AI provider with every request of those agents; the page says so above the
+  editor. CGS-confidential material (for example the Lead Activation guide) belongs here only once CGS has approved the provider.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/team-text` | The revision in use, the sections and who reads each, whether the person acting may save |
+| GET | `/api/team-text/history` | Every revision, newest first |
+| PUT | `/api/team-text` | `{"sections": {...}, "baseRevision": n \| null, "reason": ""}`: save as a new revision (same text = no new revision) |
+| POST | `/api/team-text/{revision}/restore` | `{"baseRevision": n}`: that revision's text, saved as a new revision |
+
 ## Problem-based research direction (direction agent)
 
 The research direction can list **problems**: what a client would be struggling with, the public signals that suggest a
