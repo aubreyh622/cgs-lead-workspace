@@ -734,6 +734,31 @@ it), check with `Check Mail.cmd` (`python -m api.check_mail`: a test draft to yo
 `MAIL_PROVIDER=gmail` and `APP_MODE=live` in `.env` and restart. Scopes: `gmail.compose` (drafts and sending) and
 `gmail.readonly` (threads). While the Google app is in "Testing", Google ends the sign-in after 7 days; sign in again.
 
+**Verified with a real reply (8 Nov 2026).** On a throwaway copy of the demo data in live mode (CRM off, worker off): the
+Halvorsen first email was approved and sent through Gmail to a team member's own address, who replied from it. `POST
+/api/mail/sync` found the reply in the thread (`replies: 1`, the quoted original stripped); it waited on the home page as
+"Client replied" and the stage stayed Contacted until the owner applied it; applying made the lead Active with label
+`meet`; the evidence agent (Claude, `evidence-agent-1.1`) read "I am interested." and proposed N 1 and E 1 (the "general
+interest" and "courtesy reply" anchors) with a valid 11-line account; the manager's triage suggested three next actions.
+Seen there: the reply was signed by someone other than the contact on file, and nothing pointed that out (the reply card
+said "Reply from" the contact and the manager's note named the contact as the sender). Fixed the same day, below.
+
+**Who wrote a reply** (`api/senders.py`, rules, no AI). The mail sync reads each reply's From line ("Reyes, Sam" is read
+as Sam Reyes) and compares it with the contact on file:
+- the contact's address, or with no address on file the same full name: the contact's reply, as before;
+- the contact's address but signed with another full name (`sameAddress`; the address on file was typed by a person when
+  the email went out, so it may be wrong, shared, or someone answers for the contact): not taken for the contact;
+- another contact at the company with that address (`knownAs`), or someone new: not the contact.
+The inbox item keeps it as `data.sender` and its title says "Email reply from Sam Reyes, not Priya Raman" (home page,
+inbox). The Outreach reply card names the writer, says whose address the email went to, and for someone new offers
+**Add … as a contact** (`POST /api/inbox/{id}/add-sender`: the name and address from the From line, never guessed, role to
+confirm; refused for the contact, for an address already on file for the contact, and never twice). Recording the reply
+keeps the lead's contact as it is; the note starts with one line naming the writer (`[From Sam Reyes <…>, not Priya Raman
+(the contact on file).]`) before the client's words, unchanged, so the evidence agent and the manager read who wrote, and
+the activity log says it. Re-run on the real thread: the card, note and log named the real writer; the evidence agent's
+summary said the address and signature disagree; the manager asked the owner to confirm who replied before treating it as
+the contact's interest, and held the two low scores until the first conversation.
+
 ## CRM (Insightly)
 
 `api/toolkit/crm.py` is the connector: `InsightlyCRM` (Insightly API v3.1) and `MockCRM` (in memory, same methods).

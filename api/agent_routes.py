@@ -371,3 +371,8 @@ def save_team_text(body: TeamTextIn, c: S.Ctx = Actor):
 @router.post("/team-text/{revision}/restore", summary="Go back to an earlier revision's text (saved as a new revision)")
 def restore_team_text(revision: int, body: TeamTextRestore, c: S.Ctx = Actor):
     return _team_text_call(c, lambda TT: TT.restore(c.s, revision, body.baseRevision, c.actor))
+
+
+@router.post("/inbox/{item_id}/add-sender", summary="Add the writer of an email reply, who is not the contact on file, as a contact at the company")
+def add_reply_sender(item_id: str, c: S.Ctx = Actor):
+    return AU.add_reply_sender(c, item_id)

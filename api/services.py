@@ -983,6 +983,7 @@ def deliver_email(c: Ctx, o: m.Opportunity, p: dict, it, mode: str, box, how: st
 def sync_mail(c: Ctx) -> dict:
     """Rules, no AI: for every email thread, record drafts that were sent from Gmail and put new client replies in the
     owner's inbox. A reply is recorded only when a person applies it (an out-of-office message must not make a lead Active)."""
+    from api import senders as SND
     from api.toolkit.mail import MailError
     box = TK.metered(c.mail_factory() if c.mail_factory else None, "Mail rules", "mail", c)
     out = {"checked": 0, "sent": 0, "replies": 0, "errors": []}
@@ -1011,8 +1012,10 @@ def sync_mail(c: Ctx) -> dict:
             for x in msgs:
                 if x["ours"] or x["id"] in seen or not x["text"].strip():
                     continue
-                it = J.to_inbox(c.s, c.today, None, "reply", f"Email reply from {x['from']} ({o.company.name})", x["text"][:4000],
-                                {"message_id": x["id"], "from": x["from"], "on": x["date"], "text": x["text"][:4000]}, opp=o, agent="Mail rules")
+                sender = SND.identify(c.s, o, x["from"])  # who wrote, and whether it is the contact on file (api/senders.py)
+                it = J.to_inbox(c.s, c.today, None, "reply", f"Email reply from {SND.label(sender)}{SND.title_suffix(sender)} ({o.company.name})",
+                                x["text"][:4000], {"message_id": x["id"], "from": x["from"], "on": x["date"], "text": x["text"][:4000],
+                                                   "sender": sender}, opp=o, agent="Mail rules")
                 it.expires_on = None  # a client's reply stays until a person deals with it
                 out["replies"] += 1
         except (MailError, TK.LimitReached) as e:

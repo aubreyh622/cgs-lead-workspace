@@ -882,6 +882,62 @@ def approve_and_send(c: S.Ctx, it: m.InboxItem, o: m.Opportunity | None, seen_ha
     return {"status": "applied", "note": f"Approved by {c.actor} and sent to {p['to']} through {S.mailbox(c).name}.", "sent": sent}
 
 
+def reply_sender(c: S.Ctx, it: m.InboxItem, o: m.Opportunity) -> tuple[dict, str]:
+    """Who wrote a reply found in the email thread (api/senders.py), and the text for the notes: the client's words, after
+    a line naming the sender when it is not the contact on file, so no reader takes them for the contact's.
+    Replies found before senders were checked are identified now, from the email's From header."""
+    from api import senders as SND
+    sender = it.data.get("sender") or SND.identify(c.s, o, it.data.get("from", ""))
+    return sender, SND.note_header(sender) + it.data["text"]
+
+
+def not_the_contact(c: S.Ctx, o: m.Opportunity, sender: dict) -> str:
+    """Log it and say it, when someone other than the contact on file wrote the reply."""
+    from api import senders as SND
+    if sender.get("isContact"):
+        return ""
+    who = SND.label(sender) + (f" <{sender['email']}>" if sender.get("email") and sender.get("name") else "")
+    contact = sender.get("contact") or "the contact on file"
+    if sender.get("sameAddress"):
+        S.log(c, o.id, "s", f"The reply came from {who}: the address on file for {contact}, but signed {SND.label(sender)}. "
+                            "Check the address on file.")
+        return f". It is signed {SND.label(sender)}, from the address on file for {contact}: check that address"
+    known = f", on file as a contact at {o.company.name}" if sender.get("knownAs") else ""
+    S.log(c, o.id, "s", f"The reply came from {who}{known}, not from {contact}.")
+    return f". It came from {SND.label(sender)}, not {contact}"
+
+
+def add_reply_sender(c: S.Ctx, item_id: str) -> dict:
+    """A person adds the writer of a reply, who is not the contact on file, as a contact at the company: the name and
+    address from the email's From line (never guessed), the role to confirm. An address already on file is not added twice."""
+    from sqlalchemy import func
+    from api import senders as SND
+    it = c.s.get(m.InboxItem, item_id)
+    if not it or it.kind != "reply" or not it.opportunity_id:
+        raise S.ActionError("That email reply was not found.", 404, "not_found")
+    o = c.s.get(m.Opportunity, it.opportunity_id)
+    sender, _ = reply_sender(c, it, o)
+    if sender.get("isContact"):
+        raise S.ActionError(f"{sender.get('contact')} is already the contact for this lead.", 409, "is_contact")
+    if sender.get("sameAddress"):
+        raise S.ActionError(f"{sender['email']} is the address on file for {sender.get('contact')}. Check that address before adding "
+                            "anyone with it.", 409, "same_address")
+    if not sender.get("email"):
+        raise S.ActionError("The email gives no address for its writer.", 400, "no_address")
+    ct =c.s.scalars(select(m.Contact).where(m.Contact.company_id == o.company_id, func.lower(m.Contact.email) == sender["email"])).first()
+    created = ct is None
+    if created:
+        on = it.data.get("on") or it.created_on.isoformat()
+        ct = m.Contact(id=S.new_id("ct"), company_id=o.company_id, name=sender.get("name") or None, email=sender["email"],
+                       confirmed_by=c.actor, confirmed_on=c.today,
+                       confirmed_note=f"Wrote the email reply of {on} from {sender['email']}; name from the email's From line, role to confirm")
+        c.s.add(ct)
+        S.log(c, o.id, "h", f"{c.actor} added {SND.label(sender)} <{sender['email']}>, who wrote the reply, as a contact at {o.company.name} (role to confirm).")
+    it.data = {**it.data, "sender": {**sender, "knownAs": ct.name or ct.email}}  # what the person saw (its payload hash) is unchanged
+    c.s.flush()
+    return {"contactId": ct.id, "name": ct.name, "email": ct.email, "created": created}
+
+
 def apply_item(c: S.Ctx, item_id: str, action: str, seen_hash: str | None = None, to: str | None = None, delay: int = 0) -> dict:
     """action: apply (use what the agent prepared), send (an email draft: approve it and send it now to `to`),
     done (seen, nothing to change) or dismiss (not useful).
@@ -910,14 +966,17 @@ def apply_item(c: S.Ctx, item_id: str, action: str, seen_hash: str | None = None
             note = f"Moved to nurture until {it.data['review_on']}"
         elif it.kind == "reply" and o and o.stage in S.QUAL_STAGES:  # a client email during qualification is evidence
             on = min(date.fromisoformat(it.data["on"]), c.today)
+            sender, text = reply_sender(c, it, o)
             try:
-                res = S.add_note(c, o.id, "Email reply", on, it.data["text"], analyze=True)
+                res = S.add_note(c, o.id, "Email reply", on, text, analyze=True)
                 note = f"Email added to the notes; the evidence agent proposed {res['proposals']} item{'s' if res['proposals'] != 1 else ''}"
             except S.ActionError as e:  # the email is saved; only the analysis failed
                 note = f"Email added to the notes; the analysis did not run ({e}). Run it again from Step 6"
+            note += not_the_contact(c, o, sender)
         elif it.kind == "reply" and o:
-            res = S.record_reply(c, o.id, it.data["text"], min(date.fromisoformat(it.data["on"]), c.today))
-            note = f"Email reply recorded; stage set to Active; reply label {res['replyLabel']}"
+            sender, text = reply_sender(c, it, o)
+            res = S.record_reply(c, o.id, text, min(date.fromisoformat(it.data["on"]), c.today))
+            note = f"Email reply recorded; stage set to Active; reply label {res['replyLabel']}" + not_the_contact(c, o, sender)
         elif it.kind == "draft":
             known = {f["id"] for f in (o.brief.facts or [])} if o else set()
             added = [f for f in it.data.get("facts", []) if f["id"] not in known]

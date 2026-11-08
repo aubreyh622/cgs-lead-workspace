@@ -534,8 +534,22 @@ function replyItem(d, ctx) {
   const it = d.cur.item;
   const r = o.outreach;
   const answers = r.subject ? html`<p class="meta">Answers your email${r.sentOn ? ` of ${day(r.sentOn, ctx.today)}` : ""}: ${r.subject}</p>` : "";
+  // Who wrote it (api/senders.py): the contact on file, or someone else, who must not be taken for the contact.
+  const s = it.data.sender;
+  const writer = s ? s.name || s.email : o.contact.name || "the client";
+  const other = s && !s.isContact;
   return html`
-  ${header(`Reply from ${o.contact.name || "the client"}`, contactLine(o), html`<p class="meta-3">Found in the email thread, ${day(it.data.on || it.on, ctx.today)}</p>${answers}`)}
+  ${header(`Reply from ${writer}`, other ? `Your email went to ${o.contact.name || "the contact"} (${contactLine(o)})` : contactLine(o), html`<p class="meta-3">Found in the email thread, ${day(it.data.on || it.on, ctx.today)}${s && s.email ? ` · ${s.email}` : ""}</p>${answers}`)}
+  ${other && s.sameAddress ? html`<div class="block"><div class="notice warn" role="status">${icon("alert")}<span>
+    <b>Signed ${writer}, from ${s.email}: the address on file for ${s.contact}.</b>
+    Check that address: it may be wrong, shared, or someone may answer for ${s.contact}. Recording it notes who signed it.
+  </span></div></div>`
+  : other ? html`<div class="block"><div class="notice warn" role="status">${icon("alert")}<span>
+    <b>${writer} wrote this reply, not ${s.contact || "the contact on file"}.</b>
+    ${s.knownAs ? ` ${s.knownAs} is on file as a contact at ${o.company.name}.` : " They may now be involved: an assistant, or a colleague the contact passed your email to."}
+    Recording it keeps ${s.contact || "the contact"} as the lead's contact and notes who wrote.
+    ${!s.knownAs && s.email ? html`<div class="actions" style="margin-top:8px"><button type="button" class="btn small" data-act="addSender" data-item="${it.id}">Add ${writer} as a contact at ${o.company.name}</button></div>` : ""}
+  </span></div></div>` : ""}
   ${noticeBlock()}
   <div class="block"><div class="email-plain">${it.data.text || it.body}</div></div>
   <div class="decision-bar">
@@ -802,6 +816,12 @@ export const actions = {
   sendNow: sendNowAct,
 
   // inbox items: apply or dismiss
+  async addSender(t, e, ctx) {
+    const res = await attempt("addSender", t, ctx, () => ctx.api.post(`/inbox/${enc(t.dataset.item)}/add-sender`));
+    if (!res) return ctx.toast(ui.error.message);
+    ctx.toast(res.created ? `${res.name || res.email} added as a contact (role to confirm).` : `${res.name || res.email} is already a contact.`);
+    ctx.refresh();
+  },
   async inboxAct(t, e, ctx) {
     const body = { action: t.dataset.do };
     if (t.dataset.hash) body.payload_hash = t.dataset.hash;
