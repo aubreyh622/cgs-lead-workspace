@@ -1,26 +1,22 @@
-// Home: the queue of things waiting for the person acting, then their next steps and their leads by stage.
-import { html, day, daysBetween, href, plural } from "../lib.js";
+// Home: what waits for the person acting, grouped by what they must do (GET /api/todo, api/todo.py), then their next
+// steps and their leads by stage. Workspace problems show only when there is one; a quiet workspace takes no space.
+import { html, icon, day, daysBetween, href, plural } from "../lib.js";
+import { enc } from "../api.js";
 import { STAGE_LABELS } from "../options.js";
 import { emptyState } from "../shell.js";
+import { pageState } from "../forms.js";
 import { linkFor } from "./links.js";
-import { suggestionLists } from "./team.js";
 
 export const title = "Home";
 
+const st = pageState();
+const TAGS = { problem: "bad", waiting: "warn", decide: "info", check: "", steer: "" };
+const BUTTONS = { done: "Done", dismiss: "Not useful", checked: "Checked" };
+const TOASTS = { checked: "Marked checked. Approve the email again if it should still go.", dismiss: "Dismissed. Nothing changed.", done: "Done." };
+
 export async function load(ctx) {
-  const enc = encodeURIComponent;
-  const [opps, cands, inbox, alerts, direction, lessons] = await Promise.all([
-    ctx.api.get("/opportunities"),
-    ctx.api.get("/candidates?status=new"),
-    ctx.api.get(`/inbox?owner=${enc(ctx.me)}`),
-    ctx.api.get("/alerts"),
-    ctx.api.get("/direction"),
-    ctx.api.get("/lessons"),
-  ]);
-  // Research that stopped needs a person; the list view does not carry research status, so ask for those few.
-  const researching = opps.filter((o) => o.stage === "researching");
-  const details = await Promise.all(researching.map((o) => ctx.api.get(`/opportunities/${enc(o.id)}`).catch(() => null)));
-  return { opps, cands, inbox, alerts, direction, lessons, stuck: details.filter((d) => d && d.research && ["failed", "paused"].includes(d.research.status)) };
+  const [todo, opps] = await Promise.all([ctx.api.get("/todo"), ctx.api.get(`/opportunities?owner=${enc(ctx.me)}`)]);
+  return { todo, opps };
 }
 
 function whenLabel(due, today) {
@@ -31,89 +27,53 @@ function whenLabel(due, today) {
   return { text: day(due, today), cls: "" };
 }
 
-function queue(data, ctx) {
-  const { opps, cands, inbox, alerts, stuck } = data;
-  const byId = Object.fromEntries(opps.map((o) => [o.id, o]));
-  const items = [];
-  for (const a of alerts.filter((x) => x.owner === ctx.me)) {
-    const o = byId[a.opportunityId];
-    items.push({ rank: a.type === "overdue" ? 0 : 2, tag: a.type === "overdue" ? ["bad", "Overdue"] : ["warn", "Reminder"],
-      title: a.message, sub: `${a.company}: ${a.title}`, link: o ? linkFor(o) : href("home") });
-  }
-  for (const i of inbox) {
-    const o = byId[i.opportunityId];
-    items.push({ rank: 1, tag: ["info", "Prepared by an agent"], title: i.title, sub: `${i.agent}, ${day(i.on, ctx.today)}${o ? `. ${o.company}` : ""}`,
-      link: o && ["draft", "reply"].includes(i.kind) && ["identified", "contacted", "nurture"].includes(o.stage) ? href("outreach", { item: i.id })
-        : o ? linkFor(o) : href("agents") });
-  }
-  for (const o of opps.filter((x) => x.owner === ctx.me && x.crm && x.crm.conflicts && x.crm.conflicts.length)) {
-    const where = o.crm.provider === "insightly" ? "Insightly" : "The CRM";
-    items.push({ rank: 1, tag: ["warn", `Changed in ${where === "The CRM" ? "the CRM" : where}`], title: `${where} and the workspace disagree on ${o.company}`,
-      sub: `${o.crm.conflicts.map((x) => x.label).join(", ")}. ${where} keeps its value until you decide.`, link: linkFor(o) });
-  }
-  for (const d of stuck) {
-    const why = d.research.status === "failed" ? (d.research.error || "Research failed.") : d.research.pauseReason === "budget" ? "Paused: it reached its budget." : "Paused.";
-    items.push({ rank: 1, tag: ["bad", "Research stopped"], title: `Research on ${d.company.name} needs you`, sub: why, link: href("companies", { tab: "research" }) });
-  }
-  for (const o of opps.filter((x) => x.stage === "approval" && x.owner !== ctx.me)) {
-    items.push({ rank: 2, tag: ["warn", "Approval"], title: `Decide on the qualification pack for ${o.company}`,
-      sub: `${o.title}. Sent by ${o.owner}.`, link: href("qualification", { tab: "approval", id: o.id }) });
-  }
-  for (const o of opps.filter((x) => x.stage === "active" && x.owner === ctx.me && x.assessment && x.assessment.readiness === "Ready")) {
-    items.push({ rank: 2, tag: ["good", "Ready"], title: `Send the pack for ${o.company}`,
-      sub: "The rules say Ready. Send it for approval.", link: href("qualification", { tab: "active", id: o.id }) });
-  }
-  // Direction changes and lessons wait on the Agents page (inbox items are listed above).
-  const sug = suggestionLists(inbox, data.direction, data.lessons);
-  for (const p of sug.props) {
-    items.push({ rank: 3, tag: ["warn", "Agent suggestion"],
-      title: p.type === "exclude" ? `Leave ${p.target} out of future searches` : (p.title || `Change ${p.field}`),
-      sub: "A change to the research direction, waiting for a person to apply or dismiss it.", link: href("agents") });
-  }
-  for (const l of sug.lessons) {
-    items.push({ rank: 3, tag: ["warn", "Agent suggestion"], title: l.text,
-      sub: `A lesson for the ${l.agent.toLowerCase()}, proposed by ${l.proposedBy}.`, link: href("agents") });
-  }
-  const review = opps.filter((o) => o.stage === "review");
-  for (const o of review) {
-    items.push({ rank: 3, tag: ["warn", "Ready to decide"], title: `Decide on ${o.company}`, sub: `${o.title}. The research brief is ready.`,
-      link: href("companies", { tab: "review", id: o.id }) });
-  }
-  if (cands.length) {
-    items.push({ rank: 4, tag: ["", "New candidates"], title: `Pick which of ${plural(cands.length, "new candidate")} get researched`,
-      sub: "Found by the discovery agent. Each one you pick gets a research brief.", link: href("companies", { tab: "new" }) });
-  }
-  return items.sort((a, b) => a.rank - b.rank);
+function openLink(it) {
+  if (it.open) return href(it.open.page, it.open.params);
+  return it.opportunity ? linkFor(it.opportunity) : href("home");
+}
+
+function row(it, gid) {
+  return html`<li>
+    <span class="what"><span class="tag ${TAGS[gid]}">${it.label}</span><b>${it.title}</b><span class="meta">${it.sub}</span></span>
+    <span class="acts">
+      ${it.act.map((a) => html`<button type="button" class="btn small ghost" data-act="todo" data-do="${a}" data-group="${gid}"
+        data-type="${it.ref.type}" data-id="${it.ref.id}" data-hash="${it.ref.hash || ""}">${BUTTONS[a] || a}</button>`)}
+      <a class="btn small" href="${openLink(it)}">Open</a>
+    </span>
+  </li>`;
+}
+
+function group(g) {
+  return html`<section class="card" aria-labelledby="todo-${g.id}">
+    <div class="card-head"><h2 id="todo-${g.id}">${g.title} <span class="count" aria-label="${g.count} items">${g.count}</span></h2>
+      <span class="meta">${g.why}</span></div>
+    ${st.err(`todo:${g.id}`)}
+    <ul class="rows">${g.items.map((it) => row(it, g.id))}</ul>
+  </section>`;
 }
 
 export function view(data, ctx) {
-  const items = queue(data, ctx);
-  const mine = data.opps.filter((o) => o.owner === ctx.me);
-  const next = mine.filter((o) => o.next.action && !["rejected", "closed", "qualification"].includes(o.stage))
+  const { todo, opps } = data;
+  const next = opps.filter((o) => o.next.action && !["rejected", "closed", "qualification"].includes(o.stage))
     .sort((a, b) => (a.next.due || "9999").localeCompare(b.next.due || "9999"));
   const stages = ["identified", "contacted", "active", "approval", "qualification", "nurture"];
-  const byStage = stages.map((s) => [s, mine.filter((o) => o.stage === s).length]).filter(([, n]) => n);
+  const byStage = stages.map((s) => [s, opps.filter((o) => o.stage === s).length]).filter(([, n]) => n);
   const clock = ctx.config && ctx.config.timeTravel ? " (simulated clock)" : "";
 
   return html`
   <div class="page-head">
     <div>
       <h1>Waiting for you</h1>
-      <p>${items.length ? `${plural(items.length, "item")} for ${ctx.me}.` : `Nothing is waiting for ${ctx.me}.`} Workspace date ${day(ctx.today, "")}${clock}.</p>
+      <p>${todo.count ? `${plural(todo.count, "item")} for ${ctx.me}.` : `Nothing is waiting for ${ctx.me}.`} Workspace date ${day(ctx.today, "")}${clock}.</p>
     </div>
   </div>
+  ${todo.health.length ? html`<div class="notice warn" role="status" style="margin-bottom:20px">${icon("alert")}<span>
+    ${todo.health.map((h) => html`<span style="display:block">${h.text} <a href="${href(h.page)}">Open ${h.page}</a></span>`)}</span></div>` : ""}
   <div class="two-col">
     <div class="main stack">
-      <section class="card" aria-labelledby="queue-h">
-        <div class="card-head"><h2 id="queue-h">To do</h2><span class="meta">Overdue first</span></div>
-        ${items.length ? html`<ul class="rows">${items.map((it) => html`
-          <li>
-            <span class="tag ${it.tag[0]}">${it.tag[1]}</span>
-            <span class="what"><b>${it.title}</b><span class="meta">${it.sub}</span></span>
-            <a class="btn small" href="${it.link}">Open</a>
-          </li>`)}</ul>`
-        : emptyState("You are up to date", "New candidates arrive after the weekly discovery search, and agent drafts arrive in this list when they are ready.", { href: href("companies"), label: "Open companies" })}
-      </section>
+      ${todo.groups.length ? todo.groups.map(group)
+        : html`<section class="card">${emptyState("You are up to date", "New candidates arrive after the discovery search, and agent drafts appear here when they are ready.",
+          { href: href("companies"), label: "Open companies" })}</section>`}
       <section class="card" aria-labelledby="next-h">
         <div class="card-head"><h2 id="next-h">Next steps on your leads</h2><span class="meta">The step each owner agreed</span></div>
         ${next.length ? html`<ul class="rows">${next.map((o) => {
@@ -135,10 +95,18 @@ export function view(data, ctx) {
           <span class="num">${n}</span></li>`)}</ul>`
         : html`<p class="meta">You do not own any leads yet.</p>`}
       </section>
-      <section class="card card-body" aria-labelledby="how-h">
-        <h2 id="how-h" class="section-title">How work reaches you</h2>
-        <p class="meta">Agents research and prepare. Nothing is sent, scored or written to the CRM until a person clicks.</p>
-      </section>
     </aside>
   </div>`;
 }
+
+export const actions = {
+  // A row's own button: an agent's item done or not useful, or a failed / maybe-sent email checked. Nothing is sent.
+  todo(t, e, ctx) {
+    const { type, id, hash, group } = t.dataset;
+    const what = t.dataset.do;
+    st.write(`todo:${group}`, t, ctx,
+      () => (type === "email" ? ctx.api.post(`/outbound/${enc(id)}/checked`)
+        : ctx.api.post(`/inbox/${enc(id)}`, { action: what, ...(hash ? { payload_hash: hash } : {}) })),
+      () => { ctx.toast(TOASTS[what] || "Done."); if (ctx.refreshCounts) ctx.refreshCounts(); });
+  },
+};

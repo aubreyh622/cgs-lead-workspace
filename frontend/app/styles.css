@@ -134,6 +134,8 @@ main:focus { outline: none; }
 .rows .when.today { color: var(--count-ink); }
 .rows .what { flex: 1 1 260px; min-width: 0; }
 .rows .what b { display: block; font-size: 16px; font-weight: 500; }
+.rows .what > .tag { margin-bottom: 6px; }
+.rows .acts { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-shrink: 0; }
 .kv { list-style: none; }
 .kv li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; }
 .kv li span:first-child { color: var(--ink-2); }

@@ -198,6 +198,8 @@ class OutboundEmail(Base):
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))  # sent, undone, failed or not sent (the updates feed)
     error: Mapped[Optional[str]] = mapped_column(Text)
+    resolved_by: Mapped[Optional[str]] = mapped_column(String(100))  # a person looked at a failed / unknown email (it leaves their to-do list)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 
 class CrmLink(Base):

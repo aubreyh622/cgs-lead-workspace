@@ -193,10 +193,23 @@ def email_view(s, opp_id: str) -> dict | None:
     """The approved email still waiting, or the latest one that failed or was not sent, for the page."""
     row = waiting_email(s, opp_id) or s.scalars(select(m.OutboundEmail).where(m.OutboundEmail.opportunity_id == opp_id)
                                                   .order_by(m.OutboundEmail.created_at.desc())).first()
-    if row is None or row.status in ("sent", "undone"):
+    if row is None or row.status in ("sent", "undone") or row.resolved_at:
         return None
     return {"id": row.id, "status": row.status, "purpose": row.purpose, "to": row.to, "subject": row.subject, "by": row.by,
             "itemId": row.item_id, "sendAt": aware(row.send_at).isoformat(), "seconds": seconds_left(row.send_at), "error": row.error}
+
+
+def mark_checked(c, out_id: str) -> dict:
+    """A person looked at an email that failed, was not sent or may have gone out (unknown): it leaves their to-do list
+    and the opportunity page. Nothing is sent and the draft is unchanged; they approve it again if it should still go."""
+    from api import services as S
+    row = _row(c, out_id)
+    if row.status not in ("failed", "expired", "unknown"):
+        raise S.ActionError(f"That email is {row.status}; only one that was not sent, or may not have been, can be marked checked.", 409, "wrong_status")
+    if not row.resolved_at:
+        row.resolved_by, row.resolved_at = c.actor, utcnow()
+        S.log(c, row.opportunity_id, "h", f"{c.actor} checked the {row.purpose} email to {row.to} that was {row.status}.")
+    return {"status": row.status, "checkedBy": row.resolved_by}
 
 
 def recover_sending(app) -> int:

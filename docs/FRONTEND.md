@@ -10,7 +10,7 @@ integrated app, which has its own interface.
 
 | Route | Page | Steps | What a person does there |
 | --- | --- | --- | --- |
-| `#/home` | Home | All | The queue of things waiting for them, their next steps, their pipeline by stage |
+| `#/home` | Home | All | What waits for them, grouped by what they must do (`GET /api/todo`: something went wrong, someone is waiting on you, ready for your decision, prepared by the agents, steer the agents), with Done / Not useful / Checked on the row where nothing needs reviewing; workspace problems (agents paused, AI budget used up, Gmail not connected, failed jobs) only when there is one; their next steps; their pipeline by stage |
 | `#/companies` | Companies | 1-4 | Pick or skip candidates, watch research, decide on each brief |
 | `#/sources` | Sources | 1 | Ask the discovery agent (and how many), automatic searches, add a company, set and approve the research direction, see what searches taught |
 | `#/outreach` | Outreach | 5 and the first reply | Approve and send email drafts, record what was sent, follow-ups, replies, nurture |
@@ -40,8 +40,10 @@ field. The history keeps those items and the notices of the person's own actions
 not seen yet, per person in this browser.
 
 Counts follow one rule: a number equals what you see when you open it. Each navigation badge equals its page's list
-(Agents: the suggestions on the Agents page; Outreach: drafts to approve plus client replies to record), and Home's To
-do lists everything that waits for the person, agent suggestions included. A client reply found in the email thread
+(Agents: the suggestions on the Agents page; Outreach: drafts to approve plus client replies to record), and Home lists
+everything that waits for the person, agent suggestions included, each piece of work once (an agent's "Ready to submit"
+replaces the rules' Ready row, a follow-up draft replaces "no reply yet", an overdue step replaces "follow up"); each
+group's count equals its rows. A client reply found in the email thread
 waits on the lead it answers, in Waiting for a reply (or Nurture), first in the list, where the person records it. The header shows the CRM sync state (`GET /api/crm/state`): synced and when, how many wait or
 failed or need a decision, or read only or off; it links to the agent controls, where a failed sync can be retried
 and the read-back run. A field someone changed in the CRM shows as a notice on the opportunity's Outreach and

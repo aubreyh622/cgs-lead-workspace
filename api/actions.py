@@ -367,6 +367,18 @@ def generate(opp_id: str, body: Generate, c: S.Ctx = Actor):
     return S.generate_draft(c, opp_id, body.angle, body.tone)
 
 
+@router.get("/todo", tags=["system"], summary="What waits for the person acting, grouped by what they must do, plus workspace problems (the home page)")
+def todo(request: Request, c: S.Ctx = Actor):
+    from api import todo as TD
+    return TD.todo(c, follow_days(c), getattr(request.app.state, "mail", None))
+
+
+@router.post("/outbound/{out_id}/checked", tags=["step 5"], summary="Mark a failed, unsent or maybe-sent email as looked at: it leaves the to-do list; nothing is sent")
+def outbound_checked(out_id: str, c: S.Ctx = Actor):
+    from api import undo as U
+    return U.mark_checked(c, out_id)
+
+
 @router.get("/alerts", tags=["step 7"], summary="Progress monitor: stalled, overdue, follow-up due, out-of-date packs")
 def alerts(c: S.Ctx = Actor):
     return S.alerts(c, follow_days(c))
