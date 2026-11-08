@@ -120,7 +120,11 @@ def test_checks_keep_only_valid_grounded_proposals():
 def test_live_evidence_agent_end_to_end(tmp_path):
     good = {**prop("cond", "problem", "true", "Our month-end close takes twelve days because of manual reconciliations."), "source": "notes"}
     invented = {**prop("score", "A", "4", "The CEO signed the contract yesterday."), "source": "notes"}
-    fake = FakeAI(turn(("notes", {}), ("assessment", {})), turn(("propose", good), ("propose", invented)), turn(("finish", {"summary": "One item."})))
+    checked = [{"key": k, "status": "proposed" if k == "problem" else "not_in_notes",
+                "reason": "The close takes twelve days." if k == "problem" else f"Nothing about {k} in these notes."}
+               for k in ("B", "A", "N", "T", "H", "E", "problem", "fit", "external", "next", "commercial")]
+    fake = FakeAI(turn(("notes", {}), ("assessment", {})), turn(("propose", good), ("propose", invented)),
+                  turn(("finish", {"summary": "One item.", "checked": checked})))
     api = live_app(tmp_path, fake)
     r = api.post("/api/opportunities/alder/notes", json={"text": NOTE}, headers=ME)
     assert r.status_code == 200, r.text
@@ -131,6 +135,11 @@ def test_live_evidence_agent_end_to_end(tmp_path):
     run = api.get("/api/agent-runs").json()[0]
     assert run["model"] == "gemini:gemini-test-model" and run["status"] == "completed" and run["prompt"] == EVIDENCE_AGENT_VERSION
     assert run["calls"] == 3 and run["steps"]
+    # its account of every dimension and condition is kept with the note, in its own words, with the question to ask next
+    an = next(n for n in o["notes"] if n["text"] == NOTE)["analysis"]
+    lines = {x["key"]: x for x in an["checked"]}
+    assert an["checkedBy"] == "agent" and len(lines) == 11 and lines["problem"]["status"] == "proposed"
+    assert lines["A"]["status"] == "not_in_notes" and lines["A"]["reason"] == "Nothing about A in these notes." and "approves" in lines["A"]["ask"]
     # the agent read the notes through its tool, as data, with the rubric in the instructions; the invented quote went back to it
     _, _, payload = fake.requests[1]
     assert "Unknown is not zero" in payload["systemInstruction"]["parts"][0]["text"]

@@ -1290,6 +1290,7 @@ def read_note(c: Ctx, o: m.Opportunity, note: m.Note) -> dict:
     summary: list[str] = []
     asks: list[dict] = []
     trace: list[dict] = []
+    checked: list[list] = []  # the agent's closing checklist, when it gave one that passed the checks
 
     def live(p):  # the tool-using evidence agent (api/evidence_agent.py)
         from api import agent_runtime as R
@@ -1297,6 +1298,8 @@ def read_note(c: Ctx, o: m.Opportunity, note: m.Note) -> dict:
         spec, record = EA.evidence_agent(c, o, note, asks)
         out = R.run(spec, p, EA.task(o))
         trace.extend(out.trace)
+        if record["checked"]:
+            checked.append(record["checked"])
         if out.status != "done" and not record["kept"]:
             raise LLMError(f"The evidence agent stopped without an answer: {out.reason}", "invalid_output")
         if isinstance(out.result, dict) and out.result.get("summary"):
@@ -1311,7 +1314,7 @@ def read_note(c: Ctx, o: m.Opportunity, note: m.Note) -> dict:
     if c.demo:
         asks = A.people_to_find(note.text)
     existing = {(p.kind, p.key) for p in c.s.scalars(select(m.Proposal).where(m.Proposal.opportunity_id == o.id, m.Proposal.status != "rejected"))}
-    kept, dropped = 0, 0
+    kept, dropped, saved = 0, 0, set()
     for p in found:
         if star and (p["kind"], p["key"]) in existing:
             continue
@@ -1325,6 +1328,8 @@ def read_note(c: Ctx, o: m.Opportunity, note: m.Note) -> dict:
         c.s.add(m.Proposal(id=new_id("pr"), opportunity_id=o.id, note_id=source_id, agent_run_id=run, kind=p["kind"], key=p["key"],
                            value=p["value"], quote=p["quote"], why=p["why"], evidence_type=p["type"]))
         kept += 1
+        if p["kind"] in ("score", "cond"):
+            saved.add(p["key"])
     dropped += dropped_by_check.get("quote_not_found", 0)
     others = {k: v for k, v in dropped_by_check.items() if k != "quote_not_found"}
     log(c, o.id, "a", f"Evidence agent proposed {kept} item{'s' if kept != 1 else ''} for review"
@@ -1338,9 +1343,12 @@ def read_note(c: Ctx, o: m.Opportunity, note: m.Note) -> dict:
                          {"role": ask["role"], "quote": ask["quote"]}, requested_by="Evidence agent", live=not c.demo)
         if job:
             handoffs.append(ask["role"])
-    note.analysis = {"on": c.today.isoformat(), "proposals": kept, "dropped": dropped, "summary": summary[0][:500] if summary else None}
+    from api.evidence_agent import coverage
+    note.analysis = {"on": c.today.isoformat(), "proposals": kept, "dropped": dropped, "summary": summary[0][:500] if summary else None,
+                     # one line per dimension and condition: proposed, already confirmed, not in these notes, or unclear
+                     "checked": coverage(o, saved, checked[0] if checked else None), "checkedBy": "agent" if checked else "code"}
     return {"noteId": note.id, "proposals": kept, "droppedForInvalidQuote": dropped, "droppedOther": others, "handoffs": handoffs,
-            "summary": note.analysis["summary"]}
+            "summary": note.analysis["summary"], "checked": note.analysis["checked"]}
 
 
 ROLE_WORDS = {"ceo": "chief executive", "cfo": "chief financial", "coo": "chief operating", "cio": "chief information",

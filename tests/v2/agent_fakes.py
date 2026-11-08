@@ -75,7 +75,25 @@ def play_evidence(payload, evidence):
         calls += [("ask_research", {"role": x["role"], "quote": x["quote"]}) for x in people]
         if calls:
             return turn(*calls)
-    return turn(("finish", {"summary": "Went through the notes."}))
+    return turn(("finish", {"summary": "Went through the notes.", "checked": evidence_checked(done, evidence)}))
+
+
+EVIDENCE_KEYS = ["B", "A", "N", "T", "H", "E", "problem", "fit", "external", "next", "commercial"]
+
+
+def evidence_checked(done, evidence):
+    """The closing checklist a careful model gives: proposed for each score or condition the checks accepted, the rest
+    not in these notes."""
+    accepted = set()
+    if done:
+        ans = evidence(done[0][1]["new_note"]["text"])
+        proposals = ans["proposals"] if isinstance(ans, dict) else ans
+        answers = [r for name, r in done if name == "propose"]
+        for p, r in zip(proposals, answers):
+            if r.get("accepted") and p["kind"] in ("score", "cond"):
+                accepted.add(p["key"])
+    return [{"key": k, "status": "proposed" if k in accepted else "not_in_notes",
+             "reason": "Proposed from the notes." if k in accepted else "The notes do not mention it."} for k in EVIDENCE_KEYS]
 
 
 def play_manager(payload, plan):

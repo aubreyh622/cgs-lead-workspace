@@ -303,7 +303,7 @@ function nowLine(o, ctx) {
   const a = o.assessment;
   const unread = [...o.notes].reverse().find((n) => !n.analysis && !o.proposals.some((p) => p.noteId === n.id));
   const pending = o.proposals.filter((p) => p.status === "pending").length;
-  const read = [...o.notes].reverse().find((n) => n.analysis && n.analysis.summary);
+  const read = [...o.notes].reverse().find((n) => n.analysis && (n.analysis.summary || n.analysis.checked));
   let text, extra = "";
   if (a && a.readiness === "Ready") text = "Send the pack for approval (below).";
   else if (unread && unread.reading) text = `The evidence agent is reading the ${unread.type.toLowerCase()} of ${day(unread.on, ctx.today)}. What it proposes appears here for you to review.`;
@@ -315,10 +315,28 @@ function nowLine(o, ctx) {
   else text = "Ask what the list below still needs in the next conversation, or confirm by hand what you already know.";
   return html`
   <div class="block"><div class="now-line"><p><b>Next:</b> ${text}</p>${extra}
-    ${read ? html`<div class="suggestion" style="margin-top:10px">${icon("bulb", 20)}<div><b>What the evidence agent said</b><p class="meta">${read.analysis.summary}</p>
+    ${read ? html`<div class="suggestion" style="margin-top:10px">${icon("bulb", 20)}<div><b>What the evidence agent said</b>${read.analysis.summary ? html`<p class="meta">${read.analysis.summary}</p>` : ""}
+      ${checkedLines(read.analysis)}
       <p class="meta-3">Evidence agent, after the ${read.type.toLowerCase()} of ${day(read.on, ctx.today)}: ${plural(read.analysis.proposals, "item")} proposed.</p></div></div>` : ""}
   </div>
   </div>`;
+}
+
+// The agent's account of every dimension and condition after reading the notes, in one line. What the notes touched
+// but did not settle is listed (only the agent can tell that); the questions to ask are in "To reach Ready", and the
+// full account is one click away.
+const CHECK_LABELS = { proposed: "proposed", already_confirmed: "already confirmed", not_in_notes: "not in these notes", unclear: "unclear" };
+function checkedLines(an) {
+  const all = an.checked || [];
+  if (!all.length) return "";
+  const count = (s) => all.filter((x) => x.status === s).length;
+  const unclear = all.filter((x) => x.status === "unclear");
+  const line = (x) => html`<li><span style="font-weight:600">${x.label}</span> (${CHECK_LABELS[x.status]}): ${x.reason}</li>`;
+  const list = (xs) => html`<ul class="meta" style="margin:4px 0 0 18px">${xs.map(line)}</ul>`;
+  return html`<p class="meta">It went through all ${all.length}: ${count("proposed")} proposed, ${count("already_confirmed")} already confirmed,
+    ${count("not_in_notes")} not in these notes, ${unclear.length} unclear${an.checkedBy === "code" ? " (filled in by the workspace)" : ""}.</p>
+    ${unclear.length ? list(unclear) : ""}
+    <details><summary class="meta">Every line</summary>${list(all)}</details>`;
 }
 
 // The next step, and the way new evidence comes in: notes from a call or email.

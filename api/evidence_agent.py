@@ -16,9 +16,15 @@ from api import agent_runtime as R
 from api import toolkit
 from api import live_agents as L
 from api import models as m
-from backend.rules import calculate
+from backend.rules import CONDITION_QUESTIONS, LABELS, QUESTIONS, calculate
 
-VERSION = "evidence-agent-1.0"
+VERSION = "evidence-agent-1.1"
+# Every dimension and condition gets one line in the agent's closing account, so a reviewer can tell "read the notes and
+# found nothing" from "never looked". "conflict" is confirmed by CGS internally, so the agent does not judge it.
+CHECKED = list(L.WEIGHTS) + [k for k in L.CONDITIONS if k != "conflict"]
+STATUSES = ("proposed", "already_confirmed", "not_in_notes", "unclear")
+DEFAULT_REASONS = {"proposed": "Proposed for review (below).", "already_confirmed": "Already confirmed; nothing new in these notes.",
+                   "not_in_notes": "These notes do not mention it.", "unclear": "The notes touch on it but do not settle it."}
 REASONS = {"invalid": "The kind, key, value or evidence type is not valid under the rubric.",
            "quote_not_found": "The quote is not in those notes word for word. Copy the sentence exactly as written.",
            "inference_condition": "An inference can never mark a condition as met. Use a client statement or leave it out.",
@@ -34,16 +40,86 @@ How to work with your tools (instead of returning one JSON answer):
 - Record each proposal with propose. It is checked at once; if it is rejected, read the reason and fix it or leave it out.
 - For the fit condition, look up the CGS library with search_library first.
 - When the notes say that someone named only by role must approve or decide, call ask_research with the role and the sentence.
-- When you have gone through all six dimensions and six conditions, call finish with a one-sentence summary."""
+- When you have gone through all six dimensions and the conditions, call finish with a one-sentence summary and "checked":
+  exactly one entry for each of B, A, N, T, H, E, problem, fit, external, next and commercial (not conflict), with a status
+  and one factual sentence:
+    proposed = you recorded a proposal for it with propose;
+    already_confirmed = it is confirmed already (see assessment) and these notes add nothing new;
+    not_in_notes = the notes do not mention it (say what is missing, for example "No one says who approves the spend.");
+    unclear = the notes touch on it but do not settle it (say what is unsettled).
+  A "not_in_notes" or "unclear" line is not a score: never turn it into a proposal to fill a gap. The checklist is checked
+  by code; if it is refused, read the reason and call finish again."""
+
+
+def _confirmed(o: m.Opportunity, key: str) -> bool:
+    return (o.scores or {}).get(key) is not None if key in L.WEIGHTS else (o.conditions or {}).get(key) is not None
+
+
+def _label(key: str) -> str:
+    return LABELS[key] if key in LABELS else L.CONDITIONS[key]
+
+
+def check_checked(raw, o: m.Opportunity, proposed: set[str]) -> list[dict]:
+    """The agent's closing checklist must cover every key in CHECKED exactly once and agree with what it proposed.
+    Raises ToolError with what to fix; returns [{key, status, reason}]."""
+    if not isinstance(raw, list):
+        raise R.ToolError("checked must be a list with one entry per dimension and condition.")
+    out: dict[str, dict] = {}
+    for e in raw:
+        e = e if isinstance(e, dict) else {}
+        key, status, reason = str(e.get("key", "")).strip(), str(e.get("status", "")).strip(), " ".join(str(e.get("reason", "")).split())
+        if key not in CHECKED:
+            raise R.ToolError(f"Unknown key {key!r} in checked. Use exactly these: {', '.join(CHECKED)}.")
+        if key in out:
+            raise R.ToolError(f"{key} appears twice in checked. Give each key once.")
+        if status not in STATUSES:
+            raise R.ToolError(f"Status for {key} must be one of {', '.join(STATUSES)}.")
+        if status == "proposed" and key not in proposed:
+            raise R.ToolError(f"You marked {key} proposed, but no proposal for {key} was accepted. Propose it, or mark it not_in_notes or unclear.")
+        if status != "proposed" and key in proposed:
+            raise R.ToolError(f"You proposed {key}; mark it proposed.")
+        if status == "already_confirmed" and not _confirmed(o, key):
+            raise R.ToolError(f"{key} is not confirmed yet (see assessment). Mark it not_in_notes or unclear.")
+        if not reason or len(reason) > 300:
+            raise R.ToolError(f"Give {key} one short factual sentence (at most 300 characters).")
+        out[key] = {"key": key, "status": status, "reason": reason}
+    missing = [k for k in CHECKED if k not in out]
+    if missing:
+        raise R.ToolError(f"checked is missing {', '.join(missing)}. Give every dimension and condition once.")
+    return [out[k] for k in CHECKED]
+
+
+def coverage(o: m.Opportunity, saved: set[str], given: list[dict] | None = None) -> list[dict]:
+    """The checklist kept with the note and shown to the reviewer. saved = keys with a proposal that reached the review
+    list; given = the agent's own checklist (live mode), or None (demo mode, or the agent did not finish): then code fills
+    each line from what it can see. Lines left open carry the question to ask next (backend/rules.py)."""
+    by = {e["key"]: e for e in (given or [])}
+    out = []
+    for k in CHECKED:
+        e = by.get(k)
+        if k in saved:
+            status = "proposed"
+        elif e and e["status"] == "proposed":  # proposed, but a later check dropped it before review
+            status, e = "unclear", {"reason": "A value was proposed, but its quote did not pass the checks."}
+        elif e:
+            status = e["status"]
+        else:
+            status = "already_confirmed" if _confirmed(o, k) else "not_in_notes"
+        row = {"key": k, "label": _label(k), "status": status, "reason": (e or {}).get("reason") or DEFAULT_REASONS[status]}
+        if status in ("not_in_notes", "unclear"):
+            row["ask"] = QUESTIONS.get(k) or CONDITION_QUESTIONS[k]
+        out.append(row)
+    return out
 
 
 def evidence_agent(c, o: m.Opportunity, note: m.Note, asks: list[dict]) -> tuple[R.AgentSpec, dict]:
-    """Returns the agent and its record: {"kept": [...proposals], "dropped": {reason: count}}. asks is filled with research requests."""
+    """Returns the agent and its record: {"kept": [...proposals], "dropped": {reason: count}, "checked": [...] or None}.
+    asks is filled with research requests."""
     from api.services import role_known
     earlier = [n for n in c.s.scalars(select(m.Note).where(m.Note.opportunity_id == o.id, m.Note.id != note.id).order_by(m.Note.on.desc()))][:5]
     notes_by_id = {note.id: note.text, **{n.id: n.text for n in earlier}}
     shown_library: dict[str, dict] = {}
-    record = {"kept": [], "dropped": {}}
+    record = {"kept": [], "dropped": {}, "checked": None}
 
     def notes(_args):
         return {"new_note": {"id": note.id, "type": note.type, "on": note.on.isoformat(), "text": note.text},
@@ -99,6 +175,7 @@ def evidence_agent(c, o: m.Opportunity, note: m.Note, asks: list[dict]) -> tuple
         return {"queued": True, "note": "The research agent will look for them; what it finds goes to the owner's inbox."}
 
     def finish(args):
+        record["checked"] = check_checked(args.get("checked"), o, {p["key"] for p in record["kept"] if p["kind"] in ("score", "cond")})
         return {"summary": str(args.get("summary", "")).strip()[:500]}
 
     s = {"type": "string"}
@@ -122,9 +199,14 @@ def evidence_agent(c, o: m.Opportunity, note: m.Note, asks: list[dict]) -> tuple
     ]
     from api.lessons import block
     spec = R.AgentSpec(name="Evidence agent", version=VERSION, system=SYSTEM + block(c.s, "Evidence agent", c.today), tools=tools,
-                       finish=R.Tool("finish", "You are done. One-sentence summary of what you proposed and what is still unknown.",
-                                     R.params({"summary": s}), finish),
-                       max_steps=10, max_tool_calls=L.MAX_PROPOSALS + 10)
+                       finish=R.Tool("finish", "You are done. One-sentence summary of what you proposed and what is still unknown, "
+                                               "and one checked line for every dimension and condition.",
+                                     R.params({"summary": s, "checked": {"type": "array", "items": R.params({
+                                         "key": {"type": "string", "enum": CHECKED},
+                                         "status": {"type": "string", "enum": list(STATUSES)},
+                                         "reason": {"type": "string", "description": "One factual sentence: what the notes say, or what is missing"}})}}),
+                                     finish),
+                       max_steps=12, max_tool_calls=L.MAX_PROPOSALS + 10)
     return spec, record
 
 
