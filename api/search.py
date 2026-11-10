@@ -17,6 +17,7 @@ from email.utils import parsedate_to_datetime
 import json
 import os
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 
@@ -55,6 +56,21 @@ def iso_date(raw: str | None) -> str:
         return ""
 
 
+def real_url(url: str) -> str:
+    """The page a search result points to. Search services sometimes return a Google redirect link
+    (google.com/url?...): unwrap it when it names the page, otherwise drop the result ("")."""
+    p = urlparse(url.strip())
+    host = (p.hostname or "").lower().removeprefix("www.")
+    if not (host == "google.com" or host.startswith("google.")) or p.path != "/url":
+        return url.strip()
+    q = parse_qs(p.query)
+    for key in ("url", "q"):
+        target = (q.get(key) or [""])[0]
+        if target.startswith(("http://", "https://")):
+            return target
+    return ""
+
+
 class TavilySearch:
     """Real web search. One basic search costs 1 Tavily credit."""
     name = "tavily"
@@ -78,8 +94,13 @@ class TavilySearch:
             raise LLMError("Web search failed: " + redact(str(e), [self.key]), e.kind) from None
         except httpx.HTTPError as e:
             raise LLMError(f"Could not reach the search service ({type(e).__name__}).", "temporary") from None
-        return [{"title": r.get("title", ""), "url": r.get("url", ""), "content": (r.get("content") or "")[:1500],
-                 "published": iso_date(r.get("published_date"))} for r in (data.get("results") or [])[:self.results] if r.get("url")]
+        out = []
+        for r in (data.get("results") or [])[:self.results]:
+            url = real_url(r.get("url") or "")
+            if url:
+                out.append({"title": r.get("title", ""), "url": url, "content": (r.get("content") or "")[:1500],
+                            "published": iso_date(r.get("published_date"))})
+        return out
 
     def read(self, url: str) -> dict | None:
         """The full text of one page (Tavily extract; one credit per five pages)."""

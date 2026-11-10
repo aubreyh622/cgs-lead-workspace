@@ -155,7 +155,10 @@ function candidatesView(d, ctx) {
       ${fresh.length ? html`<label class="check"><input type="checkbox" data-act="selectAll" data-on="change" ${all ? "checked" : ""}>Select all</label>` : ""}
     </div>
     ${inlineError(ui.error && ui.error.where === "cands" ? ui.error.message : "")}
-    ${fresh.length ? fresh.map((c) => candidateRow(c)) : emptyState(
+    ${fresh.length ? fresh.map((c) => candidateRow(c)) : !d.cands.length ? emptyState(
+      "No candidates yet",
+      "The discovery agent searches on its own once a week, and right after the workspace starts. You can also ask it now.",
+      { href: href("sources"), label: "Find companies" }) : emptyState(
       "Every candidate has a decision",
       "The discovery agent looks for new companies once a week. Researched companies appear in Ready to decide.",
       { href: href("companies", { tab: "review" }), label: "Open Ready to decide" })}

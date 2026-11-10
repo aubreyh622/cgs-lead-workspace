@@ -3,6 +3,7 @@
 APP_MODE   demo | live            demo never calls an AI provider; live never falls back to demo.
 CRM_MODE   disabled | read_only | write_approved
 CRM_PROVIDER  off | mock | insightly; empty = mock in demo mode, off in live mode (api/toolkit/crm.py)
+AI_MODEL_<AGENT>  a model for one agent instead of AI_MODEL, for example AI_MODEL_OUTREACH=claude-sonnet-5-5 (see AGENT_MODEL_ENV)
 """
 from __future__ import annotations
 
@@ -13,6 +14,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 APP_MODES = ("demo", "live")
 CRM_MODES = ("disabled", "read_only", "write_approved")
+# Each agent may use its own model (same AI company as AI_PROVIDER): a stronger one where judgement and writing matter,
+# a cheaper one for searching and reading. Unset = AI_MODEL. Compare choices with Check Quality.cmd before changing them.
+AGENT_MODEL_ENV = {"Discovery agent": "AI_MODEL_DISCOVERY", "Direction agent": "AI_MODEL_DIRECTION", "Research agent": "AI_MODEL_RESEARCH",
+                   "Outreach agent": "AI_MODEL_OUTREACH", "Evidence agent": "AI_MODEL_EVIDENCE", "Manager agent": "AI_MODEL_MANAGER"}
 
 
 def _load_dotenv(path: Path) -> None:
@@ -35,6 +40,7 @@ class Settings:
     database_url: str = ""  # empty = SQLite file at db_path; set DATABASE_URL for PostgreSQL later
     ai_provider: str = "gemini"  # gemini | openai | claude; switch any time, see api/llm.py
     ai_model: str = ""           # empty = the provider's default model
+    agent_models: tuple[tuple[str, str], ...] = ()  # (agent, model) pairs that override ai_model for that agent
     users: tuple[str, ...] = ("Alex Morgan", "Sarah Patel", "Daniel Brooks", "Quinn Harper")  # no login yet; pick a name
     directors: tuple[str, ...] = ()  # who may act as Director of Operations at Step 8; empty = anyone (until CGS names them)
     admins: tuple[str, ...] = ()     # who may change the agents' connector permissions; empty = any workspace user
@@ -59,8 +65,15 @@ class Settings:
             raise ValueError(f"CRM_PROVIDER must be off, mock or insightly, not {self.crm_provider!r}.")
         if self.mail_provider == "gmail" and self.app_mode == "demo":
             raise ValueError("MAIL_PROVIDER=gmail needs APP_MODE=live: demo data must not reach a real mailbox.")
+        unknown = [a for a, _ in self.agent_models if a not in AGENT_MODEL_ENV]
+        if unknown:
+            raise ValueError(f"No agent called {unknown[0]!r} can have its own model. Use one of {sorted(AGENT_MODEL_ENV)}.")
         if not self.database_url:
             object.__setattr__(self, "database_url", f"sqlite:///{Path(self.db_path).as_posix()}")
+
+    def model_for(self, agent: str | None) -> str:
+        """The model this agent uses: its own (AI_MODEL_<AGENT>) or AI_MODEL; empty = the provider's default."""
+        return dict(self.agent_models).get(agent or "") or self.ai_model
 
 
 def load_settings(env_file: Path | None = ROOT / ".env") -> Settings:
@@ -74,6 +87,7 @@ def load_settings(env_file: Path | None = ROOT / ".env") -> Settings:
         database_url=os.environ.get("DATABASE_URL", ""),
         ai_provider=os.environ.get("AI_PROVIDER", "gemini").strip().lower(),
         ai_model=os.environ.get("AI_MODEL", "").strip(),
+        agent_models=tuple((agent, os.environ[key].strip()) for agent, key in AGENT_MODEL_ENV.items() if os.environ.get(key, "").strip()),
         agent_worker=os.environ.get("AGENT_WORKER", "on").strip().lower() in ("on", "1", "true", "yes"),
         agent_lanes=int(os.environ.get("AGENT_LANES", "3") or 3),
         research_engine=os.environ.get("RESEARCH_ENGINE", "agent").strip().lower() or "agent",

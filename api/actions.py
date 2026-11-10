@@ -87,7 +87,7 @@ def research_bridge(app):
             from api.research_agent import AgentResearchBridge
             from api.llm import make_provider
             from api.search import make_search
-            factory = getattr(app.state, "provider_factory", None) or (lambda: make_provider(st.ai_provider, st.ai_model))
+            factory = getattr(app.state, "provider_factory", None) or (lambda: make_provider(st.ai_provider, st.model_for("Research agent")))
             search = getattr(app.state, "search_factory", None)
             app.state.research_bridge = AgentResearchBridge(factory, (lambda as_of: search()) if search else (lambda as_of: make_search(as_of=as_of)),
                                                             background=st.agent_worker, session_factory=app.state.db.session)
@@ -95,7 +95,7 @@ def research_bridge(app):
             from api.llm import make_provider
             from api.mock_research import MockResearchBridge
             st = app.state.settings
-            factory = getattr(app.state, "provider_factory", None) or (lambda: make_provider(st.ai_provider, st.ai_model))
+            factory = getattr(app.state, "provider_factory", None) or (lambda: make_provider(st.ai_provider, st.model_for("Research agent")))
             app.state.research_bridge = MockResearchBridge(factory)
         else:
             from api.research_bridge import ResearchBridge

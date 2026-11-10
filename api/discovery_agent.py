@@ -300,7 +300,10 @@ def discovery_agent(search, direction: dict, intent: str, known: set[str], today
         record["reads"] += 1
         page = search.read(url) if hasattr(search, "read") else None
         if page and len(page.get("content") or "") > len(r.get("content") or ""):
-            r["content"] = page["content"]
+            # Keep the search snippet: some sites return only their menus to the reader, and a quote the agent
+            # took from the snippet must still be found in the source.
+            snippet = r.get("content") or ""
+            r["content"] = page["content"] if _norm(snippet) in _norm(page["content"]) else snippet + "\n\n" + page["content"]
         return {"url": url, "title": r.get("title", ""), "published": r.get("published") or "undated", "text": (r.get("content") or "")[:4000]}
 
     def in_crm(name: str) -> dict | None:

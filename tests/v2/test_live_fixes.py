@@ -122,3 +122,54 @@ def test_the_agent_panel_sees_research(tmp_path):
     api.post("/api/research/sync", headers=ME)
     r = api.get("/api/agents").json()["research"]
     assert "Brightwater Valve Co." not in r["running"] and r["last"] == {"company": "Brightwater Valve Co.", "status": "done"}
+
+
+def test_contacting_by_hand_or_a_reply_withdraws_unsent_drafts(tmp_path):
+    """Live demo prep, 6 Nov 2026: the lead was contacted on LinkedIn and replied, but the agent's first email still
+    waited in To approve."""
+    app = create_app(Settings(db_path=tmp_path / "d.sqlite3"))
+    api = TestClient(app)
+    oid = next(o["id"] for o in api.get("/api/opportunities").json() if o["stage"] == "identified")
+
+    def draft():
+        with app.state.db.session() as s:
+            item = J.to_inbox(s, date(2026, 10, 26), None, "draft", "Email", "x", {"subject": "Hi", "body": "Hi.", "purpose": "first", "facts": []},
+                              opp=s.get(m.Opportunity, oid), agent="Outreach agent")
+            s.commit()
+            return item.id
+
+    def status(item_id):
+        with app.state.db.session() as s:
+            return s.get(m.InboxItem, item_id).status
+
+    first = draft()
+    assert api.post(f"/api/opportunities/{oid}/outreach/sent", headers=ME, json={"via": "LinkedIn"}).status_code == 200
+    assert status(first) == "dismissed"
+    follow = draft()
+    r = api.post(f"/api/opportunities/{oid}/outreach/reply", headers=ME, json={"text": "Thanks, happy to talk next week."})
+    assert r.status_code == 200, r.text
+    assert status(follow) == "dismissed"
+    assert sum("unsent email draft(s) withdrawn" in a["text"] for a in api.get(f"/api/opportunities/{oid}").json()["activity"]) == 2
+
+
+def test_the_new_candidates_notice_closes_when_its_round_is_decided(tmp_path):
+    """Live demo prep, 6 Nov 2026: "3 new candidates" stayed on Home after all three were picked."""
+    app = create_app(Settings(db_path=tmp_path / "c.sqlite3"))
+    api = TestClient(app)
+    fresh = [x for x in api.get("/api/candidates", params={"status": "new"}).json()]
+    rnd = fresh[0]["round"]
+    same = [x for x in fresh if x["round"] == rnd]
+    with app.state.db.session() as s:
+        item_id = J.to_inbox(s, date(2026, 10, 26), None, "candidates", f"{len(same)} new candidates", "x", {"round": rnd}).id
+        s.commit()
+
+    def status():
+        with app.state.db.session() as s:
+            return s.get(m.InboxItem, item_id).status
+
+    for x in same[:-1]:
+        assert api.post(f"/api/candidates/{x['id']}/skip", headers=ME, json={"reason": "Too small"}).status_code == 200
+        assert status() == "new"
+    last = same[-1]
+    assert api.post(f"/api/candidates/{last['id']}/pick", headers=ME).status_code == 200
+    assert status() == "done"

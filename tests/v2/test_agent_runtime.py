@@ -106,7 +106,8 @@ def test_claude_tools_are_strict_and_leaked_arguments_are_moved_back():
     # text that only mentions a tag, or names a field the tool does not have, is left alone
     schema = {"properties": {"answer": {"type": "string"}, "why": {"type": "string"}}}
     assert R.repair_args({"answer": 'see <parameter name="other">x</parameter>'}, schema) == {"answer": 'see <parameter name="other">x</parameter>'}
-    assert R.repair_args({"answer": "a", "why": 'b <parameter name="answer">c'}, schema) == {"answer": "a", "why": 'b <parameter name="answer">c'}
+    # a leaked copy of a field that has its own value is cut, even when worded differently (live, 6 Nov 2026)
+    assert R.repair_args({"answer": "a", "why": 'b <parameter name="answer">c'}, schema) == {"answer": "a", "why": "b"}
 
 
 # ---------- the loop's brakes and self-correction ----------
@@ -210,3 +211,83 @@ def test_leaked_text_is_cut_even_when_the_field_was_also_written():
     assert R.repair_args(args, schema) == {"relevance": "Operations work can address it.", "alternative": "Routine growth."}
     plain = {"relevance": 'The client wrote <parameter name="other"> in an email.', "alternative": "x"}
     assert R.repair_args(plain, schema) == plain  # a name the tool does not have is left alone
+
+
+def test_a_leaked_copy_worded_differently_is_cut_too():
+    """Live, 6 Nov 2026 (Siemens Healthineers): "alternative" and "unknowns" leaked into "relevance" in other words
+    than their own fields."""
+    schema = R.params({"relevance": {"type": "string"}, "alternative": {"type": "string"},
+                       "unknowns": {"type": "array", "items": {"type": "string"}}})
+    args = {"relevance": 'Margin pressure gives a reason.</relevance> <parameter name="alternative">The rebrand may be a '
+                         'financial move.</alternative> <parameter name="unknowns">["Who owns it?"]',
+            "alternative": "The carve-out may be mainly a financial move.", "unknowns": ["Who owns the programme?"]}
+    assert R.repair_args(args, schema) == {"relevance": "Margin pressure gives a reason.",
+                                           "alternative": "The carve-out may be mainly a financial move.",
+                                           "unknowns": ["Who owns the programme?"]}
+
+
+# ---------- the loop survives what goes wrong around it ----------
+def claude_use(name, args, id="toolu_1"):
+    return {"content": [{"type": "tool_use", "id": id, "name": name, "input": args}], "stop_reason": "tool_use",
+            "usage": {"input_tokens": 5, "output_tokens": 3}}
+
+
+def test_a_search_service_failure_goes_back_to_the_agent_instead_of_ending_the_run():
+    state = {"calls": 0}
+
+    def flaky(_args):
+        state["calls"] += 1
+        if state["calls"] == 1:
+            raise LLMError("Web search failed: HTTP 503", "temporary")
+        return {"results": ["a page"]}
+    search = R.Tool("search", "Search.", R.params({}), flaky)
+    ai = Script(claude_use("search", {}), claude_use("search", {}, "toolu_2"), claude_use("finish", {"answer": "ok"}, "toolu_3"))
+    out = R.run(spec(tools=(search,)), make_provider("claude", key="k", transport=ai), "Go.")
+    assert out.status == "done" and state["calls"] == 2
+    failed = ai.requests[1]["messages"][2]["content"][0]
+    assert failed["is_error"] is True and "HTTP 503" in failed["content"] and "call finish" in failed["content"]
+    assert "is_error" not in ai.requests[2]["messages"][4]["content"][0]  # the second try worked
+
+
+def test_a_wrong_key_or_a_service_that_stays_down_ends_the_run_with_the_real_reason():
+    def no_key(_args):
+        raise LLMError("Add your TAVILY_API_KEY to the .env file, then restart.", "auth")
+    ai = Script(claude_use("search", {}))
+    with pytest.raises(LLMError, match="TAVILY_API_KEY"):
+        R.run(spec(tools=(R.Tool("search", "Search.", R.params({}), no_key),)), make_provider("claude", key="k", transport=ai), "Go.")
+
+    def down(_args):
+        raise LLMError("Web search failed: HTTP 503", "temporary")
+    ai = Script(*[claude_use("search", {}, f"toolu_{i}") for i in range(5)])
+    with pytest.raises(LLMError, match="503"):
+        R.run(spec(tools=(R.Tool("search", "Search.", R.params({}), down),), max_steps=6), make_provider("claude", key="k", transport=ai), "Go.")
+    assert len(ai.requests) == R.MAX_TOOL_FAILURES + 1  # two failures are passed to the agent, the third ends the run
+
+
+def test_a_cut_off_answer_is_asked_for_again_and_twice_in_a_row_stops_the_run():
+    cut = {"content": [{"type": "tool_use", "id": "toolu_x", "name": "finish", "input": {}}], "stop_reason": "max_tokens",
+           "usage": {"input_tokens": 9, "output_tokens": 16000}}
+    ai = Script(cut, claude_use("finish", {"answer": "ok"}))
+    out = R.run(spec(), make_provider("claude", key="k", transport=ai), "Go.")
+    assert out.status == "done" and out.usage.tokens_out == 16003 and out.trace[0]["cut_off"] is True
+    assert ai.requests[0]["max_tokens"] == 16000
+    again = ai.requests[1]["messages"]  # the half-written turn is not sent back; the agent is told to answer shorter
+    assert [m["role"] for m in again] == ["user", "user"] and "cut off" in again[1]["content"]
+    out = R.run(spec(), make_provider("claude", key="k", transport=Script(cut, cut)), "Go.")
+    assert out.status == "incomplete" and "cut off twice" in out.reason
+
+
+def test_a_long_result_stays_whole_json_and_says_what_was_cut():
+    page = {"url": "https://example.com/a", "title": "A page", "text": "word " * 3000, "links": ["x" * 50, "y" * 50]}
+    shown = R.fit(page)
+    data = json.loads(shown)  # cut in the middle of the JSON, this would not parse
+    assert len(shown) <= R.RESULT_LIMIT and data["truncated"] is True and data["url"] == page["url"] and data["links"] == page["links"]
+    assert data["text"].startswith("word word") and "[cut:" in data["text"] and "truncated" not in page
+    assert R.fit({"echo": "hi"}) == '{"echo": "hi"}' and R.fit("plain") == "plain"
+    many = json.loads(R.fit({"rows": [{"n": i, "t": "ab" * 20} for i in range(400)]}))  # nothing long to shorten
+    assert many["truncated"] is True and len(json.dumps(many)) <= R.RESULT_LIMIT
+    assert len(R.fit("z" * 9000)) <= R.RESULT_LIMIT
+    big = R.Tool("page", "A page.", R.params({}), lambda a: page)
+    ai = Script(claude_use("page", {}), claude_use("finish", {"answer": "ok"}, "toolu_2"))
+    R.run(spec(tools=(big,)), make_provider("claude", key="k", transport=ai), "Go.")
+    assert json.loads(ai.requests[1]["messages"][2]["content"][0]["content"])["truncated"] is True

@@ -194,10 +194,11 @@ def record_run(c: Ctx, agent: str, o: m.Opportunity | None, prompt: str, calls: 
     return rid
 
 
-def provider(c: Ctx):
+def provider(c: Ctx, agent: str | None = None):
+    """The AI for this agent: its own model when .env sets one (AI_MODEL_<AGENT>), otherwise AI_MODEL."""
     if c.provider_factory:
         return c.provider_factory()
-    return make_provider(c.settings.ai_provider, c.settings.ai_model)
+    return make_provider(c.settings.ai_provider, c.settings.model_for(agent))
 
 
 def run_agent(c: Ctx, agent: str, o: m.Opportunity | None, prompt: str, fn, calls=1, subject="", live=None, live_prompt=None,
@@ -215,7 +216,7 @@ def run_agent(c: Ctx, agent: str, o: m.Opportunity | None, prompt: str, fn, call
     try:
         if live is None:
             A.require_demo(c.settings.app_mode, agent)
-        p = provider(c)
+        p = provider(c, agent)
         result, usage = live(p)
     except (A.AgentUnavailable, LLMError) as e:
         # a failed request may still use quota, so the calls already sent count toward the budget
@@ -408,6 +409,16 @@ def run_research(c: Ctx, o: m.Opportunity) -> None:
     log(c, o.id, "a", f"Research agent finished the brief: {len(b.facts)} sources" + (f", {len(b.flags)} flag" if b.flags else ""))
 
 
+def close_round_notice(c: Ctx, rnd: int) -> None:
+    """The "N new candidates" notice leaves the inbox once every candidate of its round has a decision."""
+    c.s.flush()
+    if c.s.scalar(select(func.count()).select_from(m.Candidate).where(m.Candidate.round == rnd, m.Candidate.status == "new")):
+        return
+    for it in c.s.scalars(select(m.InboxItem).where(m.InboxItem.kind == "candidates", m.InboxItem.status == "new")):
+        if (it.data or {}).get("round") == rnd:
+            it.status, it.decided_by = "done", "Every candidate of the round has a decision"
+
+
 def pick_candidate(c: Ctx, cand_id: str) -> list[str]:
     cand = c.s.get(m.Candidate, cand_id)
     if not cand:
@@ -415,6 +426,7 @@ def pick_candidate(c: Ctx, cand_id: str) -> list[str]:
     if cand.status != "new":
         raise ActionError(f"This candidate was already {cand.status}.", 409, "wrong_status")
     cand.status = "sent"
+    close_round_notice(c, cand.round)
     created = []
     if cand.demo_star:
         o = new_opportunity(c, opp_id=unique_opp_id(c, "corvane"), company=cand.company, domain=cand.domain, title="Scaling AI inspection across twelve plants",
@@ -497,6 +509,7 @@ def skip_candidate(c: Ctx, cand_id: str, reason: str, scope: str) -> None:
     if reason not in SKIP_REASONS:
         raise ActionError(f"Reason must be one of {SKIP_REASONS}.")
     cand.status, cand.skip_reason, cand.skip_scope = "skipped", reason, scope
+    close_round_notice(c, cand.round)
     fb = feedback(c, cand.company, 1, "Skipped", reason, scope, cand.direction_version)
     c.s.flush()
     if re.search(r"Existing relationship|Competitor", reason):
@@ -828,14 +841,25 @@ def alerts(c: Ctx, follow_days: int) -> list[dict]:
     return out
 
 
+def withdraw_drafts(c: Ctx, o: m.Opportunity, why: str) -> list:
+    """Unsent agent email drafts for this lead leave the inbox: the stage they were written for is over."""
+    drafts = list(c.s.scalars(select(m.InboxItem).where(m.InboxItem.opportunity_id == o.id, m.InboxItem.kind == "draft",
+                                                        m.InboxItem.status == "new")))
+    for it in drafts:
+        it.status, it.decided_by = "dismissed", why
+    return drafts
+
+
 def mark_sent(c: Ctx, opp_id: str, via: str, on: date | None, follow_days: int) -> None:
     o = opp(c, opp_id, "identified")
     no_waiting_email(c, o)
     r = outreach_row(c, o)
     r.status, r.sent_on, r.sent_via = "sent", on or c.today, need_text(via, "Channel")
     o.stage, o.next_action, o.next_due = "contacted", "Follow up if no reply", r.sent_on + timedelta(days=follow_days)
+    drafts = withdraw_drafts(c, o, f"{c.actor} contacted the lead another way ({via})")
     touch(c, o)
-    log(c, o.id, "h", f"{via} sent by {c.actor}. The workspace did not send it.")
+    log(c, o.id, "h", f"{via} sent by {c.actor}. The workspace did not send it."
+        + (f" {len(drafts)} unsent email draft(s) withdrawn." if drafts else ""))
     CRM.mark(c, o)
 
 
@@ -1179,10 +1203,7 @@ def to_nurture(c: Ctx, opp_id: str, review_on: date | None, reason: str) -> None
     o.stage, o.next_action, o.next_due = "nurture", "Revisit the opportunity", review_on or c.today + timedelta(days=60)
     # Email drafts written for the stage it leaves are not sent now: they leave the inbox. A reconnect email is drafted
     # at the review date.
-    drafts = list(c.s.scalars(select(m.InboxItem).where(m.InboxItem.opportunity_id == o.id, m.InboxItem.kind == "draft",
-                                                        m.InboxItem.status == "new")))
-    for it in drafts:
-        it.status, it.decided_by = "dismissed", f"{c.actor} moved the lead to nurture"
+    drafts = withdraw_drafts(c, o, f"{c.actor} moved the lead to nurture")
     touch(c, o)
     log(c, o.id, "h", f"Moved to nurture by {c.actor}: {reason}" + (f". {len(drafts)} unsent email draft(s) withdrawn." if drafts else ""))
     CRM.mark(c, o)
@@ -1239,8 +1260,10 @@ def record_reply(c: Ctx, opp_id: str, text: str, on: date | None) -> dict:
     c.s.add(reply_note)
     o.stage = "active"  # any reply moves the opportunity to Active at once, whatever it says
     o.next_action, o.next_due = "Hold the first conversation", r.reply_on + timedelta(days=7)
+    drafts = withdraw_drafts(c, o, f"{c.actor} recorded the client's reply")  # a first email or follow-up is moot now
     touch(c, o)
-    log(c, o.id, "h", f"Reply recorded by {c.actor}; stage set to Active")
+    log(c, o.id, "h", f"Reply recorded by {c.actor}; stage set to Active"
+        + (f". {len(drafts)} unsent email draft(s) withdrawn." if drafts else ""))
     CRM.mark(c, o)
     c.s.flush()
     # The reply may already say something about need, timing or budget: the evidence agent reads it for the owner to review.

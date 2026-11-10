@@ -169,3 +169,16 @@ def test_a_turn_with_text_only_is_nudged_back_to_the_tools():
     p = make_provider("gemini", "m", key="k", transport=lambda url, headers, payload, **kw: next(replies))
     (kept, info), _, trace = D.discover_with_agent(p, Search(), DIRECTION, "", set(), TODAY)
     assert kept == [] and info["searches"] == 0 and trace[-1]["type"] == "finish"
+
+
+def test_a_page_that_reads_back_only_its_menus_keeps_the_search_snippet():
+    class MenusOnly(Search):
+        def read(self, url):
+            self.reads.append(url)
+            return {"url": url, "content": "Home Markets Stocks Newsletter Sign in Top 10 dividend stocks " * 10}
+
+    t, record = tools(MenusOnly())
+    t["search_news"]({"query": "foundry acquisition"})
+    t["read_page"]({"url": "https://news.example/ardent"})
+    ok = t["nominate"](nominate("Ardent Castings", "Ardent Castings to acquire Hollow Pine Foundry."))
+    assert ok["accepted"] and record["dropped"] == {}

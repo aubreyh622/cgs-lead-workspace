@@ -294,7 +294,7 @@ function readyList(o, a) {
     <div class="row-flex"><p class="sub-title" style="margin:0">To reach Ready</p><span class="meta">${plural(items.length, "thing")} left</span>
       <button type="button" class="btn ghost small" style="margin-left:auto" data-act="copyQuestions" data-text="${items.map((x) => `- ${x.ask}`).join("\n")}">Copy the questions for the next call</button></div>
     <ul class="gaps compact">${items.slice(0, 3).map(row)}</ul>
-    ${items.length > 3 ? html`<details ${open ? "open" : ""}><summary class="meta">${plural(items.length - 3, "more")}</summary><ul class="gaps compact">${items.slice(3).map(row)}</ul></details>` : ""}
+    ${items.length > 3 ? html`<details ${open ? "open" : ""}><summary class="meta">${items.length - 3} more</summary><ul class="gaps compact">${items.slice(3).map(row)}</ul></details>` : ""}
   </div>`;
 }
 

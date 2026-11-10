@@ -16,9 +16,13 @@ import json
 import re
 from typing import Any, Callable
 
-from api.llm import Provider, Usage
+from api.llm import LLMError, Provider, Usage
 
 RESULT_LIMIT = 6000  # characters of one tool result the model sees
+KEEP = 200           # a long text inside a result is never cut below this many characters
+MAX_TOOL_FAILURES = 2  # outside failures (the search service is down) one run puts up with; the next one ends the run
+CUT_OFF_NOTE = ("Your last answer was cut off before it finished, so none of it was used and no tool ran. "
+                "Answer again and keep it shorter: one tool call at a time, with shorter texts.")
 
 
 class ToolError(Exception):
@@ -66,22 +70,55 @@ def _short(value, n=300) -> str:
     return text if len(text) <= n else text[:n] + "..."
 
 
+def _texts(node):
+    """Every text inside a result, as (the dict or list holding it, its key or index, the text)."""
+    for key, value in (node.items() if isinstance(node, dict) else enumerate(node)):
+        if isinstance(value, str):
+            yield node, key, value
+        elif isinstance(value, (dict, list)):
+            yield from _texts(value)
+
+
+def fit(content, limit: int = RESULT_LIMIT) -> str:
+    """One tool result as the text the model sees: at most `limit` characters, and still whole JSON. A result that is too
+    long loses the end of its longest texts (a page's text, a long note), each marked with how much was cut, instead of
+    being cut in the middle of the JSON, which left the model with a broken last field and no sign of what was missing."""
+    text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False, default=str)
+    if len(text) <= limit:
+        return text
+    if not isinstance(content, (dict, list)):
+        return text[:limit - 40] + f" ... [cut: {len(text) - limit + 40} more characters]"
+    data = json.loads(text)  # a copy, so the tool's own result stays whole for the trace and the checks
+    if isinstance(data, dict):
+        data["truncated"] = True
+    for _ in range(40):
+        over = len(json.dumps(data, ensure_ascii=False)) - limit
+        if over <= 0:
+            return json.dumps(data, ensure_ascii=False)
+        holder, key, value = max(_texts(data), key=lambda x: len(x[2]), default=(None, None, ""))
+        if len(value) <= KEEP:
+            break
+        cut = min(len(value) - KEEP, over + 60)
+        holder[key] = value[:len(value) - cut] + f" ... [cut: {cut} more characters]"
+    keep = max(limit - 400, 200)  # nothing long to shorten (hundreds of short rows): show the start, as one text
+    while True:
+        out = json.dumps({"truncated": True, "note": "The result was too long to show in full; this is its start.",
+                          "start": text[:keep]}, ensure_ascii=False)
+        if len(out) <= limit or keep <= 200:
+            return out
+        keep -= len(out) - limit  # quotation marks inside the text take two characters each once it is a JSON string
+
+
 _PARAM = re.compile(r'<parameter name="([A-Za-z_][A-Za-z0-9_]*)">')
 _CLOSE = re.compile(r"(?:\s*</[A-Za-z_][A-Za-z0-9_]*>)+\s*$")
-
-
-def _same(a, b) -> bool:
-    """The leaked copy and the argument say the same thing (allowing for a cut-off end)."""
-    norm = lambda t: " ".join(str(t).split()).lower()
-    a, b = norm(a), norm(b)
-    return bool(a) and bool(b) and (a == b or a.startswith(b[:60]) or b.startswith(a[:60]))
 
 
 def repair_args(args: dict, schema: dict) -> dict:
     """Some models (seen live with Claude Haiku 5.5, 5 Nov 2026) write the later arguments of a call inside an earlier
     string, as <parameter name="x">...</parameter> text. Move that text back to the arguments the schema names when they
-    are missing, and cut it when it only repeats what the named argument already holds (seen live on 5 Nov 2026 too: the
-    copy stayed in the brief). Anything else is left as it is, so the tool's own checks still decide."""
+    are missing, and cut it when the named argument already holds its own value (seen live on 5 and 6 Nov 2026: the copy,
+    sometimes worded a little differently, stayed in the brief). Text naming no argument of the schema is left as it is,
+    so the tool's own checks still decide."""
     props = (schema or {}).get("properties") or {}
     out = dict(args)
     for key, value in args.items():
@@ -95,7 +132,7 @@ def repair_args(args: dict, schema: dict) -> dict:
             text = _CLOSE.sub("", text).strip()
             if not out.get(name):
                 found[name] = text
-            elif _same(text, out[name]):
+            else:  # the named argument has its own value: the leaked copy never belongs in this string
                 repeats = True
         if not found and not repeats:
             continue
@@ -119,7 +156,7 @@ def run(spec: AgentSpec, provider: Provider, task: str, may_call: Callable[[], b
     declarations = [t.declaration() for t in tools.values()]
     messages: list[dict] = [{"role": "user", "text": task}]
     trace: list[dict] = []
-    tokens_in = tokens_out = tool_calls = 0
+    tokens_in = tokens_out = tool_calls = cut_offs = tool_failures = 0
 
     def outcome(status, result=None, reason=""):
         if reason:
@@ -132,6 +169,14 @@ def run(spec: AgentSpec, provider: Provider, task: str, may_call: Callable[[], b
         turn = provider.chat(spec.system, messages, declarations)
         tokens_in += turn.usage.tokens_in or 0
         tokens_out += turn.usage.tokens_out or 0
+        if turn.cut_off:  # nothing of a cut-off turn is used: a tool call in it may be missing half its arguments
+            cut_offs += 1
+            trace.append({"type": "model", "step": step, "text": "", "calls": [], "cut_off": True})
+            if cut_offs == 2:
+                return outcome("incomplete", reason="The AI answer was cut off twice in a row before it finished.")
+            messages.append({"role": "user", "text": CUT_OFF_NOTE})
+            continue
+        cut_offs = 0
         trace.append({"type": "model", "step": step, "text": _short(turn.text, 500),
                       "calls": [{"tool": c.name, "args": c.args} for c in turn.calls]})
         messages.append({"role": "assistant", "turn": turn})
@@ -156,6 +201,16 @@ def run(spec: AgentSpec, provider: Provider, task: str, may_call: Callable[[], b
                     content = {"error": str(e)}
                 except (KeyError, TypeError, ValueError) as e:
                     content = {"error": f"{call.name} could not use those arguments ({type(e).__name__}: {e})."}
+                except LLMError as e:
+                    # An outside service the tool depends on failed (the search service timed out, a rate limit).
+                    # The work done so far is worth more than the failed call: tell the agent, so it can try again,
+                    # go another way or finish with what it has. A wrong key or setting, or repeated failures, end the
+                    # run with the real reason instead.
+                    tool_failures += 1
+                    if e.kind not in ("temporary", "quota") or tool_failures > MAX_TOOL_FAILURES:
+                        raise
+                    content = {"error": f"{call.name} failed just now ({e}) Try it once more or go another way; "
+                                        f"if it keeps failing, call {spec.finish.name} with what you have."}
                 else:
                     if tool is spec.finish:
                         trace.append({"type": "finish", "args": call.args, "accepted": True})
@@ -164,7 +219,7 @@ def run(spec: AgentSpec, provider: Provider, task: str, may_call: Callable[[], b
                 trace.append({"type": "finish", "args": call.args, "accepted": False, "error": content.get("error")})
             else:
                 trace.append({"type": "tool", "tool": call.name, "args": call.args, "result": _short(content)})
-            results.append((call, _short(content, RESULT_LIMIT)))
+            results.append((call, fit(content), isinstance(content, dict) and "error" in content))
         last = step == spec.max_steps - 1
         messages.append({"role": "tool", "results": results,
                          **({"note": f"This is your last step. Call {spec.finish.name} now with what you have."} if last else {})})
