@@ -1,0 +1,2 @@
+# Only for a hosted workspace on PostgreSQL (DATABASE_URL). The local SQLite workspace does not need it.
+psycopg[binary]==3.3.8

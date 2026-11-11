@@ -3,6 +3,8 @@
 APP_MODE   demo | live            demo never calls an AI provider; live never falls back to demo.
 CRM_MODE   disabled | read_only | write_approved
 CRM_PROVIDER  off | mock | insightly; empty = mock in demo mode, off in live mode (api/toolkit/crm.py)
+CGS_HOST / PORT / CGS_PUBLIC_HOSTS   hosting (Google Cloud Run): see docs/DEPLOY_GOOGLE_CLOUD.md
+DATABASE_URL      PostgreSQL instead of the local SQLite file, for example postgresql://user:password@host/dbname
 AI_MODEL_<AGENT>  a model for one agent instead of AI_MODEL, for example AI_MODEL_OUTREACH=claude-sonnet-5-5 (see AGENT_MODEL_ENV)
 """
 from __future__ import annotations
@@ -35,6 +37,8 @@ class Settings:
     app_mode: str = "demo"
     crm_mode: str = "disabled"
     port: int = 8800
+    host: str = "127.0.0.1"  # the address the server listens on; 0.0.0.0 inside a container (CGS_HOST)
+    public_hosts: tuple[str, ...] = ()  # host names the hosted workspace is reached by, e.g. cgs-workspace-xyz.a.run.app
     db_path: Path = ROOT / "runtime" / "workspace-v2.sqlite3"
     frontend: Path = ROOT / "frontend" / "index.html"
     database_url: str = ""  # empty = SQLite file at db_path; set DATABASE_URL for PostgreSQL later
@@ -65,6 +69,12 @@ class Settings:
             raise ValueError(f"CRM_PROVIDER must be off, mock or insightly, not {self.crm_provider!r}.")
         if self.mail_provider == "gmail" and self.app_mode == "demo":
             raise ValueError("MAIL_PROVIDER=gmail needs APP_MODE=live: demo data must not reach a real mailbox.")
+        if self.host not in ("127.0.0.1", "localhost", "::1") and not self.public_hosts:
+            raise ValueError(f"CGS_HOST={self.host} opens the workspace to other computers, so CGS_PUBLIC_HOSTS must name the "
+                             "address people will use (for example cgs-workspace-xyz.a.run.app). The workspace has no login "
+                             "of its own: put Google sign-in in front of it first (docs/DEPLOY_GOOGLE_CLOUD.md).")
+        if self.database_url.startswith(("postgres://", "postgresql://")):  # the plain form Google Cloud and most hosts give
+            object.__setattr__(self, "database_url", "postgresql+psycopg://" + self.database_url.split("://", 1)[1])
         unknown = [a for a, _ in self.agent_models if a not in AGENT_MODEL_ENV]
         if unknown:
             raise ValueError(f"No agent called {unknown[0]!r} can have its own model. Use one of {sorted(AGENT_MODEL_ENV)}.")
@@ -82,7 +92,9 @@ def load_settings(env_file: Path | None = ROOT / ".env") -> Settings:
     return Settings(
         app_mode=os.environ.get("APP_MODE", "demo").strip().lower(),
         crm_mode=os.environ.get("CRM_MODE", "disabled").strip().lower(),
-        port=int(os.environ.get("CGS_V2_PORT", "8800")),
+        port=int(os.environ.get("PORT") or os.environ.get("CGS_V2_PORT", "8800")),  # PORT: set by Google Cloud Run
+        host=os.environ.get("CGS_HOST", "").strip() or "127.0.0.1",
+        public_hosts=tuple(h.strip().lower() for h in os.environ.get("CGS_PUBLIC_HOSTS", "").split(",") if h.strip()),
         db_path=ROOT / Path(os.environ.get("CGS_V2_DB_PATH", "runtime/workspace-v2.sqlite3")),
         database_url=os.environ.get("DATABASE_URL", ""),
         ai_provider=os.environ.get("AI_PROVIDER", "gemini").strip().lower(),

@@ -187,14 +187,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.middleware("http")
     async def local_only(request: Request, call_next):
-        """The workspace serves this computer only. A wrong Host header means another site reached it through DNS
-        rebinding; a foreign Origin on a write means another site's page is sending the request."""
-        if urlsplit("//" + request.headers.get("host", "")).hostname not in LOCAL_HOSTS:
-            return JSONResponse({"error": "This workspace only answers requests addressed to 127.0.0.1 or localhost.", "code": "bad_host"}, 403)
+        """The workspace serves this computer, and when hosted, the addresses in CGS_PUBLIC_HOSTS. A wrong Host header
+        means another site reached it through DNS rebinding; a foreign Origin on a write means another site's page is
+        sending the request."""
+        public = settings.public_hosts
+        if urlsplit("//" + request.headers.get("host", "")).hostname not in LOCAL_HOSTS | set(public):
+            where = "127.0.0.1 or localhost" + (", or " + ", ".join(public) if public else "")
+            return JSONResponse({"error": f"This workspace only answers requests addressed to {where}.", "code": "bad_host"}, 403)
         origin = request.headers.get("origin")
         if request.method not in ("GET", "HEAD", "OPTIONS") and origin is not None:
             o = urlsplit(origin)
-            if o.hostname not in LOCAL_HOSTS or (o.port or 80) != settings.port:
+            local = o.hostname in LOCAL_HOSTS and (o.port or 80) == settings.port
+            if not local and not (o.hostname in public and o.scheme == "https"):
                 return JSONResponse({"error": "Requests from other websites are not accepted.", "code": "bad_origin"}, 403)
         return await call_next(request)
 
@@ -255,9 +259,10 @@ def main():
     import uvicorn
     s = app.state.settings
     print(f"CGS Lead Workspace v2 ({s.app_mode} mode, CRM {s.crm_mode})")
+    local_db = s.database_url.startswith("sqlite")
     if s.app_mode == "live" and app.state.demo_data:
-        print(f"Note: {s.db_path} holds the synthetic demo records. For real leads, set CGS_V2_DB_PATH in .env to a new file.")
-    if "onedrive" in str(s.db_path).lower():
+        print(f"Note: {s.db_path if local_db else 'the database'} holds the synthetic demo records. For real leads, set CGS_V2_DB_PATH in .env to a new file.")
+    if local_db and "onedrive" in str(s.db_path).lower():
         print(f"Warning: the database {s.db_path} is in a OneDrive folder. Syncing can damage a database that is in use. "
               "Set CGS_V2_DB_PATH in .env to a folder outside OneDrive, for example C:/cgs-data/workspace-v2.sqlite3.")
     if port_in_use(s.port):
@@ -278,8 +283,12 @@ def main():
         from api.autonomy import Worker
         app.state.worker = Worker(app).start()  # agents patrol and work in the background; see api/autonomy.py
         print(f"Agents: working in the background (patrol daily; AGENT_WORKER=off in .env stops this).")
-    print(f"Open http://127.0.0.1:{s.port}/  API docs: http://127.0.0.1:{s.port}/docs  Ctrl+C stops.")
-    uvicorn.run(app, host="127.0.0.1", port=s.port, log_level="warning")
+    if s.public_hosts:
+        print(f"Hosted: listening on {s.host}:{s.port} for {', '.join(s.public_hosts)}. The workspace has no login of its own; "
+              "it must sit behind Google sign-in (docs/DEPLOY_GOOGLE_CLOUD.md).", flush=True)
+    else:
+        print(f"Open http://127.0.0.1:{s.port}/  API docs: http://127.0.0.1:{s.port}/docs  Ctrl+C stops.")
+    uvicorn.run(app, host=s.host, port=s.port, log_level="warning")
 
 
 if __name__ == "__main__":

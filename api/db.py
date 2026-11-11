@@ -1,7 +1,7 @@
 """Database connection.
 
-SQLite now (one local file). SQLAlchemy sits between the code and the database, so moving to
-PostgreSQL later means changing DATABASE_URL, not rewriting queries.
+SQLite on one computer (one local file); PostgreSQL when hosted (DATABASE_URL, for example Cloud SQL on Google Cloud).
+SQLAlchemy sits between the code and the database, so the queries are the same for both.
 """
 from __future__ import annotations
 
@@ -21,7 +21,10 @@ def make_engine(db_url: str) -> Engine:
     if db_url.startswith("sqlite:///"):
         Path(db_url.removeprefix("sqlite:///")).parent.mkdir(parents=True, exist_ok=True)
     # timeout: wait up to 30 s for another writer (a person and the background agents) instead of failing with "database is locked"
-    engine = create_engine(db_url, connect_args={"check_same_thread": False, "timeout": 30} if db_url.startswith("sqlite") else {})
+    if db_url.startswith("sqlite"):
+        engine = create_engine(db_url, connect_args={"check_same_thread": False, "timeout": 30})
+    else:  # pre_ping: a hosted database drops idle connections; test each one before use instead of failing a request
+        engine = create_engine(db_url, pool_pre_ping=True)
     if db_url.startswith("sqlite"):
         @event.listens_for(engine, "connect")
         def _pragmas(conn, _):
