@@ -179,6 +179,7 @@ class Outreach(Base):
     mail_draft_id: Mapped[Optional[str]] = mapped_column(String(120))   # a Gmail draft waiting for a person to send it from Gmail
     mail_draft_purpose: Mapped[Optional[str]] = mapped_column(String(20))  # first | followup | reconnect
     mail_account: Mapped[Optional[str]] = mapped_column(String(100))  # whose own Gmail holds the thread; empty = the shared mailbox
+    linkedin: Mapped[Optional[dict]] = mapped_column(JSON)  # the LinkedIn note and message a person sends themselves (api/linkedin.py)
 
 
 class OutboundEmail(Base):
@@ -194,12 +195,15 @@ class OutboundEmail(Base):
     body: Mapped[str] = mapped_column(Text)
     seen_hash: Mapped[str] = mapped_column(String(32))
     by: Mapped[str] = mapped_column(String(100))
-    status: Mapped[str] = mapped_column(String(12), default="queued", index=True)  # queued | sending | sent | undone | failed | expired | unknown (stopped while sending)
+    status: Mapped[str] = mapped_column(String(12), default="queued", index=True)  # approval (waits for a second approval) | queued | sending | sent | undone | returned | failed | expired | unknown (stopped while sending)
     send_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))  # sent, undone, failed or not sent (the updates feed)
     error: Mapped[Optional[str]] = mapped_column(Text)
+    approver: Mapped[Optional[str]] = mapped_column(String(100))     # who must approve it a second time (api/people.py), or empty
+    approved_by: Mapped[Optional[str]] = mapped_column(String(100))  # who gave the second approval ("A as B" when an admin acted)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     resolved_by: Mapped[Optional[str]] = mapped_column(String(100))  # a person looked at a failed / unknown email (it leaves their to-do list)
     resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 

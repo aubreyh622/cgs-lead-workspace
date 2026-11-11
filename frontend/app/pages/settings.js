@@ -63,7 +63,7 @@ function peopleView(p, ctx) {
         <div class="card-head"><div><h2 id="people-h">People and roles</h2>
           <p class="meta">${can ? "You are an admin: you can change roles and sending addresses." : `Only an admin (${p.admins.join(", ")}) can change these.`}</p></div></div>
         <div class="table-wrap"><table class="list">
-          <thead><tr><th scope="col">Person</th><th scope="col">Role</th><th scope="col">Sends from</th>${can ? html`<th scope="col"><span class="sr-only">Change</span></th>` : ""}</tr></thead>
+          <thead><tr><th scope="col">Person</th><th scope="col">Role</th><th scope="col">Sends from</th><th scope="col">Second approval</th>${can ? html`<th scope="col"><span class="sr-only">Change</span></th>` : ""}</tr></thead>
           <tbody>${p.people.map((x) => personRow(x, p, ctx))}</tbody>
         </table></div>
         ${st.err("people")}
@@ -75,6 +75,8 @@ function peopleView(p, ctx) {
         <ul class="bullets" style="margin-top:8px">
           <li>Act as someone else, for example send a follow-up as the consultant who leads that conversation. The record says who did it: "Alex as Sarah".</li>
           <li>Make other people admins.</li>
+          <li>Ask for a second approval of someone's emails: they approve as usual, then the person named approves too before
+            anything goes out. Only the people marked need it.</li>
           <li>Change the <a href="${href("settings", { tab: "scoring" })}">scoring criteria</a>.</li>
           <li>Approve or reject changes to the team's <a href="${href("sources", { tab: "direction" })}">research direction</a>. Anyone may propose one.</li>
           <li>Change agent permissions, lessons and team instructions.</li>
@@ -111,6 +113,12 @@ function personRow(x, p, ctx) {
         </form>`
         : html`<div class="meta-3" style="margin-top:4px">${x.email || "No address set"}</div>`}
     </td>
+    <td>${can ? html`<label><span class="sr-only">Who approves ${x.name}'s emails a second time</span>
+        <select data-act="approver" data-on="change" data-name="${x.name}">
+          <option value="" ${x.secondApprover ? "" : "selected"}>Not needed</option>
+          ${p.people.filter((y) => y.name !== x.name).map((y) => html`<option value="${y.name}" ${x.secondApprover === y.name ? "selected" : ""}>By ${y.name}</option>`)}
+        </select></label>`
+      : x.secondApprover ? html`<span class="tag warn">By ${x.secondApprover}</span>` : html`<span class="meta-3">Not needed</span>`}</td>
     ${can ? html`<td class="acts">
       ${editing ? "" : html`<button type="button" class="btn ghost small" data-act="open" data-open="email:${x.name}">Change address</button>`}
       <button type="button" class="btn small" data-act="admin" data-name="${x.name}" data-admin="${x.admin ? "0" : "1"}">${x.admin ? "Remove admin" : "Make admin"}</button>
@@ -210,6 +218,11 @@ export const actions = {
     st.write("people", t, ctx, () => ctx.api.put(`/people/${enc(t.dataset.name)}`, { admin: on }), (res) => {
       st.ui.notice = [{ text: res.changed.length ? `${res.changed.join("; ")}.`.replace(/^./, (c) => c.toUpperCase()) : "Nothing changed.", cls: "good" }];
       if (t.dataset.name === ctx.self && !on) ctx.toast("You are no longer an admin. Reload the page to see what you can do now.");
+    });
+  },
+  approver(t, e, ctx) {
+    st.write("people", t, ctx, () => ctx.api.put(`/people/${enc(t.dataset.name)}`, { secondApprover: t.value }), (res) => {
+      st.ui.notice = [{ text: res.changed.length ? `${res.changed.join("; ")}.` : "Nothing changed.", cls: "good" }];
     });
   },
   emailForm(form, e, ctx) {

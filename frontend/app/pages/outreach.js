@@ -4,7 +4,7 @@ import { html, icon, day, addDays, daysBetween, href, plural, initials, sourceLi
 import { enc } from "../api.js";
 import { STAGE_LABELS, CLOSE_REASONS } from "../options.js";
 import { emptyState, inlineError, crmLinks, crmConflicts, resolveCrm } from "../shell.js";
-import { UNDO_SECONDS, offerUndo, undoEmail, waitingNotice, emailWaits, undoEmailAct, sendNowAct } from "../undo.js";
+import { UNDO_SECONDS, offerUndo, undoEmail, waitingNotice, emailWaits, undoEmailAct, sendNowAct, secondFormAct } from "../undo.js";
 
 export const title = "Outreach";
 
@@ -421,7 +421,7 @@ function firstEmail(d, ctx) {
   ${contactBlock(o)}
   ${relatedBlock(d.related)}
   ${noticeBlock()}
-  ${waitingNotice(r.waiting)}
+  ${waitingNotice(r.waiting, ctx.me)}
   ${hasDraft && m !== "edit" ? draftBody(r.subject, r.body, facts, { to: (d.preview && d.preview.to) || "", confirmed: !!o.contact.confirmedBy, checks: true, blocked: d.preview && d.preview.blocked }) : ""}
   ${!hasDraft && m !== "edit" ? html`<div class="block">${emptyState("No draft yet",
     "The outreach agent writes one when the lead is accepted. If none arrived, ask for one now, or write it yourself.")}</div>` : ""}
@@ -430,6 +430,7 @@ function firstEmail(d, ctx) {
   ${m === "edit" ? editPanel(o) : ""}
   ${m === "record" ? recordSentPanel(o, ctx) : ""}
   ${m === "nurture" ? nurturePanel(o, ctx) : ""}
+  ${linkedinBlock(o, ctx)}
   ${(!m || m === "contact") && !emailWaits(r.waiting) ? html`
   <div class="decision-bar">
     <div class="actions">
@@ -493,7 +494,7 @@ function agentDraft(d, ctx) {
   ${contactBlock(o)}
   ${relatedBlock(d.related)}
   ${noticeBlock()}
-  ${waitingNotice(o.outreach.waiting)}
+  ${waitingNotice(o.outreach.waiting, ctx.me)}
   ${it.data.editedBy ? html`<div class="block"><span class="tag info">Edited by ${it.data.editedBy}${it.data.editedOn ? `, ${day(it.data.editedOn, ctx.today)}` : ""}</span></div>` : ""}
   ${m === "editItem" ? itemEditPanel(it) : draftBody(it.data.subject, it.data.body, facts, { to: (d.preview && d.preview.to) || "", confirmed: !!o.contact.confirmedBy, checks: true, blocked: d.preview && d.preview.blocked })}
   ${m === "send" ? sendPanel(d, { itemId: it.id, hash: it.payloadHash }) : ""}
@@ -562,6 +563,50 @@ function replyItem(d, ctx) {
   </div>`;
 }
 
+// ----- LinkedIn: a note and a message the person sends themselves (api/linkedin.py) -----
+function linkedinBlock(o, ctx) {
+  const li = (o.outreach && o.outreach.linkedin) || {};
+  const who = o.contact.name || "the contact";
+  const editing = ui.mode === "liEdit";
+  const sent = li.sent || {};
+  const err = ui.error && ui.error.where === "linkedin" ? ui.error.message : "";
+  const copy = (text, label) => html`<button type="button" class="btn ghost small" data-act="liCopy" data-text="${text}">${label}</button>`;
+  return html`
+  <div class="block stack linkedin">
+    <div class="row-flex"><h3 class="sub-title" style="margin:0">LinkedIn</h3>
+      ${sent.note ? html`<span class="tag good">${icon("check", 14)}Request sent ${day(sent.note, ctx.today)}</span>` : ""}
+      ${sent.message ? html`<span class="tag good">${icon("check", 14)}Message sent ${day(sent.message, ctx.today)}</span>` : ""}</div>
+    <p class="meta">Sometimes a LinkedIn note works better than an email. The outreach agent writes it from the research brief;
+      you send it yourself. Agents never open LinkedIn. <a href="${li.search}" target="_blank" rel="noopener noreferrer">Find ${who} on LinkedIn</a></p>
+    ${editing ? html`
+    <form class="panel-form" data-act="liForm" data-on="submit input" data-id="${o.id}">
+      <label class="field">Connection note <span class="hint" data-count="note">${(li.note || "").length} of ${li.noteMax} characters</span>
+        <textarea name="note" rows="3" maxlength="${li.noteMax}">${li.note || ""}</textarea></label>
+      <label class="field">Message after they accept <span class="hint" data-count="message">${(li.message || "").length} of ${li.messageMax} characters</span>
+        <textarea name="message" rows="6" maxlength="${li.messageMax}">${li.message || ""}</textarea></label>
+      <div class="actions"><button type="submit" class="btn primary small">Save</button>
+        <button type="button" class="btn ghost small" data-act="mode" data-mode="">Cancel</button><span class="missing" data-missing></span></div>
+    </form>`
+    : li.note || li.message ? html`
+    <div class="li-text">
+      <p class="meta-3">Connection note, ${li.note.length} of ${li.noteMax} characters${li.by ? `. ${li.by}, ${day(li.on, ctx.today)}` : ""}</p>
+      <div class="email-plain">${li.note}</div>
+      <div class="actions">${copy(li.note, "Copy the note")}
+        ${sent.note ? "" : html`<button type="button" class="btn small" data-act="liSent" data-id="${o.id}" data-what="note">I sent the request</button>`}</div>
+      ${li.message ? html`<p class="meta-3" style="margin-top:12px">Message after they accept</p>
+      <div class="email-plain">${li.message}</div>
+      <div class="actions">${copy(li.message, "Copy the message")}
+        ${sent.message ? "" : html`<button type="button" class="btn small" data-act="liSent" data-id="${o.id}" data-what="message">I sent the message</button>`}</div>` : ""}
+      <div class="actions" style="margin-top:8px">
+        <button type="button" class="btn ghost small" data-act="mode" data-mode="liEdit">Edit</button>
+        <button type="button" class="btn ghost small" data-act="liDraft" data-id="${o.id}">Write it again</button></div>
+    </div>`
+    : html`<div><button type="button" class="btn small" data-act="liDraft" data-id="${o.id}">Write a LinkedIn note</button></div>`}
+    ${o.stage === "identified" && !sent.note && !sent.message ? html`<p class="meta-3">Sending it on LinkedIn counts as the first contact: the lead moves to Waiting for a reply.</p>` : ""}
+    ${inlineError(err)}
+  </div>`;
+}
+
 // ----- sent, waiting for a reply -----
 function waiting(d, ctx) {
   const o = d.detail;
@@ -580,6 +625,7 @@ function waiting(d, ctx) {
   ${noticeBlock()}
   ${m === "reply" ? replyPanel(o, ctx) : ""}
   ${m === "nurture" ? nurturePanel(o, ctx) : ""}
+  ${linkedinBlock(o, ctx)}
   ${!m ? html`
   <div class="decision-bar"><div class="actions">
     <button type="button" class="btn primary" data-act="mode" data-mode="reply">Record a reply…</button>
@@ -795,6 +841,10 @@ export const actions = {
       return ctx.api.post(`/opportunities/${enc(id)}/outreach/email`, { to, mode: how, seenHash: p.seenHash, delay });
     });
     if (!res) return;
+    const pending = itemId ? res.sent : res;
+    if (pending && pending.mode === "approval") {
+      return moveOn(ctx, null, `Approved. It waits for ${pending.approver}'s approval before it goes to ${to}.`);
+    }
     if (how === "draft") return moveOn(ctx, null, `The email is in your Gmail drafts for ${to}. Nothing was sent; the workspace records it once you send it from Gmail.`);
     const out = itemId ? res.sent : res;
     if (out && out.mode === "queued") {
@@ -815,6 +865,39 @@ export const actions = {
 
   undoEmail: undoEmailAct,
   sendNow: sendNowAct,
+  secondForm: secondFormAct,
+  async liDraft(t, e, ctx) {
+    const ok = await attempt("linkedin", t, ctx, () => ctx.api.post(`/opportunities/${enc(t.dataset.id)}/linkedin/draft`));
+    if (ok) ctx.toast("The LinkedIn note is ready. Nothing was sent: copy it into LinkedIn yourself.");
+    ctx.refresh();
+  },
+  async liSent(t, e, ctx) {
+    const ok = await attempt("linkedin", t, ctx, () => ctx.api.post(`/opportunities/${enc(t.dataset.id)}/linkedin/sent`, { what: t.dataset.what }));
+    if (ok) ctx.toast(t.dataset.what === "note" ? "Recorded: LinkedIn connection request sent." : "Recorded: LinkedIn message sent.");
+    ctx.refresh();
+  },
+  async liCopy(t, e, ctx) {
+    try {
+      await navigator.clipboard.writeText(t.dataset.text);
+      ctx.toast("Copied. Paste it into LinkedIn.");
+    } catch {
+      ctx.toast("The browser did not allow copying. Select the text and copy it yourself.");
+    }
+  },
+  async liForm(form, e, ctx) {
+    const f = form.elements;
+    for (const name of ["note", "message"]) {
+      const line = form.querySelector(`[data-count=${name}]`);
+      if (line) line.textContent = line.textContent.replace(/^\d+/, String(f[name].value.length));
+    }
+    const why = !f.note.value.trim() && !f.message.value.trim() ? "Write the note or the message." : "";
+    if (e.type !== "submit") return missing(form, why);
+    if (why) return;
+    const ok = await attempt("linkedin", form.querySelector("[type=submit]"), ctx,
+      () => ctx.api.put(`/opportunities/${enc(form.dataset.id)}/linkedin`, { note: f.note.value, message: f.message.value }));
+    if (ok) { ui.mode = null; ctx.toast("Saved."); }
+    ctx.refresh();
+  },
 
   // inbox items: apply or dismiss
   async addSender(t, e, ctx) {

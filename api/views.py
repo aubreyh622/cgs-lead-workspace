@@ -75,6 +75,8 @@ def detail(s: Session, o: m.Opportunity) -> dict:
         "toEmail": out_reach.to_email, "emailThread": bool(out_reach.mail_thread_id), "gmailDraftWaiting": bool(out_reach.mail_draft_id)}
     from api import undo as U
     out["outreach"]["waiting"] = U.email_view(s, o.id)  # an approved email in its undo window
+    from api import linkedin as LI
+    out["outreach"]["linkedin"] = LI.view(o, out_reach)  # the LinkedIn note and message a person sends themselves
     out["undo"] = U.view(o)
     task = s.scalars(select(m.ResearchTask).where(m.ResearchTask.opportunity_id == o.id).order_by(m.ResearchTask.started_at.desc())).first()
     out["research"] = None if not task else {"status": task.status, "progress": task.progress, "pauseReason": task.pause_reason,

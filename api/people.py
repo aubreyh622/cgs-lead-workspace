@@ -57,6 +57,18 @@ def emails(s, settings) -> dict[str, str]:
     return out
 
 
+def second_approvers(s) -> dict[str, str]:
+    """person -> who must approve that person's emails before they go out (Setting "second_approval"). Only the people an
+    admin named need it; everyone else sends on their own approval."""
+    row = s.get(m.Setting, "second_approval")
+    known = set(users(s))
+    return {k: v for k, v in dict(row.value if row else {}).items() if v and k in known and v in known and v != k}
+
+
+def second_approver(s, name: str) -> str | None:
+    return second_approvers(s).get(name)
+
+
 def acting(s, settings, signed_in: str, act_as: str | None) -> str:
     """The person a request acts as. Raises RoleError when the signed-in person may not act as act_as."""
     if not act_as or act_as == signed_in:
@@ -83,15 +95,16 @@ def require_admin(c, what: str) -> None:
 
 def view(s, settings, mail_info=None) -> dict:
     """For the People page. mail_info(name) -> where that person's email goes out from (api/toolkit/mail.py)."""
-    names, adm, mails = users(s), admins(s, settings), emails(s, settings)
-    return {"people": [{"name": n, "email": mails.get(n, ""), "admin": n in adm,
+    names, adm, mails, second = users(s), admins(s, settings), emails(s, settings), second_approvers(s)
+    return {"people": [{"name": n, "email": mails.get(n, ""), "admin": n in adm, "secondApprover": second.get(n, ""),
                         **({"mailbox": mail_info(n)} if mail_info else {})} for n in names],
             "admins": adm, "everyoneIsAdmin": not adm,
             "source": "workspace" if managed(s) else ("CGS_ADMINS" if settings.admins else "none")}
 
 
-def change(c, name: str, admin: bool | None = None, email: str | None = None) -> dict:
-    """An admin makes someone an admin (or not), or sets the address they send from. Logged."""
+def change(c, name: str, admin: bool | None = None, email: str | None = None, approver: str | None = None) -> dict:
+    """An admin makes someone an admin (or not), sets the address they send from, or names who must approve their
+    emails a second time (approver; "" = nobody). Logged."""
     from api.services import log
     require_admin(c, "change people's roles or email addresses")
     if name not in users(c.s):
@@ -122,6 +135,22 @@ def change(c, name: str, admin: bool | None = None, email: str | None = None) ->
             else:
                 row.value = value
             done.append(f"set {name}'s sending address to {email}" if email else f"cleared {name}'s sending address")
+    if approver is not None:
+        approver = approver.strip()
+        if approver and approver not in users(c.s):
+            raise RoleError(f"{approver} is not a workspace user.", 400, "unknown_user")
+        if approver == name:
+            raise RoleError("A person cannot be their own second approver.", 400, "self_approval")
+        row = c.s.get(m.Setting, "second_approval")
+        value = dict(row.value if row else {})
+        if value.get(name, "") != approver:
+            value[name] = approver
+            if row is None:
+                c.s.add(m.Setting(key="second_approval", value=value))
+            else:
+                row.value = value
+            done.append(f"{name}'s emails now need {approver}'s approval before they go out" if approver
+                        else f"{name}'s emails no longer need a second approval")
     c.s.flush()
     for d in done:
         log(c, None, "h", f"{label(c)} {d}.")

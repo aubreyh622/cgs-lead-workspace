@@ -784,6 +784,20 @@ only admins may act as someone else, and email that comes from the consultant's 
   as From, which Gmail keeps only for a "Send mail as" alias. `outreach.mail_account` remembers whose mailbox holds a
   conversation: follow-ups stay there (only that person, or an admin acting as them, can send them), and the daily mail
   check and the agents read replies there. The send panel says which mailbox the email comes from.
+- **Second approval for some people** (P2; `api/people.py second_approvers`, `api/undo.py ask_approval / second_decision`).
+  An admin names, per person, who must approve that person's emails a second time (People page; `PUT /api/people/{name}`
+  `secondApprover`). Only those people need it. When they approve an email it waits as an `outbound_emails` row with
+  status `approval` (holding exactly what they approved; Gmail drafts are refused for them, since a draft could be sent
+  from Gmail without the approval). The approver sees it on Home ("Approve email") and in their updates, and approves
+  (`POST /api/outbound/{id}/second-approval`, then the usual undo window; it goes out as the writer, from the writer's
+  mailbox) or returns it with a note (status `returned`; the writer changes the draft and approves again). The writer may
+  withdraw it while it waits.
+- **LinkedIn outreach a person sends** (P2; `api/linkedin.py`). The outreach agent writes a connection note (at most 200
+  characters, a free account's limit) and a first message from the brief's facts and the email draft (one AI call; demo
+  mode uses a template). Code refuses prices, percentages, guarantees and numbers that are not in the facts. The page
+  links a LinkedIn people search and has copy buttons; the person sends it on LinkedIn and records it
+  (`POST /api/opportunities/{id}/linkedin/sent`): for a lead not yet contacted that is the first contact (Contacted).
+  The workspace never opens or reads LinkedIn (its terms forbid automated access).
 - **Hosted at CGS (next step, not built).** With Google Workspace, a service account with domain-wide delegation can
   send as each consultant without everyone signing in once; that would replace the per-person sign-in.
 

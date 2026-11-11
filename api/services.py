@@ -770,6 +770,8 @@ def outreach_row(c: Ctx, o: m.Opportunity) -> m.Outreach:
 
 def no_waiting_email(c: Ctx, o: m.Opportunity) -> None:
     w = U.waiting_email(c.s, o.id)
+    if w is not None and w.status == "approval":
+        raise ActionError(f"The email to {w.to} waits for {w.approver}'s approval. Withdraw it first to change the draft.", 409, "queued")
     if w is not None:
         raise ActionError(f"The approved email to {w.to} is about to go out. Undo it first to change the draft.", 409, "queued")
 
@@ -1003,6 +1005,8 @@ def email_out(c: Ctx, opp_id: str, to: str, mode: str, seen_hash: str, item_id: 
     if mode not in ("draft", "send"):
         raise ActionError("Mode must be draft or send.")
     waiting = U.waiting_email(c.s, opp_id)
+    if waiting is not None and waiting.status == "approval":
+        raise ActionError(f"An email to {waiting.to} waits for {waiting.approver}'s approval. Withdraw it first, or wait for the decision.", 409, "queued")
     if waiting is not None:
         raise ActionError(f"An email to {waiting.to} is about to go out. Undo it first, or wait until it is sent.", 409, "queued")
     p = email_preview(c, opp_id, to, item_id)
@@ -1020,6 +1024,13 @@ def email_out(c: Ctx, opp_id: str, to: str, mode: str, seen_hash: str, item_id: 
         AU.check_still_valid(c, it, o, it.payload_hash)
     seconds = U.window(delay)
     box = sender_box(c, o, p["purpose"])
+    from api import people as P
+    approver = P.second_approver(c.s, c.actor)
+    if approver:  # this person's emails need a second approval (People page): nothing goes out, nor into Gmail drafts, before it
+        if mode == "draft":
+            raise ActionError(f"{c.actor}'s emails need {approver}'s approval before they go out, so they cannot go to Gmail drafts. "
+                              f"Approve and send: it goes to {approver} first.", 409, "needs_approval")
+        return U.ask_approval(c, o, p, it, approver)
     if mode == "send" and seconds:
         try:
             if r.mail_draft_id and box.draft_exists(r.mail_draft_id):

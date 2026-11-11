@@ -893,6 +893,8 @@ def approve_and_send(c: S.Ctx, it: m.InboxItem, o: m.Opportunity | None, seen_ha
     check_still_valid(c, it, o, seen_hash)
     p = S.email_preview(c, o.id, to, it.id)
     sent = S.email_out(c, o.id, p["to"], "send", p["seenHash"], it.id, delay)  # also applies the item, once it is sent
+    if sent["mode"] == "approval":
+        return {"status": "approval", "note": f"Approved by {c.actor}. It waits for {sent['approver']}'s approval before it goes out.", "sent": sent}
     if sent["mode"] == "queued":
         return {"status": "queued", "note": f"Approved by {c.actor}. It goes to {p['to']} in {sent['seconds']} seconds unless undone.", "sent": sent}
     return {"status": "applied", "note": f"Approved by {c.actor} and sent to {p['to']}. {p['from']['note']}", "sent": sent}

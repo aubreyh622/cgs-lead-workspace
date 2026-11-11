@@ -186,7 +186,7 @@ def release_due(app) -> list[str]:
 # ---------- Step 5: an approved email waits, then goes out ----------
 def waiting_email(s, opp_id: str) -> m.OutboundEmail | None:
     return s.scalars(select(m.OutboundEmail).where(m.OutboundEmail.opportunity_id == opp_id,
-                                                     m.OutboundEmail.status.in_(("queued", "sending")))).first()
+                                                     m.OutboundEmail.status.in_(("approval", "queued", "sending")))).first()
 
 
 def email_view(s, opp_id: str) -> dict | None:
@@ -196,7 +196,9 @@ def email_view(s, opp_id: str) -> dict | None:
     if row is None or row.status in ("sent", "undone") or row.resolved_at:
         return None
     return {"id": row.id, "status": row.status, "purpose": row.purpose, "to": row.to, "subject": row.subject, "by": row.by,
-            "itemId": row.item_id, "sendAt": aware(row.send_at).isoformat(), "seconds": seconds_left(row.send_at), "error": row.error}
+            "itemId": row.item_id, "sendAt": aware(row.send_at).isoformat(), "seconds": seconds_left(row.send_at), "error": row.error,
+            "approver": row.approver, "approvedBy": row.approved_by,
+            **({"body": row.body} if row.status == "approval" else {})}
 
 
 def mark_checked(c, out_id: str) -> dict:
@@ -204,7 +206,7 @@ def mark_checked(c, out_id: str) -> dict:
     and the opportunity page. Nothing is sent and the draft is unchanged; they approve it again if it should still go."""
     from api import services as S
     row = _row(c, out_id)
-    if row.status not in ("failed", "expired", "unknown"):
+    if row.status not in ("failed", "expired", "unknown", "returned"):
         raise S.ActionError(f"That email is {row.status}; only one that was not sent, or may not have been, can be marked checked.", 409, "wrong_status")
     if not row.resolved_at:
         row.resolved_by, row.resolved_at = c.actor, utcnow()
@@ -242,8 +244,57 @@ def queue_email(c, o: m.Opportunity, p: dict, it: m.InboxItem | None, seconds: i
     return {"mode": "queued", "to": p["to"], "id": row.id, "sendAt": row.send_at.isoformat(), "seconds": seconds}
 
 
-def _take(c, out_id: str, to: str) -> bool:
-    res = c.s.execute(update(m.OutboundEmail).where(m.OutboundEmail.id == out_id, m.OutboundEmail.status == "queued").values(status=to))
+def ask_approval(c, o: m.Opportunity, p: dict, it: m.InboxItem | None, approver: str) -> dict:
+    """The writer approved the email, and their emails need a second approval (api/people.py): it waits for the
+    approver, holding exactly what the writer approved. Nothing is sent until the approver approves it."""
+    from api import people as P
+    from api import services as S
+    row = m.OutboundEmail(id=S.new_id("out"), opportunity_id=o.id, item_id=it.id if it is not None else None, purpose=p["purpose"],
+                          to=p["to"], subject=p["subject"], body=p["body"], seen_hash=p["seenHash"], by=c.actor,
+                          send_at=utcnow(), status="approval", approver=approver)
+    c.s.add(row)
+    S.log(c, o.id, "h", f"{P.label(c)} approved the {p['purpose']} email to {p['to']}. It waits for {approver}'s approval "
+                        "before it goes out.")
+    return {"mode": "approval", "to": p["to"], "id": row.id, "approver": approver}
+
+
+def second_decision(c, out_id: str, approve: bool, note: str, delay: int = 0) -> dict:
+    """The second approver decides. Approve: the email goes out as its writer, from the writer's mailbox, after the undo
+    window (delay). Return: nothing is sent; the writer sees the note, changes the draft and approves it again."""
+    from api import people as P
+    from api import services as S
+    row = _row(c, out_id)
+    if row.status != "approval":
+        raise S.ActionError(f"That email is {row.status}; it is not waiting for a second approval.", 409, "wrong_status")
+    if c.actor != row.approver:
+        raise S.ActionError(f"Only {row.approver} (or an admin acting as {row.approver}) can approve or return this email.", 403, "not_approver")
+    if not approve:
+        note = (note or "").strip()
+        if len(note) < 3:
+            raise S.ActionError("Say what to change, so the writer knows.", 400, "no_note")
+        if not _take(c, out_id, "returned", ("approval",)):
+            raise S.ActionError("That email changed in the meantime. Look again.", 409, "wrong_status")
+        c.s.refresh(row)
+        row.error, row.ended_at = f"Returned by {P.label(c)}: {note}", utcnow()
+        S.log(c, row.opportunity_id, "h", f"{P.label(c)} returned the {row.purpose} email to {row.to} that {row.by} approved. "
+                                          f"Nothing was sent. {note}")
+        return {"status": "returned", "id": row.id}
+    o = c.s.get(m.Opportunity, row.opportunity_id)
+    S.sender_box(c, o, row.purpose, row.by)  # it must still be able to go out as its writer
+    seconds = window(delay)
+    if not _take(c, out_id, "queued", ("approval",)):
+        raise S.ActionError("That email changed in the meantime. Look again.", 409, "wrong_status")
+    c.s.refresh(row)
+    row.approved_by, row.approved_at, row.send_at = P.label(c), utcnow(), utcnow() + timedelta(seconds=seconds)
+    S.log(c, row.opportunity_id, "h", f"{P.label(c)} gave the second approval to the {row.purpose} email to {row.to} from {row.by}."
+                                      + (f" It goes out in {seconds} seconds unless undone." if seconds else ""))
+    if not seconds:
+        return send_now(c, out_id)
+    return {"mode": "queued", "status": "queued", "to": row.to, "id": row.id, "sendAt": row.send_at.isoformat(), "seconds": seconds}
+
+
+def _take(c, out_id: str, to: str, frm: tuple = ("queued",)) -> bool:
+    res = c.s.execute(update(m.OutboundEmail).where(m.OutboundEmail.id == out_id, m.OutboundEmail.status.in_(frm)).values(status=to))
     return res.rowcount == 1
 
 
@@ -258,13 +309,15 @@ def _row(c, out_id: str) -> m.OutboundEmail:
 def undo_email(c, out_id: str) -> dict:
     from api import services as S
     row = _row(c, out_id)
-    if not _take(c, out_id, "undone"):
+    was = row.status
+    if not _take(c, out_id, "undone", ("queued", "approval")):  # the writer may also withdraw it while it waits for approval
         c.s.refresh(row)
         raise S.ActionError("Too late: the email already went out." if row.status in ("sending", "sent")
                             else f"That email was {row.status}.", 409, "too_late")
     c.s.refresh(row)
     row.ended_at = utcnow()
-    S.log(c, row.opportunity_id, "h", f"{c.actor} undid the {row.purpose} email to {row.to}. Nothing was sent; the draft is unchanged.")
+    S.log(c, row.opportunity_id, "h", f"{c.actor} {'withdrew' if was == 'approval' else 'undid'} the {row.purpose} email to {row.to}"
+                                      + (f" before {row.approver} approved it" if was == "approval" else "") + ". Nothing was sent; the draft is unchanged.")
     return {"status": "undone"}
 
 
@@ -295,7 +348,8 @@ def deliver(c, row: m.OutboundEmail) -> dict:
                 from api import autonomy as AU
                 AU.check_still_valid(c, it, o, it.payload_hash)
         res = S.deliver_email(c, o, {"purpose": row.purpose, "to": row.to, "subject": row.subject, "body": row.body}, it, "send",
-                              S.sender_box(c, o, row.purpose, row.by), how=f" by {row.by}")
+                              S.sender_box(c, o, row.purpose, row.by),
+                              how=f" by {row.by}" + (f", second approval by {row.approved_by}" if row.approved_by else ""))
     except S.ActionError as e:
         c.s.rollback()
         row = c.s.get(m.OutboundEmail, row.id)

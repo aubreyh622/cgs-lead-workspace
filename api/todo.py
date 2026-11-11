@@ -49,7 +49,7 @@ INBOX = {
     "lessons": ("steer", "Lessons to review", ("done",)),
 }
 OUTREACH_STAGES = ("identified", "contacted", "nurture")
-EMAIL_PROBLEMS = {"unknown": "Email may have gone out", "failed": "Email not sent", "expired": "Email not sent"}
+EMAIL_PROBLEMS = {"unknown": "Email may have gone out", "failed": "Email not sent", "expired": "Email not sent", "returned": "Email returned"}
 PURPOSES = {"first": "first", "followup": "follow-up", "reconnect": "reconnect"}
 
 
@@ -81,6 +81,12 @@ def todo(c: S.Ctx, follow_days: int, mail=None) -> dict:
             what = f"the {PURPOSES.get(e.purpose, e.purpose)} email to {e.to}"
             rows.append(_row("problem", EMAIL_PROBLEMS[e.status], f"{o.company.name}: {what}" if o else what.capitalize(), e.error or "It could not go out.", o,
                              ref={"type": "email", "id": e.id}, act=("checked",), key=f"email:{e.id}"))
+    for e in latest.values():  # a colleague's email waits for this person's second approval (api/people.py)
+        o = opps.get(e.opportunity_id)
+        if e.status == "approval" and e.approver == me:
+            rows.append(_row("waiting", "Approve email", f"{o.company.name if o else 'An opportunity'}: {PURPOSES.get(e.purpose, e.purpose)} email from {e.by}",
+                             f"To {e.to}: \"{e.subject}\". Nothing goes out until you approve it.", o,
+                             open={"page": "outreach", "params": {"id": e.opportunity_id, "team": "1"}}, key=f"approve:{e.id}"))
     last_task: dict[str, m.ResearchTask] = {}
     for t in s.scalars(select(m.ResearchTask).order_by(m.ResearchTask.started_at)):
         last_task[t.opportunity_id] = t

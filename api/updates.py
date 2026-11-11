@@ -49,11 +49,19 @@ def feed(s, me: str, since: datetime) -> list[dict]:
                       "opportunityId": o.id, "stage": o.stage, "company": name, "agent": "Research agent", "text": text})
 
     rows = s.scalars(select(m.OutboundEmail).where(m.OutboundEmail.ended_at > since, m.OutboundEmail.by == me,
-                                                   m.OutboundEmail.status.in_(("sent", "failed", "expired", "unknown")))
+                                                   m.OutboundEmail.status.in_(("sent", "failed", "expired", "unknown", "returned")))
                      .order_by(m.OutboundEmail.ended_at.desc()).limit(MAX_ITEMS))
+    rows = list(rows) + list(s.scalars(select(m.OutboundEmail).where(m.OutboundEmail.created_at > since, m.OutboundEmail.approver == me,
+                                                                      m.OutboundEmail.status == "approval").limit(MAX_ITEMS)))
     for r in rows:
         o = opp(r.opportunity_id)
+        if r.status == "approval":
+            items.append({"id": f"approve:{r.id}", "at": _iso(r.created_at), "kind": "email", "status": r.status,
+                          "opportunityId": r.opportunity_id, "stage": o.stage if o else None, "company": o.company.name if o else None,
+                          "agent": None, "text": f"{r.by} asks you to approve the email to {r.to}."})
+            continue
         text = (f"Email sent to {r.to}." if r.status == "sent"
+                else f"The email to {r.to} was returned. {r.error}" if r.status == "returned"
                 else f"The email to {r.to} may not have gone out. {r.error}" if r.status == "unknown"
                 else f"The email to {r.to} was not sent: {r.error or 'it could not go out.'}")
         items.append({"id": f"email:{r.id}", "at": _iso(r.ended_at), "kind": "email", "status": r.status,

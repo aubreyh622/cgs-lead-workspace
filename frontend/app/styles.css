@@ -518,3 +518,5 @@ pre.code { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--border);
 .panel-form fieldset[disabled] input { color: var(--ink-2); }
 .inline-form .field { margin-bottom: 8px; }
 .from-line { margin-top: 4px; }
+.linkedin .email-plain { max-height: 200px; font-size: 14px; line-height: 22px; }
+.linkedin .actions { margin-top: 8px; }

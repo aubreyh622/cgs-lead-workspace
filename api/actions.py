@@ -144,12 +144,13 @@ def people(c: S.Ctx = Actor):
 class PersonIn(BaseModel):
     admin: bool | None = Field(None, description="Make this person an admin (true) or not (false); empty = leave as is")
     email: str | None = Field(None, description="The address this person sends from; empty text clears it; null = leave as is")
+    secondApprover: str | None = Field(None, description="Who must approve this person's emails before they go out; empty text = nobody; null = leave as is")
 
 
 @router.put("/people/{name}", tags=["people"], summary="An admin changes a person's role or sending address")
 def change_person(name: str, body: PersonIn, c: S.Ctx = Actor):
     from api import people as P
-    res = P.change(c, name, body.admin, body.email)
+    res = P.change(c, name, body.admin, body.email, body.secondApprover)
     return {**res, **P.view(c.s, c.settings, mail_info(c)), "canChange": S.may_manage_permissions(c)}
 
 
@@ -448,6 +449,35 @@ def sent(opp_id: str, body: Sent, c: S.Ctx = Actor):
     return {"ok": True}
 
 
+class LinkedInText(BaseModel):
+    note: str = ""
+    message: str = ""
+
+
+class LinkedInSent(BaseModel):
+    what: Literal["note", "message"]
+
+
+@router.post("/opportunities/{opp_id}/linkedin/draft", tags=["step 5"],
+             summary="The outreach agent writes a LinkedIn connection note and first message; nothing is sent (a person sends it on LinkedIn)")
+def linkedin_draft(opp_id: str, c: S.Ctx = Actor):
+    from api import linkedin as LI
+    return LI.draft(c, opp_id)
+
+
+@router.put("/opportunities/{opp_id}/linkedin", tags=["step 5"], summary="Save the edited LinkedIn note and message")
+def linkedin_save(opp_id: str, body: LinkedInText, c: S.Ctx = Actor):
+    from api import linkedin as LI
+    return LI.save(c, opp_id, body.note, body.message)
+
+
+@router.post("/opportunities/{opp_id}/linkedin/sent", tags=["step 5"],
+             summary="Record that you sent the LinkedIn note or message yourself (a first contact makes the lead Contacted)")
+def linkedin_sent(opp_id: str, body: LinkedInSent, c: S.Ctx = Actor):
+    from api import linkedin as LI
+    return LI.record(c, opp_id, body.what, follow_days(c))
+
+
 class EmailOut(BaseModel):
     to: str
     mode: Literal["draft", "send"]
@@ -472,6 +502,19 @@ def email_out(opp_id: str, body: EmailOut, c: S.Ctx = Actor):
 def outbound_undo(out_id: str, c: S.Ctx = Actor):
     from api import undo as U
     return U.undo_email(c, out_id)
+
+
+class SecondApproval(BaseModel):
+    decision: Literal["approve", "return"]
+    note: str = Field("", description="Required to return it: what to change")
+    delay: int = Field(0, ge=0, le=30, description="approve only: seconds to wait so the approver can undo; 0 sends now")
+
+
+@router.post("/outbound/{out_id}/second-approval", tags=["step 5"],
+             summary="The second approver approves an email (it goes out as the person who wrote it) or returns it with a note")
+def outbound_second_approval(out_id: str, body: SecondApproval, c: S.Ctx = Actor):
+    from api import undo as U
+    return U.second_decision(c, out_id, body.decision == "approve", body.note, body.delay)
 
 
 @router.post("/outbound/{out_id}/send-now", tags=["step 5"], summary="Send an approved email now instead of waiting for the undo window")
