@@ -157,8 +157,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     with app.state.db.session() as s:
         if not s.get(Setting, "owners"):
             s.add(Setting(key="owners", value=list(settings.users)))
+        elif settings.login == "google":  # everyone who can sign in is a workspace user, also in a database made earlier
+            row = s.get(Setting, "owners")
+            row.value = list(row.value) + [n for _, n in settings.logins if n not in row.value]
         if not s.scalar(select(DirectionVersion.version).limit(1)):
             s.add(starting_direction())  # live mode: Aubrey's approved problem brief becomes v1
+    app.state.login = None
+    if settings.login == "google":
+        from api.login import GoogleLogin
+        app.state.login = GoogleLogin(settings.iap_audience, dict(settings.logins))
     app.include_router(router)
     app.include_router(actions_router)
     from api.agent_routes import router as agents_router
@@ -200,11 +207,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             local = o.hostname in LOCAL_HOSTS and (o.port or 80) == settings.port
             if not local and not (o.hostname in public and o.scheme == "https"):
                 return JSONResponse({"error": "Requests from other websites are not accepted.", "code": "bad_origin"}, 403)
+        if app.state.login and request.url.path != "/api/health":
+            # Google sign-in: every request, reads and the page itself included. The signed-in person's name replaces
+            # any X-User the page sent, so nobody can act under another name.
+            from api.login import LoginError
+            try:
+                name, email = app.state.login.who(request.headers)
+            except LoginError as e:
+                return JSONResponse({"error": str(e), "code": e.code}, e.status)
+            request.scope["headers"] = ([(k, v) for k, v in request.scope["headers"] if k != b"x-user"]
+                                        + [(b"x-user", name.encode("latin-1", "replace"))])
+            request.scope["cgs_login"] = {"name": name, "email": email}
         return await call_next(request)
 
     @app.get("/api/health", tags=["system"], summary="Is the server running?")
     def health():
         return {"ok": True, "version": VERSION}
+
+    @app.get("/api/me", tags=["system"], summary="Who is signed in (Google sign-in), or that each person picks their name")
+    def me(request: Request):
+        return {"login": settings.login, **(request.scope.get("cgs_login") or {"name": "", "email": ""})}
 
     @app.get("/api/config", tags=["system"], summary="Current modes")
     def config():
@@ -284,8 +306,10 @@ def main():
         app.state.worker = Worker(app).start()  # agents patrol and work in the background; see api/autonomy.py
         print(f"Agents: working in the background (patrol daily; AGENT_WORKER=off in .env stops this).")
     if s.public_hosts:
-        print(f"Hosted: listening on {s.host}:{s.port} for {', '.join(s.public_hosts)}. The workspace has no login of its own; "
-              "it must sit behind Google sign-in (docs/DEPLOY_GOOGLE_CLOUD.md).", flush=True)
+        print(f"Hosted: listening on {s.host}:{s.port} for {', '.join(s.public_hosts)}. "
+              + (f"Google sign-in is checked on every request ({len(s.logins)} people may sign in)." if s.login == "google" else
+                 "CGS_LOGIN is off: anyone who reaches this address can act under any name. Set CGS_LOGIN=google "
+                 "(docs/DEPLOY_GOOGLE_CLOUD.md)."), flush=True)
     else:
         print(f"Open http://127.0.0.1:{s.port}/  API docs: http://127.0.0.1:{s.port}/docs  Ctrl+C stops.")
     uvicorn.run(app, host=s.host, port=s.port, log_level="warning")

@@ -49,7 +49,7 @@ export function crmStatus(config, state) {
   return chip("", ": nothing synced yet", "Leads go to the CRM once a person accepts a company at Step 4.");
 }
 
-export function header({ page, counts, config, users, me, crm }) {
+export function header({ page, counts, config, users, me, crm, signedIn }) {
   return html`
   <div class="top-in">
     <a class="brand" href="${href("home")}">
@@ -65,11 +65,12 @@ export function header({ page, counts, config, users, me, crm }) {
       ${modeBadge(config)}
       ${me ? html`
       <span class="avatar round" aria-hidden="true">${initials(me)}</span>
+      ${signedIn ? html`<span class="person" title="Signed in with Google as ${signedIn}">${me}</span>` : html`
       <label class="person"><span class="person-label sr-only">Acting as</span>
         <select data-shell="person" aria-label="Acting as">
           ${users.map((u) => html`<option value="${u}" ${u === me ? "selected" : ""}>${u}</option>`)}
         </select>
-      </label>` : ""}
+      </label>`}` : ""}
     </div>
   </div>`;
 }

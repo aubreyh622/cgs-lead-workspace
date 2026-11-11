@@ -52,7 +52,7 @@ const ctx = {
 };
 
 function drawHeader() {
-  el.header.innerHTML = String(header({ page: ctx.route.page, counts: ctx.counts, config: ctx.config, users: ctx.users, me: ctx.me, crm: ctx.crm }));
+  el.header.innerHTML = String(header({ page: ctx.route.page, counts: ctx.counts, config: ctx.config, users: ctx.users, me: ctx.me, crm: ctx.crm, signedIn: ctx.signedIn }));
 }
 
 // Counts in the navigation: items waiting for a person. Only pages that exist get a count.
@@ -268,8 +268,9 @@ window.addEventListener("hashchange", () => { dockOpen = ""; show(); });
 
 async function start() {
   let users = [];
+  let login = { login: "off" };
   try {
-    [ctx.config, users] = await Promise.all([api.get("/config"), api.get("/users")]);
+    [ctx.config, users, login] = await Promise.all([api.get("/config"), api.get("/users"), api.get("/me")]);
     const agents = await api.get("/agents");
     ctx.today = agents.today;
   } catch (err) {
@@ -277,6 +278,9 @@ async function start() {
     return;
   }
   ctx.users = users;
+  // Google sign-in (a hosted workspace): the server knows who this is, so nobody picks or changes a name.
+  ctx.signedIn = login.login === "google" ? login.email : "";
+  if (ctx.signedIn) person.set(login.name);
   const saved = person.get();
   if (!saved || !users.includes(saved)) {
     if (saved) person.clear();

@@ -1,6 +1,6 @@
 """Write endpoints: every human action in Steps 1-8 and the learning loop (backend step 4).
 
-No login yet: each request names the person acting in the X-User header, chosen from the
+On one computer there is no login: each request names the person acting in the X-User header, chosen from the
 workspace users (GET /api/users). Every change records that name.
 """
 from __future__ import annotations

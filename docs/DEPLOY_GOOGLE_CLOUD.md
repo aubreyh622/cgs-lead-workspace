@@ -15,14 +15,32 @@ first time you use it.
 | Web server and agents | `python -m api.main` | the same command, in a container on Cloud Run |
 | Database | a SQLite file in `runtime/` | Cloud SQL for PostgreSQL (`DATABASE_URL`) |
 | Keys and passwords | `.env` and `%USERPROFILE%\.cgs-workspace\*.env` | Secret Manager, given to the container as environment variables |
-| Sign-in | none (each person picks their name) | Google sign-in in front of the service (see below) |
+| Sign-in | none (each person picks their name) | Google sign-in through Identity-Aware Proxy, checked by the workspace (`CGS_LOGIN=google`) |
 | CGS library | the `knowledge/` folder | the `knowledge/` folder inside the image (a Google Drive connector is planned) |
 
-## Before you deploy: sign-in
+## Sign-in
 
-The workspace has no login of its own. Anyone who can reach its address can read every lead and approve emails.
-On Cloud Run, deploy it with `--no-allow-unauthenticated` and put Google sign-in in front of it (Identity-Aware Proxy),
-limited to CGS accounts. Do not make the service public.
+On one computer each person picks their name. Hosted, that would let anyone who reaches the address read every lead
+and approve emails under any name, so a hosted workspace uses Google sign-in:
+
+1. Put Google's Identity-Aware Proxy (IAP) in front of the Cloud Run service and allow only the CGS accounts that
+   should use the workspace. IAP makes each person sign in with Google and adds a signed note to every request.
+2. Set `CGS_LOGIN=google`. The workspace then checks that note on every request (the page and reads included, the
+   health check `/api/health` excepted): Google signed it, it was written for this workspace, it has not expired.
+3. Set `CGS_IAP_AUDIENCE` to the audience shown on the IAP page for this service. For a Cloud Run service with IAP
+   switched on directly it has the form `/projects/PROJECT_NUMBER/locations/REGION/services/SERVICE_NAME`; behind a
+   load balancer it is `/projects/PROJECT_NUMBER/global/backendServices/SERVICE_ID`.
+4. Give each person's Google email in `CGS_USERS`: `Alex Morgan <alex@cgs.example>, Sarah Patel <sarah@cgs.example>`.
+   The name is what every change is recorded under. An account that is not listed is refused, even if IAP lets it in.
+
+The page no longer asks who is using it, and the name the page sends is ignored: nobody can act under another name.
+To add a person, add them to `CGS_USERS` and deploy again; they join the existing workspace.
+
+Not tested against a real IAP: the team has no Google Cloud project. The checking code is tested with notes signed
+the same way (ES256) by a key made in the test (`tests/v2/test_login.py`). Check the audience format against
+Google's IAP documentation ("Securing your app with signed headers").
+
+Keep `--no-allow-unauthenticated` as well, so that only IAP can call the service.
 
 ## Settings
 
@@ -35,6 +53,7 @@ ones that matter for hosting:
 | `PORT` | set by Cloud Run | the port to listen on; wins over `CGS_V2_PORT` |
 | `CGS_PUBLIC_HOSTS` | the service's host name, for example `cgs-workspace-xyz.a.run.app`; several separated by commas | the workspace refuses requests addressed to any other name, and writes from any other website |
 | `DATABASE_URL` | `postgresql://USER:PASSWORD@/DBNAME?host=/cloudsql/PROJECT:REGION:INSTANCE` | Cloud SQL through the socket Cloud Run provides. Keep it in Secret Manager: it holds the password |
+| `CGS_LOGIN`, `CGS_IAP_AUDIENCE`, `CGS_USERS` | see Sign-in above | who may use the workspace, and under which name |
 | `APP_MODE` | `live` | real AI; `demo` uses text rules and the synthetic sample |
 | `AI_PROVIDER`, `AI_MODEL` | `gemini` and a Gemini model | CGS's default reasoning engine |
 | `TZ` | the office's time zone, for example `America/New_York` | the daily patrol starts at an hour of the local day |
@@ -82,8 +101,21 @@ gcloud run deploy cgs-workspace \
   --min-instances 1 --max-instances 1 --no-cpu-throttling \
   --memory 1Gi \
   --add-cloudsql-instances PROJECT:REGION:INSTANCE \
-  --set-env-vars APP_MODE=live,AI_PROVIDER=gemini,CGS_PUBLIC_HOSTS=SERVICE_HOST,TZ=America/New_York,CGS_USERS="Name One,Name Two" \
+  --env-vars-file cloud-env.yaml \
   --set-secrets DATABASE_URL=cgs-database-url:latest,GEMINI_API_KEY=gemini-api-key:latest,TAVILY_API_KEY=tavily-api-key:latest
+```
+
+`cloud-env.yaml` holds the settings that are not secrets (the list of people contains commas, which a file handles
+and `--set-env-vars` does not):
+
+```yaml
+APP_MODE: live
+AI_PROVIDER: gemini
+TZ: America/New_York
+CGS_PUBLIC_HOSTS: SERVICE_HOST
+CGS_LOGIN: google
+CGS_IAP_AUDIENCE: AUDIENCE
+CGS_USERS: "Name One <one@cgs.example>, Name Two <two@cgs.example>"
 ```
 
 The service's host name is known only after the first deploy. Deploy once, read the address, then set

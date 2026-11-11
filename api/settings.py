@@ -3,6 +3,8 @@
 APP_MODE   demo | live            demo never calls an AI provider; live never falls back to demo.
 CRM_MODE   disabled | read_only | write_approved
 CRM_PROVIDER  off | mock | insightly; empty = mock in demo mode, off in live mode (api/toolkit/crm.py)
+CGS_LOGIN         off | google: Google sign-in for a hosted workspace (api/login.py); needs CGS_IAP_AUDIENCE and
+                  CGS_USERS entries with emails: Alex Morgan <alex@example.com>, ...
 CGS_HOST / PORT / CGS_PUBLIC_HOSTS   hosting (Google Cloud Run): see docs/DEPLOY_GOOGLE_CLOUD.md
 DATABASE_URL      PostgreSQL instead of the local SQLite file, for example postgresql://user:password@host/dbname
 AI_MODEL_<AGENT>  a model for one agent instead of AI_MODEL, for example AI_MODEL_OUTREACH=claude-sonnet-5-5 (see AGENT_MODEL_ENV)
@@ -38,6 +40,9 @@ class Settings:
     crm_mode: str = "disabled"
     port: int = 8800
     host: str = "127.0.0.1"  # the address the server listens on; 0.0.0.0 inside a container (CGS_HOST)
+    login: str = "off"       # off = each person picks their name; google = Google sign-in through IAP (api/login.py)
+    iap_audience: str = ""   # who Google's sign-in note must be addressed to (CGS_IAP_AUDIENCE), copied from the IAP page
+    logins: tuple[tuple[str, str], ...] = ()  # (email, workspace name): who each Google account is
     public_hosts: tuple[str, ...] = ()  # host names the hosted workspace is reached by, e.g. cgs-workspace-xyz.a.run.app
     db_path: Path = ROOT / "runtime" / "workspace-v2.sqlite3"
     frontend: Path = ROOT / "frontend" / "index.html"
@@ -71,8 +76,19 @@ class Settings:
             raise ValueError("MAIL_PROVIDER=gmail needs APP_MODE=live: demo data must not reach a real mailbox.")
         if self.host not in ("127.0.0.1", "localhost", "::1") and not self.public_hosts:
             raise ValueError(f"CGS_HOST={self.host} opens the workspace to other computers, so CGS_PUBLIC_HOSTS must name the "
-                             "address people will use (for example cgs-workspace-xyz.a.run.app). The workspace has no login "
-                             "of its own: put Google sign-in in front of it first (docs/DEPLOY_GOOGLE_CLOUD.md).")
+                             "address people will use (for example cgs-workspace-xyz.a.run.app). Put Google sign-in in "
+                             "front of it and set CGS_LOGIN=google (docs/DEPLOY_GOOGLE_CLOUD.md).")
+        if self.login not in ("off", "google"):
+            raise ValueError(f"CGS_LOGIN must be off or google, not {self.login!r}.")
+        if self.login == "google":
+            if not self.iap_audience:
+                raise ValueError("CGS_LOGIN=google needs CGS_IAP_AUDIENCE: without it the workspace cannot tell a sign-in meant "
+                                 "for it from one meant for another Google service (docs/DEPLOY_GOOGLE_CLOUD.md).")
+            if not self.logins:
+                raise ValueError("CGS_LOGIN=google needs each person's Google email in CGS_USERS, for example "
+                                 "CGS_USERS=Alex Morgan <alex@example.com>, Sarah Patel <sarah@example.com>.")
+            if len({e for e, _ in self.logins}) != len(self.logins):
+                raise ValueError("CGS_USERS gives the same email to two people.")
         if self.database_url.startswith(("postgres://", "postgresql://")):  # the plain form Google Cloud and most hosts give
             object.__setattr__(self, "database_url", "postgresql+psycopg://" + self.database_url.split("://", 1)[1])
         unknown = [a for a, _ in self.agent_models if a not in AGENT_MODEL_ENV]
@@ -84,6 +100,23 @@ class Settings:
     def model_for(self, agent: str | None) -> str:
         """The model this agent uses: its own (AI_MODEL_<AGENT>) or AI_MODEL; empty = the provider's default."""
         return dict(self.agent_models).get(agent or "") or self.ai_model
+
+
+def people(text: str) -> tuple[tuple[str, ...], tuple[tuple[str, str], ...]]:
+    """CGS_USERS: names, each optionally with a Google email: "Alex Morgan <alex@example.com>, Sarah Patel".
+    Returns the names and the (email, name) pairs."""
+    names, logins = [], []
+    for part in (p.strip() for p in text.split(",")):
+        if not part:
+            continue
+        name, _, rest = part.partition("<")
+        name, email = name.strip(), rest.rstrip("> ").strip().lower()
+        if not name:
+            raise ValueError(f"CGS_USERS: {part!r} has an email but no name. Write it as Name <email>.")
+        names.append(name)
+        if email:
+            logins.append((email, name))
+    return tuple(names), tuple(logins)
 
 
 def load_settings(env_file: Path | None = ROOT / ".env") -> Settings:
@@ -105,7 +138,9 @@ def load_settings(env_file: Path | None = ROOT / ".env") -> Settings:
         research_engine=os.environ.get("RESEARCH_ENGINE", "agent").strip().lower() or "agent",
         mail_provider=os.environ.get("MAIL_PROVIDER", "").strip().lower(),
         crm_provider=os.environ.get("CRM_PROVIDER", "").strip().lower(),
-        **({"users": tuple(u.strip() for u in os.environ["CGS_USERS"].split(",") if u.strip())} if os.environ.get("CGS_USERS") else {}),
+        **({"users": people(os.environ["CGS_USERS"])[0], "logins": people(os.environ["CGS_USERS"])[1]} if os.environ.get("CGS_USERS") else {}),
+        login=os.environ.get("CGS_LOGIN", "").strip().lower() or "off",
+        iap_audience=os.environ.get("CGS_IAP_AUDIENCE", "").strip(),
         directors=tuple(u.strip() for u in os.environ.get("CGS_DIRECTORS", "").split(",") if u.strip()),
         admins=tuple(u.strip() for u in os.environ.get("CGS_ADMINS", "").split(",") if u.strip()),
     )

@@ -1,2 +1,6 @@
-# Only for a hosted workspace on PostgreSQL (DATABASE_URL). The local SQLite workspace does not need it.
+# Only for a hosted workspace (docs/DEPLOY_GOOGLE_CLOUD.md). The local workspace does not need these.
+# PostgreSQL (DATABASE_URL):
 psycopg[binary]==3.3.8
+# Google sign-in (CGS_LOGIN=google): checks the signed note Identity-Aware Proxy adds to each request.
+google-auth==2.62.2
+cryptography==50.0.2
