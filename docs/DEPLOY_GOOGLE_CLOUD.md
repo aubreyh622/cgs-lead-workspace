@@ -16,7 +16,7 @@ first time you use it.
 | Database | a SQLite file in `runtime/` | Cloud SQL for PostgreSQL (`DATABASE_URL`) |
 | Keys and passwords | `.env` and `%USERPROFILE%\.cgs-workspace\*.env` | Secret Manager, given to the container as environment variables |
 | Sign-in | none (each person picks their name) | Google sign-in through Identity-Aware Proxy, checked by the workspace (`CGS_LOGIN=google`) |
-| CGS library | the `knowledge/` folder | the `knowledge/` folder inside the image (a Google Drive connector is planned) |
+| CGS library | the `knowledge/` folder, and Google Drive folders if set | Google Drive folders (`DRIVE_PROVIDER=google`, `DRIVE_AUTH=metadata`, folders shared with the service account), plus the `knowledge/` folder inside the image |
 
 ## Sign-in
 
@@ -87,7 +87,9 @@ A Cloud Run container's disk is temporary. Everything that must last is in the d
 
 The `knowledge/` folder is copied into the image when it is built, so library documents must be in the folder at
 build time. `knowledge/cgs-public/` is not in the Git repository; run `python -m api.fetch_cgs_site` before building
-if you want those pages.
+if you want those pages. Documents copied from Google Drive (`DRIVE_PROVIDER=google`) are in the database
+(`drive_documents`), so they survive a restart and need no rebuild: set `DRIVE_AUTH=metadata`, enable the Google Drive
+API in the project, and share the library folders with the service account the service runs as.
 
 ## Deploy
 

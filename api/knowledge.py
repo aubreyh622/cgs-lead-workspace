@@ -4,6 +4,9 @@ Sources:
   - knowledge/**/*.md and *.txt         real CGS documents; each blank-line-separated paragraph is one passage. Optional
                                         header lines "Source: <url>" and "Type: service|case|whitepaper|..." (written by
                                         api/fetch_cgs_site.py into knowledge/cgs-public/) give the page address and kind
+  - Google Drive folders               CGS's documents in Drive (api/toolkit/drive.py), copied into the database by
+                                        api/drive_sync.py and handed to this module with set_extra("drive", ...). They
+                                        count as real documents and, being private, are never sent for embeddings
   - api/seed/cgs_library_demo.json     SYNTHETIC demo library. KNOWLEDGE_DEMO=auto (default): used only while there are no
                                         real documents; on: always; off: never. KNOWLEDGE_DIR moves the real folder (tests
                                         point it at an empty place, so they never depend on local content)
@@ -66,10 +69,14 @@ def tokens(text: str) -> list[str]:
     return out
 
 
+PRIVATE_SOURCES = ("https://docs.google.com/", "https://drive.google.com/")  # a link to CGS's own Drive is not a public page
+
+
 def embeddable(p: "Passage") -> bool:
     """May this passage's text go to the embeddings provider? Public pages and synthetic text yes; private CGS documents
-    only with KNOWLEDGE_EMBED_PRIVATE=allowed."""
-    return p.synthetic or p.source.startswith("http") or os.environ.get("KNOWLEDGE_EMBED_PRIVATE", "").strip().lower() == "allowed"
+    (the knowledge/ folder without a public Source, Google Drive) only with KNOWLEDGE_EMBED_PRIVATE=allowed."""
+    public = p.source.startswith("http") and not p.source.startswith(PRIVATE_SOURCES)
+    return p.synthetic or public or os.environ.get("KNOWLEDGE_EMBED_PRIVATE", "").strip().lower() == "allowed"
 
 
 def search_mode(n_passages: int, embedder) -> str:
@@ -106,6 +113,8 @@ class Library:
                     out += solutions(f, synthetic=False)  # CGS's solutions document: one solution per "## " section
                     continue
                 out += document(f)
+        for extra in EXTRA.values():
+            out += extra
         if demo is None:
             mode = os.environ.get("KNOWLEDGE_DEMO", "auto").strip().lower()
             demo = mode == "on" or (mode not in ("on", "off") and not out)  # auto: only while no real documents
@@ -178,30 +187,47 @@ TYPES = {"service": "service", "case": "case"}  # other kinds (whitepaper, repor
 
 def document(f: Path) -> list[Passage]:
     """One file, one passage per paragraph. Header lines (title, Source:, Type:) and headings are not passages."""
-    text = f.read_text(encoding="utf-8")
+    return document_text(f.read_text(encoding="utf-8"), f.stem, f.stem)
+
+
+def document_text(text: str, doc_id: str, fallback_title: str, source: str = "", kind: str = "", title: str = "") -> list[Passage]:
+    """A document's passages from its text: one per paragraph. A "Source:" or "Type:" header line in the text wins over
+    source and kind. title: the document's name (else its first line)."""
     head = {k.lower(): v.strip() for k, v in re.findall(r"^(Source|Type):\s*(.+)$", text, flags=re.M)}
-    title = next((ln.lstrip("# ").strip() for ln in text.splitlines() if ln.strip()), f.stem)
+    title = title or next((ln.lstrip("# ").strip() for ln in text.splitlines() if ln.strip()), fallback_title)
     paras = [x.strip() for x in re.split(r"\n\s*\n", text)
              if len(x.strip()) > 40 and not x.strip().startswith(("#", "Source:", "Type:"))]
-    kind = TYPES.get(head.get("type", "").lower(), "document")
-    return [Passage(f"{f.stem}#p{i + 1}", f.stem, title, kind, x, False, head.get("source", "")) for i, x in enumerate(paras)]
+    kind = TYPES.get((head.get("type") or kind).lower(), "document")
+    return [Passage(f"{doc_id}#p{i + 1}", doc_id, title, kind, x, False, head.get("source", source)) for i, x in enumerate(paras)]
 
 
 def solutions(path: Path, synthetic: bool) -> list[Passage]:
     """A solutions document: each '## ' section is one solution (type 'solution'), each paragraph under it one passage."""
+    return solutions_text(path.read_text(encoding="utf-8"), synthetic) if path.exists() else []
+
+
+def solutions_text(text: str, synthetic: bool, source: str = "") -> list[Passage]:
     out = []
-    if not path.exists():
-        return out
-    for section in re.split(r"^## ", path.read_text(encoding="utf-8"), flags=re.M)[1:]:
+    for section in re.split(r"^## ", text, flags=re.M)[1:]:
         title, _, body = section.partition("\n")
         doc = "sol-" + "-".join(re.findall(r"[a-z0-9]+", title.lower()))[:60]
         paras = [x.strip() for x in re.split(r"\n\s*\n", body) if len(x.strip()) > 40]
-        out += [Passage(f"{doc}#p{i + 1}", doc, ("[Demo] " if synthetic else "") + "Solution: " + title.strip(), "solution", x, synthetic)
-                for i, x in enumerate(paras)]
+        out += [Passage(f"{doc}#p{i + 1}", doc, ("[Demo] " if synthetic else "") + "Solution: " + title.strip().strip("*"), "solution", x,
+                        synthetic, source) for i, x in enumerate(paras)]
     return out
 
 
 _cache: dict[str, Library] = {}
+EXTRA: dict[str, list[Passage]] = {}  # passages from outside the knowledge/ folder, by origin ("drive")
+
+
+def set_extra(origin: str, passages: list[Passage]) -> None:
+    """Replace the passages from one origin; the next library() call rebuilds the library with them."""
+    if passages:
+        EXTRA[origin] = list(passages)
+    else:
+        EXTRA.pop(origin, None)
+    _cache.clear()
 
 
 def library() -> Library:

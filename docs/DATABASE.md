@@ -38,6 +38,7 @@ Code reaches the file through SQLAlchemy, a translator layer. To move to a share
 | `settings` | workspace settings, such as the demo date | — | system |
 | `connector_switches` | which connector a person switched on or off for an agent (`*` = every agent), with who, when and why | all | person (permission screen) |
 | `permission_changes` | every change to the agents' connector permissions and daily limits, with the state before and after and the previous setting (for undo) | all | person (append-only) |
+| `drive_documents` | a CGS library document copied from Google Drive: Drive file id, name, folder path, link, type, Drive's modified time, the text, when it was copied. The library reads these as real CGS documents | library | Drive sync (`api/drive_sync.py`) |
 | `connector_uses` | one call to a connector: day, agent (or "Workspace (person)", "Mail rules"), connector, what was called, outcome (ok, failed, denied, limit) | all | the toolkit gate (append-only) |
 
 ## Rules the database follows

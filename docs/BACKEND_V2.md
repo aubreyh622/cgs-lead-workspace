@@ -159,7 +159,7 @@ Agents work like employees: they notice work, do it, and hand the result to a pe
     also finds a passage about "integration after a merger". `auto` (default) is hybrid when `KNOWLEDGE_EMBEDDINGS` names
     a provider (`gemini`, `openai` or `voyage`, with its key) and the library has at least 40 passages; otherwise bm25.
     Results found by meaning carry `matched: "meaning"` or `"keyword+meaning"`. If the embeddings service fails (quota,
-    network), search falls back to keywords for 10 minutes (1 minute after a rate limit) and `GET /api/knowledge` shows `meaning_search_failed`. A repeated search reuses its query vector. Voyage without a payment method allows only a few requests a minute; tested live on 30 Oct 2026 with `voyage-3.5-lite`.
+    network), search falls back to keywords for 10 minutes (1 minute after a rate limit) and `GET /api/knowledge` shows `meaning_search_failed`. A repeated search reuses its query vector. Passage vectors are saved after every batch, so a rate limit in the middle of indexing loses nothing: the next search a minute later carries on. Default provider: `gemini` (`gemini-embedding-001`, 768 dimensions; CGS runs on Google), tested live on 10 Nov 2026. Its free tier is rate-limited: indexing the 126 public CGS passages took three tries a minute apart (batches of 90), with keyword search in between; after that the vectors come from the cache. Voyage (`voyage-3.5-lite`, tested 30 Oct 2026) works too; without a payment method it allows only a few requests a minute.
   - Only public pages and synthetic text are sent to the embeddings service; private CGS documents stay keyword-only
     until `KNOWLEDGE_EMBED_PRIVATE=allowed` (CGS must agree first). Vectors are cached in `runtime/embeddings-*.json`.
   - Short acronyms count as search words: AI, ML, HR, BI, UX, and IT when written in capitals.
@@ -641,7 +641,7 @@ table governs every agent. `GET /api/toolkit` shows the connectors and the table
 | web (Tavily or the synthetic web) | public | in use |
 | library (CGS solutions, services, cases, documents) | cgs | in use |
 | mail (Gmail, or MockMail) | client | in use |
-| drive (Google Drive) | cgs | not built |
+| drive (Google Drive, or MockDrive) | cgs | in use: read only by the library sync, never by an agent (see Google Drive below) |
 | crm (Insightly, or MockCRM) | client | in use |
 
 Permissions have three layers, strongest first:
@@ -652,7 +652,7 @@ Permissions have three layers, strongest first:
    | Agent | web | library | mail | drive | crm |
    |---|---|---|---|---|---|
    | Discovery agent | on | - | - | - | allowed |
-   | Direction agent | - | on | - | allowed | - |
+   | Direction agent | - | on | - | - | - |
    | Research agent | on | - | - | - | allowed |
    | Outreach agent | on | on | allowed | - | - |
    | Evidence agent | - | on | allowed | - | - |
@@ -758,6 +758,49 @@ keeps the lead's contact as it is; the note starts with one line naming the writ
 the activity log says it. Re-run on the real thread: the card, note and log named the real writer; the evidence agent's
 summary said the address and signature disagree; the manager asked the owner to confirm who replied before treating it as
 the contact's interest, and held the two low scores until the first conversation.
+
+## Google Drive (CGS library documents)
+
+CGS keeps its documents in Google Drive. The drive connector (`api/toolkit/drive.py`) copies the ones CGS points it at
+into the CGS library, where agents search and quote them like the `knowledge/` folder. No agent browses Drive: the
+drive column of the permission table is forbidden for every agent, and the connector is switched on or off for everyone
+(`PUT /api/toolkit/connectors/drive`, or `connectors.drive` in `config/toolkit.json`, off by default).
+
+**Sync** (`api/drive_sync.py`, under the name "Drive rules"; every call is metered in `connector_uses`):
+1. list the files in the folders `DRIVE_FOLDER_IDS` names (ids or folder links, comma-separated) and up to 4 levels of
+   subfolders, at most 300 files;
+2. read each Google Doc (exported as Markdown, so headings stay headings), `.md` and `.txt` file that is new or changed
+   since the last sync (Drive's modifiedTime); PDF, Word, Sheets and Slides files are listed as skipped, with how to
+   include them (save as a Google Doc);
+3. save the text in `drive_documents`, and delete the rows of documents no longer in the folders, but only when every
+   folder could be opened in full (a sharing mistake never empties the library). A document that fails to read keeps
+   its last copy;
+4. hand the passages to the library at once (`knowledge.set_extra`). At start-up the saved copies load again, so the
+   library does not wait for Drive.
+
+Kinds: a document whose name contains "solution" is read as the solutions document (one solution per `## ` heading); a
+`Type: case` / `Type: service` line, or a folder named Cases / Services above it, sets that kind; anything else is a
+document. Passage ids use the Drive file id (`drive-<id>#p3`), so renaming a document keeps its citations. With real
+documents present, `KNOWLEDGE_DEMO=auto` drops the synthetic demo library.
+
+| Endpoint | What it does |
+|---|---|
+| `GET /api/drive` | provider, folders, whether the connector is on (and why not), the signed-in account, the last sync's result, and the Drive documents in the library (name, folder, link, kind, size) |
+| `POST /api/drive/sync` | sync now: read / unchanged / removed counts, skipped files with reasons, problems, notes. 409 `drive_off` says what is missing |
+
+The patrol queues a `drive_sync` job once a day when Drive is set up (provider, connector on, folders named).
+
+**Sign-in.** Locally: enable the Google Drive API in the same Google Cloud project as the Gmail OAuth client, run
+`Drive Sign In.cmd` (`python -m api.toolkit.gmail_auth --drive`, scope `drive.readonly` only); it saves
+`DRIVE_REFRESH_TOKEN` in `%USERPROFILE%\.cgs-workspace\gmail.env` beside the Gmail sign-in, which it leaves alone. Then
+`DRIVE_PROVIDER=google` and `DRIVE_FOLDER_IDS=...` in `.env`. Hosted on Cloud Run: `DRIVE_AUTH=metadata` takes a token
+for the service's own service account from the metadata server (no key file); share the folders with that service
+account's email. `Check Drive.cmd` (`python -m api.check_drive [folder]`) reads the folders without saving anything and
+says, per document, how many passages it gives and which files would be skipped.
+
+SoW section 9: Drive documents are CGS's own. They are never sent for embeddings (`knowledge.embeddable`) unless
+`KNOWLEDGE_EMBED_PRIVATE=allowed`, and reach an AI provider only as passages an agent searched, like any document in
+`knowledge/`. Point `DRIVE_FOLDER_IDS` only at folders CGS has approved for that.
 
 ## CRM (Insightly)
 

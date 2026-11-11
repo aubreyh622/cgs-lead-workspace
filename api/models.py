@@ -7,6 +7,7 @@ Plain-language map (see docs/DATABASE.md for the full version):
   candidates                   Step 1 recommendations before anyone picks them
   outreach, notes              Step 5 messages and Step 6 conversations
   crm_links                    which CRM (Insightly) records belong to an opportunity, and how its sync went
+  drive_documents              CGS library documents copied from Google Drive
   proposals, evidence          AI suggestions, and what a person confirmed
   tasks, suggestions           agreed actions, and AI-suggested actions not yet agreed
   packs, decisions             Step 7 qualification packs and Step 4 / Step 8 human decisions
@@ -452,6 +453,20 @@ class ConnectorUse(Base):
     action: Mapped[str] = mapped_column(String(40))
     outcome: Mapped[str] = mapped_column(String(10))
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class DriveDocument(Base):
+    """A CGS library document copied from Google Drive (api/drive_sync.py). The library (api/knowledge.py) reads these
+    as real CGS documents. A row disappears when the document leaves the Drive folders."""
+    __tablename__ = "drive_documents"
+    file_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    name: Mapped[str] = mapped_column(String(300))
+    path: Mapped[str] = mapped_column(String(500), default="")     # folders from the named folder down
+    link: Mapped[str] = mapped_column(String(500), default="")     # where a person opens it in Drive
+    mime: Mapped[str] = mapped_column(String(120), default="")
+    modified: Mapped[str] = mapped_column(String(40), default="")  # Drive's modifiedTime when it was copied
+    text: Mapped[str] = mapped_column(Text, default="")
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class PermissionChange(Base):

@@ -1,4 +1,5 @@
 """Sign the workspace in to Gmail once: python -m api.toolkit.gmail_auth
+Sign it in to Google Drive (read only, for the CGS library): python -m api.toolkit.gmail_auth --drive
 
 Before you run it:
   1. In Google Cloud Console, enable the Gmail API for a project.
@@ -11,7 +12,11 @@ email and read email. Google sends the answer back to this computer only (127.0.
 token in that same file as GMAIL_REFRESH_TOKEN and never prints it. Then set MAIL_PROVIDER=gmail and APP_MODE=live in the
 project .env, and restart.
 
-To sign out: delete GMAIL_REFRESH_TOKEN from the file and remove the app at https://myaccount.google.com/permissions.
+--drive asks only to read Drive files (drive.readonly; enable the Google Drive API in the same project) and saves
+DRIVE_REFRESH_TOKEN in the same file, beside the Gmail sign-in, which it leaves alone. Then set DRIVE_PROVIDER=google and
+DRIVE_FOLDER_IDS in the project .env (api/toolkit/drive.py).
+
+To sign out: delete GMAIL_REFRESH_TOKEN (or DRIVE_REFRESH_TOKEN) from the file and remove the app at https://myaccount.google.com/permissions.
 """
 from __future__ import annotations
 
@@ -28,6 +33,7 @@ import webbrowser
 import httpx
 
 from api.settings import ROOT, _load_dotenv
+from api.toolkit.drive import SCOPES as DRIVE_SCOPES, GoogleDrive
 from api.toolkit.mail import CREDENTIALS, SCOPES, TOKEN_URL, GmailMail, load_credentials
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -74,7 +80,9 @@ def _wait_for_code(state: str) -> tuple[str, int, HTTPServer]:
     return result, server.server_address[1], server
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    drive = "--drive" in (sys.argv[1:] if argv is None else argv)
+    scopes, key = (DRIVE_SCOPES, "DRIVE_REFRESH_TOKEN") if drive else (SCOPES, "GMAIL_REFRESH_TOKEN")
     _load_dotenv(ROOT / ".env")
     load_credentials()
     client_id, client_secret = os.environ.get("GOOGLE_CLIENT_ID", ""), os.environ.get("GOOGLE_CLIENT_SECRET", "")
@@ -87,7 +95,7 @@ def main() -> int:
     result, port, server = _wait_for_code(state)
     redirect = f"http://127.0.0.1:{port}/"
     url = AUTH_URL + "?" + urlencode({"client_id": client_id, "redirect_uri": redirect, "response_type": "code",
-                                      "scope": " ".join(SCOPES), "access_type": "offline", "prompt": "consent",
+                                      "scope": " ".join(scopes), "access_type": "offline", "prompt": "consent",
                                       "code_challenge": challenge, "code_challenge_method": "S256", "state": state})
     print("Opening Google sign-in in your browser. If it does not open, copy this link into the browser:\n" + url)
     webbrowser.open(url)
@@ -103,7 +111,15 @@ def main() -> int:
     if not token:
         print(f"Google did not return a refresh token (status {r.status_code}). Try again; allow every permission asked for.")
         return 1
-    save_env_value(CREDENTIALS, "GMAIL_REFRESH_TOKEN", token)
+    save_env_value(CREDENTIALS, key, token)
+    if drive:
+        try:
+            who = GoogleDrive(client_id, client_secret, token).account()
+        except Exception:
+            who = "(could not read the account yet)"
+        print(f"Saved the Google Drive sign-in for {who} in {CREDENTIALS}. To use it, set DRIVE_PROVIDER=google and "
+              "DRIVE_FOLDER_IDS=<folder id or link> in the project .env, turn the drive connector on, then restart.")
+        return 0
     try:
         who = GmailMail(client_id, client_secret, token).account()
     except Exception:

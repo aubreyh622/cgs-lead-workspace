@@ -1,7 +1,8 @@
 """Toolkit: the one way agents reach outside systems, and who may reach what.
 
-Connectors are the outside systems: the web (Tavily or the synthetic web), the CGS library, email (Gmail), and later
-Google Drive and the CRM (Insightly). Every connector client an agent works with comes through the gate in this module
+Connectors are the outside systems: the web (Tavily or the synthetic web), the CGS library, email (Gmail), Google Drive
+and the CRM (Insightly). Google Drive is read only by the library sync (api/drive_sync.py), never by an agent: the drive
+connector is switched on or off for everyone, and agents read the copied documents through the library connector. Every connector client an agent works with comes through the gate in this module
 (web_for, library_for, mail_for, crm_for, or grant for ready-made tools), so one permission table governs all agents.
 
 Permissions, strongest first:
@@ -47,14 +48,14 @@ CONNECTORS = {
     "web": ("public", "Web search and pages (Tavily, or the synthetic web)", True),
     "library": ("cgs", "The CGS library: solutions, services, cases and documents", True),
     "mail": ("client", "Email threads with clients (Gmail)", True),
-    "drive": ("cgs", "Google Drive documents", False),
+    "drive": ("cgs", "Google Drive folders with CGS library documents, copied into the library by a daily sync", True),
     "crm": ("client", "The CRM (Insightly): leads, contacts, organizations, opportunities", True),
 }
 
 # What each agent may ever use. Changing this is a code change.
 CEILING: dict[str, dict[str, str]] = {
     "Discovery agent": {"web": "on", "crm": "allowed"},
-    "Direction agent": {"library": "on", "drive": "allowed"},
+    "Direction agent": {"library": "on"},  # Drive documents reach it through the library (api/drive_sync.py)
     "Research agent": {"web": "on", "crm": "allowed"},
     "Outreach agent": {"web": "on", "library": "on", "mail": "allowed"},
     "Evidence agent": {"library": "on", "mail": "allowed"},

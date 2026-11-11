@@ -3,6 +3,7 @@
 APP_MODE   demo | live            demo never calls an AI provider; live never falls back to demo.
 CRM_MODE   disabled | read_only | write_approved
 CRM_PROVIDER  off | mock | insightly; empty = mock in demo mode, off in live mode (api/toolkit/crm.py)
+DRIVE_PROVIDER  off | mock | google; empty = off. CGS library documents from Google Drive (api/toolkit/drive.py)
 CGS_LOGIN         off | google: Google sign-in for a hosted workspace (api/login.py); needs CGS_IAP_AUDIENCE and
                   CGS_USERS entries with emails: Alex Morgan <alex@example.com>, ...
 CGS_HOST / PORT / CGS_PUBLIC_HOSTS   hosting (Google Cloud Run): see docs/DEPLOY_GOOGLE_CLOUD.md
@@ -57,6 +58,7 @@ class Settings:
     agent_lanes: int = 3         # background work in parallel: jobs for different opportunities at once (1 = one at a time)
     mail_provider: str = ""  # off | mock | gmail; empty = mock in demo mode, off in live mode (api/toolkit/mail.py)
     crm_provider: str = ""   # off | mock | insightly; empty = mock in demo mode, off in live mode (api/toolkit/crm.py)
+    drive_provider: str = ""  # off | mock | google; empty = off (api/toolkit/drive.py, folders in DRIVE_FOLDER_IDS)
     research_engine: str = "agent"  # Steps 2-3: agent (api/research_agent.py) | pipeline (Aubrey's pipeline, or one request on the synthetic web)
 
     def __post_init__(self):
@@ -72,6 +74,8 @@ class Settings:
             raise ValueError(f"MAIL_PROVIDER must be off, mock or gmail, not {self.mail_provider!r}.")
         if self.crm_provider not in ("", "off", "mock", "insightly"):
             raise ValueError(f"CRM_PROVIDER must be off, mock or insightly, not {self.crm_provider!r}.")
+        if self.drive_provider not in ("", "off", "mock", "google"):
+            raise ValueError(f"DRIVE_PROVIDER must be off, mock or google, not {self.drive_provider!r}.")
         if self.mail_provider == "gmail" and self.app_mode == "demo":
             raise ValueError("MAIL_PROVIDER=gmail needs APP_MODE=live: demo data must not reach a real mailbox.")
         if self.host not in ("127.0.0.1", "localhost", "::1") and not self.public_hosts:
@@ -138,6 +142,7 @@ def load_settings(env_file: Path | None = ROOT / ".env") -> Settings:
         research_engine=os.environ.get("RESEARCH_ENGINE", "agent").strip().lower() or "agent",
         mail_provider=os.environ.get("MAIL_PROVIDER", "").strip().lower(),
         crm_provider=os.environ.get("CRM_PROVIDER", "").strip().lower(),
+        drive_provider=os.environ.get("DRIVE_PROVIDER", "").strip().lower(),
         **({"users": people(os.environ["CGS_USERS"])[0], "logins": people(os.environ["CGS_USERS"])[1]} if os.environ.get("CGS_USERS") else {}),
         login=os.environ.get("CGS_LOGIN", "").strip().lower() or "off",
         iap_audience=os.environ.get("CGS_IAP_AUDIENCE", "").strip(),

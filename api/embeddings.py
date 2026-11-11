@@ -104,7 +104,8 @@ class Embedder:
                 if len(vecs) != len(part):
                     raise EmbeddingError("The embeddings provider returned the wrong number of vectors.")
                 cache.update({k: v for (k, _), v in zip(part, vecs)})
-            if todo:
+                # saved after every batch: when a later batch hits a rate limit (free tiers allow ~100 texts a minute),
+                # the next attempt continues from here instead of starting over and hitting the same limit again
                 self.cache_file.parent.mkdir(parents=True, exist_ok=True)
                 self.cache_file.write_text(json.dumps(cache), encoding="utf-8")
             return [cache[k] for k in keys]

@@ -61,7 +61,7 @@ def agent_ctx(app, s) -> S.Ctx:
     return S.Ctx(s=s, actor=AGENTS_ACTOR, today=demo_today(s, app.state.settings), settings=app.state.settings,
                  provider_factory=getattr(app.state, "provider_factory", None), research_factory=lambda: research_bridge(app),
                  search_factory=getattr(app.state, "search_factory", None), mail_factory=lambda: getattr(app.state, "mail", None),
-                 crm_factory=lambda: getattr(app.state, "crm", None))
+                 crm_factory=lambda: getattr(app.state, "crm", None), drive_factory=lambda: getattr(app.state, "drive", None))
 
 
 def web(c: S.Ctx, agent: str = "Research agent"):
@@ -107,6 +107,9 @@ def patrol(c: S.Ctx) -> list[m.AgentJob]:
         add("crm_sync", None, "Opportunities waiting to be synced to the CRM (Insightly)")
     elif CRM.reads_on(c) and s.scalar(select(m.CrmLink.opportunity_id).where(m.CrmLink.lead_id.is_not(None)).limit(1)):
         add("crm_sync", None, "Daily read-back of the CRM (Insightly): edits made there, stages, tasks done")
+    from api import drive_sync as DRV
+    if DRV.due(c, t):
+        add("drive_sync", None, "Daily copy of the CGS library documents from Google Drive")
     for o in s.scalars(select(m.Opportunity)):
         if o.stage == "contacted":
             r = s.get(m.Outreach, o.id)
@@ -583,6 +586,18 @@ def do_crm_sync(c, job, o):
     return "done", " ".join(parts)
 
 
+def do_drive_sync(c, job, o):
+    from api import drive_sync as DRV
+    res = DRV.sync(c)
+    if res.get("off"):
+        return "skipped", res["why"]
+    text = (f"Copied {res['read']} document(s) from Google Drive ({res['unchanged']} unchanged, {res['removed']} removed, "
+            f"{len(res['skipped'])} skipped); the library holds {res['documents']} Drive document(s).")
+    if res["errors"]:
+        return ("failed" if not res["read"] and not res["unchanged"] else "done"), text + " Problems: " + "; ".join(res["errors"][:3])
+    return "done", text
+
+
 def do_mail_sync(c, job, o):
     res = S.sync_mail(c)
     if c.crm_dirty:  # an email sent from Gmail moved a lead to Contacted: tell the CRM
@@ -602,7 +617,7 @@ HANDLERS = {"first_draft": do_first_draft, "followup_draft": do_followup_draft, 
             "person_lookup": do_person_lookup, "gap_actions": do_gap_actions, "defer_nurture": do_defer_nurture, "note_evidence": do_note_evidence,
             "ready_reminder": do_ready_reminder, "discovery_round": do_discovery_round, "feedback_review": do_feedback_review,
             "manager_review": do_manager_review, "manager_triage": do_manager_triage, "lessons_review": do_lessons_review, "mail_sync": do_mail_sync,
-            "crm_sync": do_crm_sync}
+            "crm_sync": do_crm_sync, "drive_sync": do_drive_sync}
 assert set(HANDLERS) == set(J.KINDS)
 
 

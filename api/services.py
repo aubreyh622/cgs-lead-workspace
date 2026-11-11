@@ -98,6 +98,7 @@ class Ctx:
     search_factory: Callable[[], Any] | None = None    # web search for Step 1 discovery
     mail_factory: Callable[[], Any] | None = None      # the mailbox (api/toolkit/mail.py); None = mail is off
     crm_factory: Callable[[], Any] | None = None       # the CRM (api/toolkit/crm.py); None = the CRM is off
+    drive_factory: Callable[[], Any] | None = None     # Google Drive (api/toolkit/drive.py); None = Drive is off
     crm_dirty: set = field(default_factory=set)        # opportunities to sync to the CRM once this request is saved
 
     @property

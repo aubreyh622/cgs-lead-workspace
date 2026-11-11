@@ -49,7 +49,7 @@ def test_defaults_follow_the_ceiling_in_code():
     assert TK.state("Research agent", "web") == "on"
     assert TK.state("Research agent", "mail") == "forbidden"   # the research agent never reads email
     assert TK.state("Outreach agent", "mail") == "off"         # allowed, but off until someone switches it on
-    assert TK.state("Direction agent", "drive") == "not built"
+    assert TK.state("Direction agent", "drive") == "forbidden"  # Drive reaches agents only through the library sync
     assert TK.state("Discovery agent", "crm") == "connector off"  # built; off for everyone in config/toolkit.json until switched on
     assert TK.state("Manager agent", "web") == "forbidden"
     # every agent the job board knows has a row in the table
@@ -166,7 +166,7 @@ def test_the_table_shows_every_agent_and_connector_with_where_it_comes_from(demo
     assert t["canChange"] is True and {r["agent"] for r in t["agents"]} == set(TK.CEILING)
     assert cell(api, "Research agent", "mail") == {"state": "forbidden", "editable": False, "source": "code", "ceiling": "forbidden"}
     assert cell(api, "Outreach agent", "mail") == {"state": "off", "editable": True, "source": "default", "ceiling": "allowed"}
-    assert cell(api, "Direction agent", "drive")["state"] == "not built"
+    assert cell(api, "Direction agent", "drive")["state"] == "forbidden"
     assert cell(api, "Discovery agent", "crm")["state"] == "connector off"
     assert next(x for x in t["connectors"] if x["name"] == "web")["on"] is True
 
@@ -194,7 +194,7 @@ def test_a_person_switches_an_agent_off_it_takes_effect_and_the_change_is_kept(t
 def test_what_the_code_forbids_cannot_be_switched_on(demo):
     api = TestClient(demo)
     assert put(api, "permissions/Research agent/mail", True).json()["code"] == "forbidden"
-    assert put(api, "permissions/Direction agent/drive", True).json()["code"] == "not_built"
+    assert put(api, "permissions/Direction agent/drive", True).json()["code"] == "forbidden"
     assert put(api, "permissions/Outreach agent/crm", True).json()["code"] == "forbidden"
     assert put(api, "permissions/Sales agent/web", True).status_code == 404
     assert put(api, "permissions/Research agent/ftp", True).status_code == 404
@@ -281,7 +281,7 @@ def test_a_daily_limit_stops_further_calls_and_the_agent_is_told(tmp_path):
     assert usage_rows(api, "Research agent", "web")[0]["limit"] == 1
     assert api.put("/api/toolkit/limits/web", headers=ME, json={"perDay": 0, "reason": "No limit for the demo"}).json()["after"] == "no limit"
     assert api.put("/api/toolkit/limits/web", headers=ME, json={"perDay": -1, "reason": "Wrong number"}).status_code == 400
-    assert api.put("/api/toolkit/limits/drive", headers=ME, json={"perDay": 5, "reason": "Not built yet"}).status_code == 404
+    assert api.put("/api/toolkit/limits/ftp", headers=ME, json={"perDay": 5, "reason": "No such connector"}).status_code == 404
 
 
 def test_email_a_person_sends_counts_against_the_mail_limit(demo):

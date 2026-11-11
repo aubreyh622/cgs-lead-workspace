@@ -51,7 +51,8 @@ def ctx(request: Request, x_user: str | None = Header(None, description="The per
     c = S.Ctx(s=session, actor=x_user or "", today=demo_today(session, request.app.state.settings), settings=request.app.state.settings,
               provider_factory=getattr(request.app.state, "provider_factory", None),
               research_factory=lambda: research_bridge(request.app), search_factory=getattr(request.app.state, "search_factory", None),
-              mail_factory=lambda: getattr(request.app.state, "mail", None), crm_factory=lambda: getattr(request.app.state, "crm", None))
+              mail_factory=lambda: getattr(request.app.state, "mail", None), crm_factory=lambda: getattr(request.app.state, "crm", None),
+              drive_factory=lambda: getattr(request.app.state, "drive", None))
     users = S.owners_list(c)
     if not x_user or x_user not in users:
         session.close()
@@ -432,8 +433,34 @@ def toolkit(request: Request, c: S.Ctx = Actor):
     from api import toolkit as TK
     box = getattr(request.app.state, "mail", None)
     crm = getattr(request.app.state, "crm", None)
+    drive = getattr(request.app.state, "drive", None)
     return {**TK.catalog(c.s), "mail": {"provider": box.name if box else "off", "ready": bool(box and box.ready())},
-            "crm": {"provider": crm.name if crm else "off", "mode": c.settings.crm_mode, "ready": bool(crm and crm.ready())}}
+            "crm": {"provider": crm.name if crm else "off", "mode": c.settings.crm_mode, "ready": bool(crm and crm.ready())},
+            "drive": {"provider": drive.name if drive else "off", "ready": bool(drive and drive.ready())}}
+
+
+# ---------- Google Drive (CGS library documents): api/toolkit/drive.py, api/drive_sync.py ----------
+@router.get("/drive", tags=["drive"], summary="Google Drive: provider, folders, last sync, and the Drive documents in the CGS library")
+def drive_status(c: S.Ctx = Actor):
+    from api import drive_sync as DRV
+    from api.toolkit.drive import DriveError
+    out = DRV.status(c)
+    drive = DRV.drive_client(c)
+    if drive is not None and drive.ready():
+        try:
+            out["account"] = drive.account()
+        except DriveError as e:
+            out["error"] = str(e)
+    return out
+
+
+@router.post("/drive/sync", tags=["drive"], summary="Copy the CGS library documents from Google Drive now")
+def drive_sync_now(c: S.Ctx = Actor):
+    from api import drive_sync as DRV
+    res = DRV.sync(c)
+    if res.get("off"):
+        raise S.ActionError(res["why"], 409, "drive_off")
+    return res
 
 
 # ---------- the CRM (Insightly): api/toolkit/crm.py, api/crm_sync.py ----------

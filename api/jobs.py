@@ -31,6 +31,7 @@ KINDS = {
     "discovery_round": ("Discovery agent", True, "Finds new candidate companies once a week"),
     "feedback_review": ("Direction agent", True, "Reviews recent decisions once a week and may propose a direction change"),
     "mail_sync": ("Mail rules", False, "Checks the email threads for client replies and for drafts a person sent from Gmail"),
+    "drive_sync": ("Drive rules", False, "Copies the CGS library documents from the Google Drive folders once a day"),
     "crm_sync": ("CRM rules", False, "Reads back what changed in the CRM (Insightly) and writes what people changed when that could not happen at once"),
     "manager_review": ("Manager agent", True, "Looks over every open opportunity once a day and decides which agent should do what"),
     "lessons_review": ("Manager agent", True, "Once a week turns the scorecard's findings into lessons for the agents, which a person approves"),

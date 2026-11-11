@@ -189,6 +189,27 @@ def test_embedder_caches_document_vectors_and_reads_each_provider_format(tmp_pat
     assert Embedder("openai", "k", transport=openai, cache_dir=tmp_path).embed(["a", "b"], "query") == [[0.0], [1.0]]
 
 
+def test_a_rate_limit_mid_indexing_keeps_the_batches_already_done(tmp_path, monkeypatch):
+    import pytest
+    from api import embeddings as E
+    monkeypatch.setattr(E, "BATCH", 2)
+    sent, allowed = [], [1]
+
+    def limited(url, headers, payload):  # one batch a "minute", like a free tier
+        if not allowed[0]:
+            raise E.EmbeddingError("Embedding request failed: HTTP 429", rate_limited=True)
+        allowed[0] -= 1
+        sent.append([r["content"]["parts"][0]["text"] for r in payload["requests"]])
+        return {"embeddings": [{"values": [1.0]} for _ in payload["requests"]]}
+
+    texts = ["a", "b", "c", "d"]
+    with pytest.raises(E.EmbeddingError):
+        E.Embedder("gemini", "k", transport=limited, cache_dir=tmp_path).embed(texts)
+    allowed[0] = 1  # a minute later, even after a restart: only the rest is sent
+    assert E.Embedder("gemini", "k", transport=limited, cache_dir=tmp_path).embed(texts) == [[1.0]] * 4
+    assert sent == [["a", "b"], ["c", "d"]]
+
+
 def test_embeddings_stay_off_without_a_provider_or_key(monkeypatch):
     from api.embeddings import from_env
     monkeypatch.setenv("KNOWLEDGE_EMBEDDINGS", "off")

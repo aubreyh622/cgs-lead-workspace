@@ -44,7 +44,7 @@ people accepted, and outreach and the manager see other CGS work with the same c
 | CGS library (`knowledge/`) | Service fit and outreach. `python -m api.fetch_cgs_site` loads CGS's public website (not committed); keyword search, plus meaning search when an embeddings key is set | In use |
 | Email (Gmail, or a mock mailbox) | Drafts, approve-and-send, reading client replies | In use |
 | CRM (Insightly, or a mock CRM) | Duplicate check; a lead from Step 4, statuses that follow the stages, notes, emails logged by BCC, conversion to an opportunity at Qualification | In use (team test account) |
-| Google Drive | Direction sources | Not built |
+| Google Drive (or a mock Drive) | CGS library documents copied from named folders once a day; agents search and quote them | Built; off until CGS names a folder |
 
 ## Run it (Windows)
 
