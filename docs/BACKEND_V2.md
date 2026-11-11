@@ -759,6 +759,34 @@ the activity log says it. Re-run on the real thread: the card, note and log name
 summary said the address and signature disagree; the manager asked the owner to confirm who replied before treating it as
 the contact's interest, and held the two low scores until the first conversation.
 
+## People, roles, scoring criteria and each person's own Gmail (Meeting 4)
+
+The client's asks from meeting 4 (6 Nov 2026): a login, admins who can change the scoring criteria and make others admins,
+only admins may act as someone else, and email that comes from the consultant's own address.
+
+- **Signed in vs acting as.** `X-User` is the person signed in (Google sign-in replaces it with the real account, so it
+  cannot be forged when hosted; on one computer the page's Sign in screen picks it). `X-Act-As` names the person an
+  admin acts as. `api/actions.ctx` checks both (`api/people.py acting`): anyone else's `X-Act-As` is refused (403
+  `not_admin`). The change is recorded under the acting person; email logs say "Alex Morgan as Sarah Patel".
+- **Admins** (`api/people.py`). `CGS_ADMINS` names the first ones. Once an admin changes roles on the People page
+  (`PUT /api/people/{name}`), Setting `admins` is used instead. The last admin cannot be removed. While nobody is an
+  admin, everyone may do admin work, as before. Admin work: act as someone else, make admins, scoring criteria, decide
+  changes to the team's research direction (anyone may propose; a change to one person's own searches is that person's
+  or an admin's call), agent permissions, lessons, team instructions.
+- **Scoring criteria** (`api/scoring.py`, `GET/PUT /api/scoring`). An admin changes the dimension weights (sum 100),
+  each dimension's minimum, what Ready needs (confirmed coverage and Q) and the priority bands. Dimensions, anchors and
+  conditions stay fixed. Each change is a new rule version (`cgs-1`, `cgs-2`, ...) with who, when and why; packs keep
+  the version they were scored with. `backend/rules.py apply()` swaps the numbers in place; every request checks the
+  stored version, so all server instances agree. The rules engine stays the only place that calculates.
+- **Sending address** (`api/services.py sender_for`). Each consultant's email goes out from their own Gmail once they
+  connect it: `python -m api.toolkit.gmail_auth --person "Sarah Patel"` saves `GMAIL_REFRESH_TOKEN_SARAH_PATEL`
+  in the credentials file; restart. Until then it goes from the shared mailbox, with the person's address (People page)
+  as From, which Gmail keeps only for a "Send mail as" alias. `outreach.mail_account` remembers whose mailbox holds a
+  conversation: follow-ups stay there (only that person, or an admin acting as them, can send them), and the daily mail
+  check and the agents read replies there. The send panel says which mailbox the email comes from.
+- **Hosted at CGS (next step, not built).** With Google Workspace, a service account with domain-wide delegation can
+  send as each consultant without everyone signing in once; that would replace the per-person sign-in.
+
 ## Google Drive (CGS library documents)
 
 CGS keeps its documents in Google Drive. The drive connector (`api/toolkit/drive.py`) copies the ones CGS points it at

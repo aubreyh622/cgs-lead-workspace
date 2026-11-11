@@ -17,9 +17,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
 
 from backend.rules import (
-    ANCHORS, CONDITION_QUESTIONS, CONDITIONS, FLOORS, LABELS, QUESTIONS, REASONS,
-    RULE_VERSION, WEIGHTS, calculate, delta, validate_score,
+    ANCHORS, BANDS, CONDITION_QUESTIONS, CONDITIONS, FLOORS, LABELS, QUESTIONS, READY, REASONS,
+    WEIGHTS, calculate, delta, validate_score,
 )
+from backend.rules import version as rule_version
 from api.db import Database
 from api.models import DirectionVersion, Setting
 from sqlalchemy import select
@@ -154,6 +155,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.demo_data = check_database_mode(app.state.db, settings)
     if settings.app_mode == "demo":
         load_demo(app.state.db)  # only fills an empty database
+    from api import scoring
+    with app.state.db.session() as s:
+        scoring.refresh(s)  # the criteria an admin set, if any (api/scoring.py)
     with app.state.db.session() as s:
         if not s.get(Setting, "owners"):
             s.add(Setting(key="owners", value=list(settings.users)))
@@ -177,6 +181,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from api import toolkit
     toolkit.check_config()  # config/toolkit.json must stay inside what the code allows each agent
     app.state.mail = make_mail(settings.mail_provider, settings.app_mode)  # tests may replace it with a MockMail
+    from api.toolkit.mail import own_mailboxes
+    with app.state.db.session() as s:  # each person's own Gmail, where they signed in (gmail_auth --person); tests may set a dict
+        app.state.own_mail = own_mailboxes(settings.mail_provider, list(s.get(Setting, "owners").value or []))
     from api.toolkit.crm import make_crm
     app.state.crm = make_crm(settings.crm_provider, settings.app_mode, settings.crm_mode)  # tests may replace it with a MockCRM
     from api.toolkit.drive import make_drive
@@ -229,16 +236,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def health():
         return {"ok": True, "version": VERSION}
 
-    @app.get("/api/me", tags=["system"], summary="Who is signed in (Google sign-in), or that each person picks their name")
+    @app.get("/api/me", tags=["system"], summary="Who is signed in, and whether they are an admin (who may act as someone else)")
     def me(request: Request):
-        return {"login": settings.login, **(request.scope.get("cgs_login") or {"name": "", "email": ""})}
+        from api import people as P
+        login = request.scope.get("cgs_login") or {"name": "", "email": ""}
+        with app.state.db.session() as s:
+            name = login["name"] or request.headers.get("x-user", "")
+            name = name if name in P.users(s) else ""
+            admins = P.admins(s, settings)
+            admin = bool(name) and P.is_admin(s, settings, name)
+            email = login["email"] or P.emails(s, settings).get(name, "")
+        return {"login": settings.login, "name": name, "email": email, "admin": admin, "mayActAs": admin,
+                "admins": admins, "everyoneIsAdmin": not admins}
 
     @app.get("/api/config", tags=["system"], summary="Current modes")
     def config():
         from api.actions import simulated
         from api.search import search_config
         crm = getattr(app.state, "crm", None)
-        return {"appMode": settings.app_mode, "crmMode": settings.crm_mode, "crm": crm.name if crm else "off", "ruleVersion": RULE_VERSION,
+        return {"appMode": settings.app_mode, "crmMode": settings.crm_mode, "crm": crm.name if crm else "off", "ruleVersion": rule_version(),
                 "aiConnected": settings.app_mode == "live", "aiProvider": settings.ai_provider if settings.app_mode == "live" else "demo rules",
                 "web": search_config()["provider"], "timeTravel": simulated(settings), "agentWorker": bool(app.state.worker),
                 "demoData": app.state.demo_data,
@@ -246,11 +262,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/rules", tags=["rules"], summary="The qualification rules (weights, anchors, minimums)")
     def rules():
-        return {"version": RULE_VERSION, "weights": WEIGHTS, "labels": LABELS, "anchors": ANCHORS,
-                "floors": FLOORS, "conditions": CONDITIONS, "reasons": REASONS,
-                "questions": QUESTIONS, "conditionQuestions": CONDITION_QUESTIONS,
+        from api import scoring
+        with app.state.db.session() as s:
+            scoring.refresh(s)
+            meta = scoring.meta(s)
+        return {"version": rule_version(), "weights": WEIGHTS, "labels": LABELS, "anchors": ANCHORS,
+                "floors": FLOORS, "ready": READY, "conditions": CONDITIONS, "reasons": REASONS,
+                "questions": QUESTIONS, "conditionQuestions": CONDITION_QUESTIONS, "changed": meta,
                 "formula": {"Q": "sum(weight x score / 5)", "R": "revenue rating x 20; unknown keeps 0-100",
-                            "P": "0.6 Q + 0.4 R", "bands": {"High": 75, "Medium": 55}}}
+                            "P": "0.6 Q + 0.4 R", "bands": dict(BANDS)}}
 
     @app.post("/api/rules/calculate", response_model=Result, tags=["rules"],
               summary="Calculate Q, R, P and readiness for one opportunity")

@@ -55,7 +55,7 @@ export function view(d, ctx) {
   <div class="page-head" style="margin-top:12px">
     <div>
       <h1>Where companies come from</h1>
-      <p>Ask the discovery agent for companies now, add one yourself, and set what the agents look for. Every change to the direction waits for a person's approval.</p>
+      <p>Ask the discovery agent for companies now, add one yourself, and set what the agents look for. Anyone may propose a change to the direction; an admin approves changes to the team's direction.</p>
     </div>
   </div>
   ${st.notices()}
@@ -199,7 +199,7 @@ function directionView(d, ctx) {
     ${pending.length ? html`
     <section class="card" aria-labelledby="prop-h">
       <div class="card-head"><h2 id="prop-h">Proposed changes</h2><span class="meta">Approving makes a new direction version; future searches use it.</span></div>
-      <div class="card-body stack">${pending.map((p) => proposalCard(p))}</div>
+      <div class="card-body stack">${pending.map((p) => proposalCard(p, ctx))}</div>
     </section>` : ""}
     <section class="card" aria-labelledby="dir-h">
       <div class="card-head">
@@ -243,7 +243,13 @@ function diff(p) {
   return html`<div class="form-grid"><div><p class="meta-3">Now</p>${listOrText(p.before)}</div><div><p class="meta-3">Proposed</p>${listOrText(p.after)}</div></div>`;
 }
 
-function proposalCard(p) {
+// Who may decide (api/services.py decide_direction): an admin for the team's direction; the proposer or an admin for
+// a change to one person's own searches.
+export function mayDecide(p, ctx) {
+  return ctx.admin || (p.scope === "consultant" && (p.proposedBy || ctx.me) === ctx.me);
+}
+
+function proposalCard(p, ctx) {
   const who = p.origin === "manual" ? `Proposed by ${p.proposedBy}` : p.origin === "ai" ? "Proposed by the direction agent" : "Proposed from feedback";
   return html`
   <div class="suggestion">${icon("bulb", 20)}<div style="flex:1;min-width:0">
@@ -251,10 +257,10 @@ function proposalCard(p) {
     <p class="meta-3">${who}${p.feedbackIds && p.feedbackIds.length ? `, from ${plural(p.feedbackIds.length, "feedback record")}` : ""}. Applies to ${p.scope === "consultant" ? "the proposer's own searches" : "the team's direction"}.</p>
     ${p.rationale ? html`<p class="meta" style="margin-top:6px">${p.rationale}</p>` : ""}
     <div style="margin-top:8px">${diff(p)}</div>
-    <div class="actions" style="margin-top:10px">
+    ${mayDecide(p, ctx) ? html`<div class="actions" style="margin-top:10px">
       <button type="button" class="btn primary small" data-act="decideProposal" data-id="${p.id}" data-verdict="approve">Approve</button>
       <button type="button" class="btn ghost small" data-act="decideProposal" data-id="${p.id}" data-verdict="reject">Reject</button>
-    </div>
+    </div>` : html`<p class="meta-3" style="margin-top:10px">An admin approves or rejects changes to the team's direction.</p>`}
     ${st.err(`prop:${p.id}`)}
   </div></div>`;
 }

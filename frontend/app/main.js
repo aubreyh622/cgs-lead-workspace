@@ -1,5 +1,5 @@
 // Starts the workspace page: who is acting, the header, and the page the URL names.
-import { api, person, writeCount } from "./api.js";
+import { api, person, actAs, writeCount } from "./api.js";
 import { readRoute, href } from "./lib.js";
 import { header, chooser, toast, loadingCard, errorCard } from "./shell.js";
 import * as home from "./pages/home.js";
@@ -9,6 +9,7 @@ import * as qualification from "./pages/qualification.js";
 import * as sources from "./pages/sources.js";
 import * as agents from "./pages/agents.js";
 import * as team from "./pages/team.js";
+import * as settings from "./pages/settings.js";
 import { dock } from "./shell.js";
 import * as updates from "./updates.js";
 
@@ -19,6 +20,7 @@ const PAGES = {
   qualification,
   sources,
   agents,
+  settings,
 };
 
 const el = {
@@ -28,7 +30,9 @@ const el = {
 };
 
 const ctx = {
-  me: "",
+  me: "",      // the person this page acts as: the signed-in person, or whom an admin acts as
+  self: "",    // the person signed in
+  admin: false,
   users: [],
   config: null,
   today: "",
@@ -52,7 +56,8 @@ const ctx = {
 };
 
 function drawHeader() {
-  el.header.innerHTML = String(header({ page: ctx.route.page, counts: ctx.counts, config: ctx.config, users: ctx.users, me: ctx.me, crm: ctx.crm, signedIn: ctx.signedIn }));
+  el.header.innerHTML = String(header({ page: ctx.route.page, counts: ctx.counts, config: ctx.config, users: ctx.users, me: ctx.me, crm: ctx.crm,
+    signedIn: ctx.signedIn, self: ctx.self, admin: ctx.admin }));
 }
 
 // Counts in the navigation: items waiting for a person. Only pages that exist get a count.
@@ -252,16 +257,21 @@ document.addEventListener("click", (event) => {
   const what = t.dataset.shell;
   if (what === "retry") show();
   if (what === "skip") el.main.focus();
-  if (what === "choose") { person.set(t.dataset.name); start(); }
+  if (what === "choose") { person.set(t.dataset.name); actAs.clear(); start(); }
 });
+// Only an admin sees the "Acting as" list; the server refuses anyone else's X-Act-As as well.
+function switchTo(name) {
+  if (name === ctx.self) actAs.clear(); else actAs.set(name);
+  ctx.me = name;
+  updates.start(api, ctx.me, onUpdates); // each person has their own notifications
+  ctx.toast(name === ctx.self ? `You are acting as yourself again (${name}).`
+    : `You are now acting as ${name}. Changes record "${ctx.self} as ${name}", and email goes out as ${name}.`);
+  show();
+}
 document.addEventListener("change", (event) => {
   const t = event.target.closest("[data-shell=person]");
   if (!t) return;
-  person.set(t.value);
-  ctx.me = t.value;
-  updates.start(api, ctx.me, onUpdates); // each person has their own notifications
-  ctx.toast(`You are now acting as ${t.value}. Changes record this name.`);
-  show();
+  switchTo(t.value);
 });
 
 window.addEventListener("hashchange", () => { dockOpen = ""; show(); });
@@ -278,18 +288,26 @@ async function start() {
     return;
   }
   ctx.users = users;
-  // Google sign-in (a hosted workspace): the server knows who this is, so nobody picks or changes a name.
+  // Google sign-in (a hosted workspace): the server knows who this is, so nobody picks a name.
   ctx.signedIn = login.login === "google" ? login.email : "";
-  if (ctx.signedIn) person.set(login.name);
+  if (ctx.signedIn && login.name) person.set(login.name);
   const saved = person.get();
   if (!saved || !users.includes(saved)) {
     if (saved) person.clear();
-    ctx.me = "";
+    actAs.clear();
+    ctx.me = ctx.self = "";
     drawHeader();
     el.main.innerHTML = String(chooser(users, saved ? `${saved} is not a workspace user any more. Choose again.` : ""));
     return;
   }
-  ctx.me = saved;
+  if (login.name !== saved) { // /me answered before the name was stored: ask again as the signed-in person
+    try { login = await api.get("/me"); } catch { /* keep the first answer */ }
+  }
+  ctx.self = saved;
+  ctx.admin = !!login.admin;
+  const as = actAs.get();
+  if (as && (!ctx.admin || !users.includes(as) || as === saved)) actAs.clear();
+  ctx.me = actAs.get() || saved;
   show();
   updates.start(api, ctx.me, onUpdates);
 }

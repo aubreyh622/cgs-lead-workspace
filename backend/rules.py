@@ -6,12 +6,31 @@ WEIGHTS, LABELS, ANCHORS = (RULES[k] for k in ('weights', 'labels', 'anchors'))
 CONDITIONS, REASONS = RULES['conditionLabels'], RULES['reasons']
 FLOORS = {'B': 2, 'A': 2, 'N': 3, 'T': 2, 'E': 2}
 RULE_VERSION = '1.1-proposed'
+READY = {'coverage': 80, 'q': 70}   # Ready needs this much confirmed weight and this confirmed Q (and every floor and condition)
+BANDS = {'High': 75, 'Medium': 55}  # priority bands on P
+# The built-in criteria. An admin may change weights, floors, READY and BANDS in the workspace (api/scoring.py calls apply()).
+DEFAULT = {'version': RULE_VERSION, 'weights': dict(WEIGHTS), 'floors': dict(FLOORS), 'ready': dict(READY), 'bands': dict(BANDS)}
+
+
+def apply(criteria):
+    """Use these criteria from now on (None = the built-in ones). Changes the dicts in place, so every module that
+    imported WEIGHTS or FLOORS sees the change."""
+    global RULE_VERSION
+    c = criteria or DEFAULT
+    for target, key in ((WEIGHTS, 'weights'), (FLOORS, 'floors'), (READY, 'ready'), (BANDS, 'bands')):
+        target.clear()
+        target.update(c[key])
+    RULE_VERSION = c['version']
+
+
+def version():
+    return RULE_VERSION
 
 def tier(n):
     return 5 if n >= 1000000 else 4 if n >= 500000 else 3 if n >= 100000 else 2
 
 def band(n):
-    return 'High' if n >= 75 else 'Medium' if n >= 55 else 'Low'
+    return 'High' if n >= BANDS['High'] else 'Medium' if n >= BANDS['Medium'] else 'Low'
 
 def calculate(c):
     coverage = sum(w for k, w in WEIGHTS.items() if c['scores'].get(k) is not None)
@@ -22,7 +41,7 @@ def calculate(c):
     pl, pu = .6 * ql + .4 * rl, .6 * qu + .4 * ru
     floors = all(c['scores'].get(k) is not None and c['scores'][k] >= v for k, v in FLOORS.items())
     conditions = all(c.get('conditions', {}).get(k) is True for k in CONDITIONS)
-    readiness = 'Not ready' if c.get('blocker') else 'Ready' if conditions and coverage >= 80 and ql >= 70 and floors else 'More evidence needed'
+    readiness = 'Not ready' if c.get('blocker') else 'Ready' if conditions and coverage >= READY['coverage'] and ql >= READY['q'] and floors else 'More evidence needed'
     priority = 'Pending confirmation' if not revenue else band(pl) if band(pl) == band(pu) else band(pl) + '–' + band(pu)
     gaps = []
     for k, minimum in FLOORS.items():
@@ -33,8 +52,8 @@ def calculate(c):
     for k, label in CONDITIONS.items():
         if c.get('conditions', {}).get(k) is not True:
             gaps.append({'key': 'condition:' + k, 'label': label + (': not met' if c.get('conditions', {}).get(k) is False else ': pending confirmation'), 'question': CONDITION_QUESTIONS[k]})
-    if ql < 70 and not gaps:
-        gaps.append({'key': 'Q', 'label': 'Confirmed Q is below 70', 'question': 'Which business outcomes and practical commitments can be validated next?'})
+    if ql < READY['q'] and not gaps:
+        gaps.append({'key': 'Q', 'label': f"Confirmed Q is below {READY['q']:g}", 'question': 'Which business outcomes and practical commitments can be validated next?'})
     if c['scores'].get('H') is None:
         gaps.append({'key': 'H', 'label': 'Relationship history: pending confirmation', 'question': QUESTIONS['H']})
     if not revenue:

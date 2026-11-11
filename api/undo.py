@@ -295,7 +295,7 @@ def deliver(c, row: m.OutboundEmail) -> dict:
                 from api import autonomy as AU
                 AU.check_still_valid(c, it, o, it.payload_hash)
         res = S.deliver_email(c, o, {"purpose": row.purpose, "to": row.to, "subject": row.subject, "body": row.body}, it, "send",
-                              S.mailbox(c), how=f" by {row.by}")
+                              S.sender_box(c, o, row.purpose, row.by), how=f" by {row.by}")
     except S.ActionError as e:
         c.s.rollback()
         row = c.s.get(m.OutboundEmail, row.id)

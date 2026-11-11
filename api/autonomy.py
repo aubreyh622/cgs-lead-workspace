@@ -61,6 +61,7 @@ def agent_ctx(app, s) -> S.Ctx:
     return S.Ctx(s=s, actor=AGENTS_ACTOR, today=demo_today(s, app.state.settings), settings=app.state.settings,
                  provider_factory=getattr(app.state, "provider_factory", None), research_factory=lambda: research_bridge(app),
                  search_factory=getattr(app.state, "search_factory", None), mail_factory=lambda: getattr(app.state, "mail", None),
+                 own_mail_factory=lambda name: (getattr(app.state, "own_mail", None) or {}).get(name),
                  crm_factory=lambda: getattr(app.state, "crm", None), drive_factory=lambda: getattr(app.state, "drive", None))
 
 
@@ -894,7 +895,7 @@ def approve_and_send(c: S.Ctx, it: m.InboxItem, o: m.Opportunity | None, seen_ha
     sent = S.email_out(c, o.id, p["to"], "send", p["seenHash"], it.id, delay)  # also applies the item, once it is sent
     if sent["mode"] == "queued":
         return {"status": "queued", "note": f"Approved by {c.actor}. It goes to {p['to']} in {sent['seconds']} seconds unless undone.", "sent": sent}
-    return {"status": "applied", "note": f"Approved by {c.actor} and sent to {p['to']} through {S.mailbox(c).name}.", "sent": sent}
+    return {"status": "applied", "note": f"Approved by {c.actor} and sent to {p['to']}. {p['from']['note']}", "sent": sent}
 
 
 def reply_sender(c: S.Ctx, it: m.InboxItem, o: m.Opportunity) -> tuple[dict, str]:

@@ -178,6 +178,7 @@ class Outreach(Base):
     mail_thread_id: Mapped[Optional[str]] = mapped_column(String(120))  # the Gmail conversation, once a draft or email exists
     mail_draft_id: Mapped[Optional[str]] = mapped_column(String(120))   # a Gmail draft waiting for a person to send it from Gmail
     mail_draft_purpose: Mapped[Optional[str]] = mapped_column(String(20))  # first | followup | reconnect
+    mail_account: Mapped[Optional[str]] = mapped_column(String(100))  # whose own Gmail holds the thread; empty = the shared mailbox
 
 
 class OutboundEmail(Base):

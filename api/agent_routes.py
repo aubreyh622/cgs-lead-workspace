@@ -222,7 +222,7 @@ class LessonDecision(BaseModel):
 
 def _may_decide_lessons(c: S.Ctx) -> None:
     if not S.may_manage_permissions(c):
-        raise S.ActionError("Only the workspace admins (CGS_ADMINS) may approve, reject or retire lessons.", 403, "forbidden")
+        raise S.ActionError(f"Only an admin ({S.admin_names(c)}) may approve, reject or retire lessons.", 403, "forbidden")
 
 
 @router.post("/lessons/{lesson_id}/decision", summary="Approve a lesson (it joins the agent's prompt) or reject it")
@@ -339,7 +339,7 @@ class TeamTextRestore(BaseModel):
 def _team_text_call(c: S.Ctx, fn):
     from api import team_text as TT
     if not S.may_manage_permissions(c):
-        raise S.ActionError(f"Only {', '.join(c.settings.admins)} can change the team instructions (CGS_ADMINS in .env).", 403, "forbidden")
+        raise S.ActionError(f"Only an admin ({S.admin_names(c)}) can change the team instructions.", 403, "forbidden")
     try:
         row = fn(TT)
     except TT.Stale as e:
@@ -354,7 +354,7 @@ def _team_text_call(c: S.Ctx, fn):
 def team_text(request: Request, c: S.Ctx = Actor):
     from api import team_text as TT
     return {"current": TT.view(TT.latest(c.s)), "sectionsMeta": TT.catalog(), "canChange": S.may_manage_permissions(c),
-            "admins": list(c.settings.admins), "aiProvider": c.settings.ai_provider}
+            "admins": S.admin_names(c).split(", ") if S.admin_names(c) else [], "aiProvider": c.settings.ai_provider}
 
 
 @router.get("/team-text/history", summary="Every saved revision of the team instructions, newest first")

@@ -330,6 +330,7 @@ function sendPanel(d, { itemId, hash } = {}) {
       <h3 class="sub-title">Approve and send</h3>
       <p class="meta">This is exactly what the client receives: citation marks are removed. ${d.mail.ready ? `It goes out from the ${d.mail.provider} mailbox ${UNDO_SECONDS} seconds after you approve it, so you can still undo it.` : ""}</p>
       ${p.blocked ? html`<div class="notice bad">${icon("alert")}<span>${p.blocked}</span></div>` : ""}
+      ${p.from ? html`<p class="meta from-line">${p.from.note}</p>` : ""}
       <label class="field">To <span class="hint">The client's address. Check it: agents never guess one.</span>
         <input type="email" name="to" value="${p.to || ""}" required autocomplete="off"></label>
       <div class="email-plain"><b>${p.subject}</b>\n\n${p.body}</div>

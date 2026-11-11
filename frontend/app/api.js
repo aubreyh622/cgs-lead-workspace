@@ -1,6 +1,8 @@
-// The one place the page talks to the backend. Every write names the person acting (X-User).
+// The one place the page talks to the backend. Every request names the person signed in (X-User) and, when an admin
+// acts as someone else, that person (X-Act-As). The server checks both (api/people.py).
 
 const PERSON_KEY = "cgs.person";
+const ACT_AS_KEY = "cgs.actAs";
 
 export class ApiError extends Error {
   constructor(message, status, code) {
@@ -10,11 +12,13 @@ export class ApiError extends Error {
   }
 }
 
-export const person = {
-  get: () => localStorage.getItem(PERSON_KEY) || "",
-  set: (name) => localStorage.setItem(PERSON_KEY, name),
-  clear: () => localStorage.removeItem(PERSON_KEY),
-};
+const store = (key) => ({
+  get: () => { try { return localStorage.getItem(key) || ""; } catch { return ""; } },
+  set: (name) => { try { localStorage.setItem(key, name); } catch { /* private window: this tab only */ } },
+  clear: () => { try { localStorage.removeItem(key); } catch { /* nothing stored */ } },
+});
+export const person = store(PERSON_KEY); // who is signed in
+export const actAs = store(ACT_AS_KEY);  // an admin acting as someone else; empty = themselves
 
 function messageFrom(body, status) {
   if (body && typeof body.error === "string") return body.error;
@@ -35,6 +39,8 @@ async function call(method, path, body) {
   const headers = { Accept: "application/json" };
   const who = person.get();
   if (who) headers["X-User"] = who;
+  const as = actAs.get();
+  if (who && as && as !== who) headers["X-Act-As"] = as;
   if (body !== undefined) headers["Content-Type"] = "application/json";
   let res;
   try {

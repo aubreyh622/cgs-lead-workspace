@@ -24,7 +24,8 @@ from api import models as m
 from api import toolkit as TK
 from api import undo as U
 from api.settings import Settings
-from backend.rules import CONDITIONS, LABELS, REASONS, RULE_VERSION, WEIGHTS, calculate, validate_score
+from backend.rules import CONDITIONS, LABELS, REASONS, WEIGHTS, calculate, validate_score
+from backend.rules import version as rule_version
 
 WHITELIST = ("problem", "signals", "buyer_roles", "exclusions", "excluded_domains", "company_size", "problems")
 SIZE_KEYS = ("min_employees", "max_employees", "min_revenue_musd", "max_revenue_musd")
@@ -97,9 +98,11 @@ class Ctx:
     research_factory: Callable[[], Any] | None = None  # Steps 2-3 live research (Aubrey's pipeline)
     search_factory: Callable[[], Any] | None = None    # web search for Step 1 discovery
     mail_factory: Callable[[], Any] | None = None      # the mailbox (api/toolkit/mail.py); None = mail is off
+    own_mail_factory: Callable[[str], Any] | None = None  # a person's own Gmail, or None (they use the shared mailbox)
     crm_factory: Callable[[], Any] | None = None       # the CRM (api/toolkit/crm.py); None = the CRM is off
     drive_factory: Callable[[], Any] | None = None     # Google Drive (api/toolkit/drive.py); None = Drive is off
     crm_dirty: set = field(default_factory=set)        # opportunities to sync to the CRM once this request is saved
+    signed_in: str = ""  # the signed-in person when an admin acts as someone else (actor); empty = the actor (api/people.py)
 
     @property
     def demo(self) -> bool:
@@ -167,7 +170,7 @@ def check_ready(c: Ctx, o: m.Opportunity) -> None:
         r = calculate(rules_input(o))
         if r["readiness"] == "Ready" and o.next_action != "Submit the qualification pack":
             o.next_action, o.next_due = "Submit the qualification pack", c.today + timedelta(days=2)
-            log(c, o.id, "s", f"Rules engine ({RULE_VERSION}): Ready. Q {r['ql']:g}, coverage {r['coverage']}%")
+            log(c, o.id, "s", f"Rules engine ({rule_version()}): Ready. Q {r['ql']:g}, coverage {r['coverage']}%")
             J.enqueue(c.s, c.today, "ready_reminder", o.id, "event", f"The rules now say Ready (Q {r['ql']:g})", requested_by="Rules engine")
 
 
@@ -875,6 +878,59 @@ def mailbox(c: Ctx, who: str = "Workspace (person)"):
     return box
 
 
+def own_box(c: Ctx, person: str | None):
+    """That person's own Gmail (signed in with gmail_auth --person), or None."""
+    return c.own_mail_factory(person) if person and c.own_mail_factory else None
+
+
+def sender_for(c: Ctx, o: m.Opportunity, purpose: str, person: str | None = None) -> dict:
+    """Who an email comes from and through which mailbox. Each consultant sends from their own Gmail once it is signed
+    in; until then, from the shared workspace mailbox (with their address as From, which Gmail keeps only for a "Send
+    mail as" alias). A follow-up stays in the mailbox that holds the conversation: when that is someone's own Gmail,
+    only that person (or an admin acting as them) can send it.
+    Returns person, kind (own | shared), address, sharedAccount, box (unmetered), problem (why it cannot go out)."""
+    from api import people as P
+    person = person or c.actor
+    r = c.s.get(m.Outreach, o.id)
+    owner = (r.mail_account or "") if r and r.mail_thread_id and purpose != "first" else None  # None = a new conversation
+    problem = None
+    if owner:  # the conversation is in someone's own Gmail
+        box = own_box(c, owner)
+        if person != owner:
+            problem = (f"This conversation is in {owner}'s own Gmail, so the email must come from {owner}. "
+                       f"{owner} can send it, or an admin acting as {owner}.")
+        if box is None:
+            problem = problem or f"This conversation is in {owner}'s own Gmail, which is not signed in to the workspace any more."
+        kind, who = "own", owner
+    else:
+        box = own_box(c, person) if owner is None else None  # an existing shared conversation stays in the shared mailbox
+        kind, who = ("own", person) if box is not None else ("shared", person)
+        if box is None:
+            box = c.mail_factory() if c.mail_factory else None
+    address = shared_account = ""
+    try:
+        if kind == "own" and box is not None:
+            address = box.account()
+        elif box is not None:
+            shared_account = box.account()
+    except Exception:  # the page still shows who sends; the send itself reports a mailbox problem
+        pass
+    if kind == "shared":
+        address = P.emails(c.s, c.settings).get(who, "")
+    return {"person": who, "kind": kind, "address": address, "sharedAccount": shared_account, "box": box, "problem": problem}
+
+
+def sender_view(snd: dict) -> dict:
+    """For the page: who the email comes from, in words."""
+    if snd["kind"] == "own":
+        note = f"From {snd['person']}'s own Gmail" + (f" ({snd['address']})." if snd["address"] else ".")
+    else:
+        note = (f"From the shared workspace mailbox{' (' + snd['sharedAccount'] + ')' if snd['sharedAccount'] else ''}"
+                + (f", as {snd['address']} if that address is a \"Send mail as\" alias of it" if snd["address"] else "")
+                + f". {snd['person']}'s own Gmail is not connected.")
+    return {"person": snd["person"], "kind": snd["kind"], "address": snd["address"], "note": note}
+
+
 def plain_email(body: str) -> str:
     """The text the client receives: citation markers [[f2|phrase]] become the phrase alone."""
     return L._CITE.sub(lambda x: x.group(2), body)
@@ -917,9 +973,11 @@ def email_preview(c: Ctx, opp_id: str, to: str | None = None, item_id: str | Non
     lib = knowledge.library().by_id
     synthetic = sorted({x.group(1) for x in L._CITE.finditer(body) if x.group(1) in lib and lib[x.group(1)].synthetic})
     text = plain_email(body)
+    snd = sender_for(c, o, purpose)
+    blocked = f"The draft cites a SYNTHETIC demo document ({', '.join(synthetic)}). Replace that sentence first." if synthetic else snd["problem"]
     return {"purpose": purpose, "to": to, "subject": subject, "body": text, "inThread": bool(r and r.mail_thread_id and purpose != "first"),
-            "seenHash": mail_hash(to, subject, text), "waiting": U.email_view(c.s, o.id),
-            "blocked": (f"The draft cites a SYNTHETIC demo document ({', '.join(synthetic)}). Replace that sentence first." if synthetic else None)}
+            "seenHash": mail_hash(to, subject, text), "waiting": U.email_view(c.s, o.id), "from": sender_view(snd),
+            "blocked": blocked}
 
 
 def record_mail_sent(c: Ctx, o: m.Opportunity, purpose: str, on: date | None = None, how: str = "") -> None:
@@ -944,13 +1002,12 @@ def email_out(c: Ctx, opp_id: str, to: str, mode: str, seen_hash: str, item_id: 
     from api.toolkit.mail import MailError
     if mode not in ("draft", "send"):
         raise ActionError("Mode must be draft or send.")
-    box = mailbox(c)
     waiting = U.waiting_email(c.s, opp_id)
     if waiting is not None:
         raise ActionError(f"An email to {waiting.to} is about to go out. Undo it first, or wait until it is sent.", 409, "queued")
     p = email_preview(c, opp_id, to, item_id)
     if p["blocked"]:
-        raise ActionError(p["blocked"], 409, "synthetic")
+        raise ActionError(p["blocked"], 409, "synthetic" if "SYNTHETIC" in p["blocked"] else "wrong_sender")
     if not EMAIL_RE.match(p["to"]):
         raise ActionError("Give the client's email address.", 400, "no_address")
     if seen_hash != p["seenHash"]:
@@ -962,6 +1019,7 @@ def email_out(c: Ctx, opp_id: str, to: str, mode: str, seen_hash: str, item_id: 
         from api import autonomy as AU
         AU.check_still_valid(c, it, o, it.payload_hash)
     seconds = U.window(delay)
+    box = sender_box(c, o, p["purpose"])
     if mode == "send" and seconds:
         try:
             if r.mail_draft_id and box.draft_exists(r.mail_draft_id):
@@ -969,13 +1027,34 @@ def email_out(c: Ctx, opp_id: str, to: str, mode: str, seen_hash: str, item_id: 
         except MailError as e:
             raise ActionError(str(e), 502, "mail_failed") from None
         return U.queue_email(c, o, p, it, seconds)
-    return deliver_email(c, o, p, it, mode, box, how=f" by {c.actor}")
+    from api import people as P
+    return deliver_email(c, o, p, it, mode, box, how=f" by {P.label(c)}")
+
+
+def sender_box(c: Ctx, o: m.Opportunity, purpose: str, person: str | None = None):
+    """The metered mailbox this email goes out through (sender_for), or ActionError when it may not go out as this person."""
+    snd = sender_for(c, o, purpose, person)
+    if snd["problem"]:
+        raise ActionError(snd["problem"], 409, "wrong_sender")
+    if snd["box"] is None:
+        raise ActionError("Email is off. Set MAIL_PROVIDER=gmail (live mode) or mock in .env, then restart.", 409, "mail_off")
+    box = TK.metered(snd["box"], "Workspace (person)", "mail", c)
+    object.__setattr__(box, "_sender", snd)
+    return box
 
 
 def deliver_email(c: Ctx, o: m.Opportunity, p: dict, it, mode: str, box, how: str = "") -> dict:
-    """Put the email in Gmail drafts or send it, and record it. p: purpose, to, subject, body (already checked)."""
+    """Put the email in Gmail drafts or send it, and record it. p: purpose, to, subject, body (already checked).
+    box: from sender_box, which says whose mailbox it is; a plain mailbox counts as the shared one."""
     from api.toolkit.mail import MailError
     r = outreach_row(c, o)
+    try:
+        snd = object.__getattribute__(box, "_sender")
+    except AttributeError:
+        snd = {"person": c.actor, "kind": "shared", "address": ""}
+    sender = snd["address"] if snd["kind"] == "shared" else ""
+    if snd["kind"] == "own":
+        how += f" from {snd['person']}'s own Gmail" + (f" ({snd['address']})" if snd["address"] else "")
     try:
         if r.mail_draft_id and box.draft_exists(r.mail_draft_id):
             raise ActionError("A Gmail draft for this opportunity is waiting in Gmail. Send or delete it there first.", 409, "draft_waiting")
@@ -983,12 +1062,15 @@ def deliver_email(c: Ctx, o: m.Opportunity, p: dict, it, mode: str, box, how: st
         earlier = box.thread(thread) if thread else []
         reply_to = earlier[-1]["rfc_id"] if earlier else ""
         bcc = CRM.mail_bcc(c, o)  # the CRM lead's own address: the CRM logs the email on the lead
+        extra = {"sender": sender} if sender else {}
         if mode == "draft":
-            res = box.create_draft(p["to"], p["subject"], p["body"], thread, reply_to, bcc=bcc)
+            res = box.create_draft(p["to"], p["subject"], p["body"], thread, reply_to, bcc=bcc, **extra)
         else:
-            res = box.send(p["to"], p["subject"], p["body"], thread, reply_to, bcc=bcc)
+            res = box.send(p["to"], p["subject"], p["body"], thread, reply_to, bcc=bcc, **extra)
     except MailError as e:
         raise ActionError(str(e), 502, "mail_failed") from None
+    if not thread:  # a new conversation: remember whose mailbox holds it, so replies and follow-ups use the same one
+        r.mail_account = snd["person"] if snd["kind"] == "own" else None
     r.to_email, r.mail_thread_id = p["to"], res.get("thread_id") or r.mail_thread_id
     if o.contact and not o.contact.email:
         o.contact.email = p["to"]
@@ -1010,14 +1092,25 @@ def sync_mail(c: Ctx) -> dict:
     owner's inbox. A reply is recorded only when a person applies it (an out-of-office message must not make a lead Active)."""
     from api import senders as SND
     from api.toolkit.mail import MailError
-    box = TK.metered(c.mail_factory() if c.mail_factory else None, "Mail rules", "mail", c)
+    shared = TK.metered(c.mail_factory() if c.mail_factory else None, "Mail rules", "mail", c)
     out = {"checked": 0, "sent": 0, "replies": 0, "errors": []}
-    if box is None:
+    if shared is None:
         return {**out, "off": True}
+    boxes: dict = {}
     for r in list(c.s.scalars(select(m.Outreach).where(m.Outreach.mail_thread_id.is_not(None)))):
         o = c.s.get(m.Opportunity, r.opportunity_id)
         if not o or o.stage not in ("identified", "contacted", "nurture", "active", "approval"):  # qualification too
             continue
+        if r.mail_account:  # the conversation is in that person's own Gmail
+            if r.mail_account not in boxes:
+                boxes[r.mail_account] = TK.metered(own_box(c, r.mail_account), "Mail rules", "mail", c)
+            box = boxes[r.mail_account]
+            if box is None:
+                out["errors"].append(f"{o.company.name}: the conversation is in {r.mail_account}'s own Gmail, which is not signed in "
+                                     "to the workspace, so replies there are not seen.")
+                continue
+        else:
+            box = shared
         out["checked"] += 1
         try:
             msgs = box.thread(r.mail_thread_id)
@@ -1050,14 +1143,20 @@ def sync_mail(c: Ctx) -> dict:
 
 # ---------- connector permissions (api/toolkit): which agent may use which outside system ----------
 def may_manage_permissions(c: Ctx) -> bool:
-    return not c.settings.admins or c.actor in c.settings.admins
+    from api import people as P
+    return P.is_admin(c.s, c.settings, c.signed_in or c.actor)
+
+
+def admin_names(c: Ctx) -> str:
+    from api import people as P
+    return ", ".join(P.admins(c.s, c.settings))
 
 
 def set_permission(c: Ctx, agent: str, connector: str, enabled: bool | None, reason: str) -> dict:
     """A person switches a connector on or off for one agent (agent "*" = for every agent), or back to the default
     (enabled None). The code's ceiling always wins: what it forbids cannot be switched on. Every change is kept."""
     if not may_manage_permissions(c):
-        raise ActionError(f"Only {', '.join(c.settings.admins)} can change agent permissions (CGS_ADMINS in .env).", 403, "wrong_role")
+        raise ActionError(f"Only an admin ({admin_names(c)}) can change agent permissions.", 403, "wrong_role")
     reason = need_text(reason, "Reason")
     if len(reason) < 5:
         raise ActionError("Say why, in a few words.", 400, "no_reason")
@@ -1112,7 +1211,7 @@ def _limit_label(n) -> str:
 def set_limit(c: Ctx, connector: str, per_day: int | None, reason: str) -> dict:
     """A person sets a connector's daily limit: a number, 0 for no limit, or None for the config file's default."""
     if not may_manage_permissions(c):
-        raise ActionError(f"Only {', '.join(c.settings.admins)} can change agent permissions (CGS_ADMINS in .env).", 403, "wrong_role")
+        raise ActionError(f"Only an admin ({admin_names(c)}) can change agent permissions.", 403, "wrong_role")
     reason = need_text(reason, "Reason")
     if len(reason) < 5:
         raise ActionError("Say why, in a few words.", 400, "no_reason")
@@ -1600,7 +1699,7 @@ def submit_pack(c: Ctx, opp_id: str, exception: str | None, revision: int | None
         old.status = "superseded"
         exception = exception or old.exception
     snap = {"scores": dict(o.scores), "conditions": dict(o.conditions), "blocker": o.blocker, "revenue": o.revenue, "need": dict(o.need or {})}
-    pk = m.Pack(id=new_id("pk"), opportunity_id=o.id, submitted_by=c.actor, submitted_on=c.today, snapshot=snap, rule_version=RULE_VERSION,
+    pk = m.Pack(id=new_id("pk"), opportunity_id=o.id, submitted_by=c.actor, submitted_on=c.today, snapshot=snap, rule_version=rule_version(),
                 exception=(exception or "").strip() or None)
     c.s.add(pk)
     o.stage, o.next_action, o.next_due = "approval", "Awaiting qualification approval", c.today + timedelta(days=2)
@@ -1813,11 +1912,16 @@ def decide_direction(c: Ctx, prop_id: str, approve: bool) -> str | None:
         raise ActionError("Proposal not found.", 404, "not_found")
     if p.status != "pending":
         raise ActionError(f"This proposal was already {p.status}.", 409, "wrong_status")
+    personal = p.scope == "consultant"
+    if not personal and not may_manage_permissions(c):  # the team's direction: admins decide (api/people.py)
+        raise ActionError(f"Only an admin ({admin_names(c)}) can approve or reject a change to the team's research direction. "
+                          "Your proposal waits for them.", 403, "not_admin")
+    if personal and c.actor != (p.proposed_by or c.actor) and not may_manage_permissions(c):
+        raise ActionError(f"This change is for {p.proposed_by}'s own searches: {p.proposed_by} or an admin decides.", 403, "not_owner")
     p.decided_by, p.decided_on = c.actor, c.today
     if not approve:
         p.status = "rejected"
         return None
-    personal = p.scope == "consultant"
     owner = (p.proposed_by or c.actor) if personal else None  # a personal change belongs to the person who proposed it
     target = current_direction(c, owner)
     if p.type == "direction" and p.base_version and p.base_version != target.version:

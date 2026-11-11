@@ -501,3 +501,20 @@ a.link-tag:hover { background: var(--surface-muted); }
 .people > li:last-child { border-bottom: 0; }
 .people > li b { font-weight: 500; }
 .people .meta, .people .meta-3 { display: block; }
+
+/* ---------- people and roles (pages/settings.js, the header's "Acting as") ---------- */
+a.avatar.round { text-decoration: none; }
+a.avatar.round:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.avatar.round.acting, .person.acting select { background: var(--warning-surface); color: var(--warning-ink); border-color: var(--warning-ink); }
+a.person { text-decoration: none; }
+a.person:hover { color: var(--ink); text-decoration: underline; }
+.person select { max-width: 170px; }
+@media (max-width: 1199px) { .top-side a.avatar { display: inline-flex; } }
+pre.code { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-control); background: var(--surface-soft);
+  font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+.panel-form fieldset { border: 0; padding: 0; margin: 0 0 16px; min-width: 0; }
+.panel-form fieldset legend { padding: 0; margin-bottom: 8px; }
+.panel-form fieldset legend .hint { margin-left: 8px; font-weight: 400; }
+.panel-form fieldset[disabled] input { color: var(--ink-2); }
+.inline-form .field { margin-bottom: 8px; }
+.from-line { margin-top: 4px; }

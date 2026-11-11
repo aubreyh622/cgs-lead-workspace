@@ -317,15 +317,19 @@ def library_for(agent: str, c=None):
     return connector(agent, "library", knowledge.library, getattr(c, "s", None), getattr(c, "today", None))
 
 
-def mailbox(c):
+def mailbox(c, person: str | None = None):
+    """The shared mailbox, or that person's own Gmail when the conversation is there (Outreach.mail_account)."""
+    if person:
+        f = getattr(c, "own_mail_factory", None)
+        return f(person) if f else None
     f = getattr(c, "mail_factory", None)
     return f() if f else None
 
 
-def mail_for(agent: str, c):
-    box = connector(agent, "mail", lambda: mailbox(c), getattr(c, "s", None), getattr(c, "today", None))
+def mail_for(agent: str, c, person: str | None = None):
+    box = connector(agent, "mail", lambda: mailbox(c, person), getattr(c, "s", None), getattr(c, "today", None))
     if box is None:
-        raise Denied("Email is off (MAIL_PROVIDER).")
+        raise Denied(f"{person}'s own Gmail is not signed in to the workspace." if person else "Email is off (MAIL_PROVIDER).")
     return box
 
 
@@ -454,7 +458,7 @@ def _mail_thread(run: Run) -> Tool:
         if not r or not r.mail_thread_id:
             return {"messages": [], "note": "No email thread yet: nothing was sent through the workspace."}
         try:
-            msgs = mail_for(run.agent, run.c).thread(r.mail_thread_id)
+            msgs = mail_for(run.agent, run.c, r.mail_account).thread(r.mail_thread_id)
         except MailError as e:
             raise ToolError(f"The mailbox could not be read: {e}") from None
         return {"messages": [{"from": "CGS" if x["ours"] else "client", "on": x["date"], "subject": x["subject"], "text": x["text"][:1500]}

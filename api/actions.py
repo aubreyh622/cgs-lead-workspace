@@ -44,7 +44,8 @@ def after_response(request: Request):
         crm_sync.after_request(request.app, pending["ids"], pending["today"])
 
 
-def ctx(request: Request, x_user: str | None = Header(None, description="The person acting, from GET /api/users"),
+def ctx(request: Request, x_user: str | None = Header(None, description="The person signed in, from GET /api/users"),
+        x_act_as: str | None = Header(None, description="An admin acting as another person (api/people.py); empty = themselves"),
         pending: dict = Depends(after_response, scope="request")):
     db = request.app.state.db
     session = db.sessions()
@@ -52,11 +53,20 @@ def ctx(request: Request, x_user: str | None = Header(None, description="The per
               provider_factory=getattr(request.app.state, "provider_factory", None),
               research_factory=lambda: research_bridge(request.app), search_factory=getattr(request.app.state, "search_factory", None),
               mail_factory=lambda: getattr(request.app.state, "mail", None), crm_factory=lambda: getattr(request.app.state, "crm", None),
+              own_mail_factory=lambda name: (getattr(request.app.state, "own_mail", None) or {}).get(name),
               drive_factory=lambda: getattr(request.app.state, "drive", None))
     users = S.owners_list(c)
     if not x_user or x_user not in users:
         session.close()
         raise HTTPException(401, f"Say who is acting: send the X-User header with one of {users}.")
+    from api import people as P, scoring
+    try:
+        c.actor = P.acting(session, c.settings, x_user, x_act_as)
+    except P.RoleError:
+        session.close()
+        raise
+    c.signed_in = x_user if c.actor != x_user else ""
+    scoring.refresh(session)  # another server instance may have changed the scoring criteria
     try:
         yield c
         session.commit()
@@ -115,6 +125,53 @@ def users(request: Request):
     with request.app.state.db.session() as s:
         row = s.get(m.Setting, "owners")
         return row.value if row else []
+
+
+# ---------- people and roles (api/people.py) and the scoring criteria (api/scoring.py) ----------
+def mail_info(c: S.Ctx):
+    """name -> where that person's email goes out from: their own Gmail, or the shared workspace mailbox."""
+    shared = c.mail_factory() if c.mail_factory else None
+    return lambda name: ("own" if S.own_box(c, name) is not None else "shared" if shared is not None else "off")
+
+
+@router.get("/people", tags=["people"], summary="Workspace users: who is an admin, which address each sends from, whose own Gmail is connected")
+def people(c: S.Ctx = Actor):
+    from api import people as P
+    return {**P.view(c.s, c.settings, mail_info(c)), "canChange": S.may_manage_permissions(c),
+            "signedIn": c.signed_in or c.actor, "actingAs": c.actor}
+
+
+class PersonIn(BaseModel):
+    admin: bool | None = Field(None, description="Make this person an admin (true) or not (false); empty = leave as is")
+    email: str | None = Field(None, description="The address this person sends from; empty text clears it; null = leave as is")
+
+
+@router.put("/people/{name}", tags=["people"], summary="An admin changes a person's role or sending address")
+def change_person(name: str, body: PersonIn, c: S.Ctx = Actor):
+    from api import people as P
+    res = P.change(c, name, body.admin, body.email)
+    return {**res, **P.view(c.s, c.settings, mail_info(c)), "canChange": S.may_manage_permissions(c)}
+
+
+@router.get("/scoring", tags=["people"], summary="The scoring criteria in use, the built-in ones, and earlier versions")
+def scoring_view(c: S.Ctx = Actor):
+    from api import scoring
+    return scoring.view(c)
+
+
+class ScoringIn(BaseModel):
+    weights: dict[str, Any] | None = None
+    floors: dict[str, Any] | None = None
+    ready: dict[str, Any] | None = None
+    bands: dict[str, Any] | None = None
+    builtIn: bool = Field(False, description="Go back to the built-in criteria")
+    reason: str = ""
+
+
+@router.put("/scoring", tags=["people"], summary="An admin changes the scoring criteria (weights, minimums, Ready, bands)")
+def scoring_change(body: ScoringIn, c: S.Ctx = Actor):
+    from api import scoring
+    return scoring.change(c, body.weights, body.floors, body.ready, body.bands, body.reason, body.builtIn)
 
 
 # ---------- Step 1 ----------
@@ -573,7 +630,7 @@ class PermissionIn(BaseModel):
             summary="The permission table for a management screen: every agent x connector, its state, where it comes from, who changed it")
 def permissions(c: S.Ctx = Actor):
     from api import toolkit as TK
-    return {**TK.table(c.s), "limits": TK.limits(c.s), "canChange": S.may_manage_permissions(c), "admins": list(c.settings.admins)}
+    return {**TK.table(c.s), "limits": TK.limits(c.s), "canChange": S.may_manage_permissions(c), "admins": [a for a in S.admin_names(c).split(", ") if a]}
 
 
 @router.put("/toolkit/permissions/{agent}/{connector}", tags=["agents"],

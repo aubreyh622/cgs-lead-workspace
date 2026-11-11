@@ -5,6 +5,7 @@ import { enc } from "../api.js";
 import { emptyState } from "../shell.js";
 import { tabBar, cancelButton, openButton } from "../forms.js";
 import { linkFor } from "./links.js";
+import { mayDecide } from "./sources.js";
 
 // What each agent does, in the words of the backend guide (docs/BACKEND_V2.md). Only facts the code implements.
 export const AGENTS = [
@@ -225,9 +226,10 @@ function suggestions(d, ctx, st) {
         <p class="meta-3">${p.origin === "manual" ? `Proposed by ${p.proposedBy}` : p.origin === "ai" ? "From the direction agent's review" : "From feedback"}, ${day(p.createdOn, ctx.today)}</p>
         <p class="meta" style="margin-top:6px">${p.rationale}</p>
         <div class="actions" style="margin-top:12px">
-          <button type="button" class="btn primary small" data-act="decideProposal" data-id="${p.id}" data-verdict="approve">Apply</button>
+          ${mayDecide(p, ctx) ? html`<button type="button" class="btn primary small" data-act="decideProposal" data-id="${p.id}" data-verdict="approve">Apply</button>` : ""}
           <a class="btn small" href="${href("sources", { tab: "direction" })}">See the change</a>
-          <button type="button" class="btn ghost small" data-act="decideProposal" data-id="${p.id}" data-verdict="reject">Dismiss</button>
+          ${mayDecide(p, ctx) ? html`<button type="button" class="btn ghost small" data-act="decideProposal" data-id="${p.id}" data-verdict="reject">Dismiss</button>`
+            : html`<span class="meta-3">An admin decides.</span>`}
         </div>
         ${st.err(`prop:${p.id}`)}
       </div></div>`)}

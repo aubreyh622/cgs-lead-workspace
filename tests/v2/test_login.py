@@ -59,8 +59,24 @@ def test_every_request_needs_a_sign_in_except_the_health_check(api):
 
 
 def test_the_signed_in_person_is_named(api):
-    assert api.get("/api/me", headers=signed()).json() == {"login": "google", "name": "Alex Morgan", "email": ALEX}
+    me = api.get("/api/me", headers=signed()).json()
+    assert {k: me[k] for k in ("login", "name", "email")} == {"login": "google", "name": "Alex Morgan", "email": ALEX}
     assert api.get("/api/me", headers=signed(email="Sarah@Example.com")).json()["name"] == "Sarah Patel"
+    # a forged X-User does not make Sarah's request Alex's
+    assert api.get("/api/me", headers={**signed(email=SARAH), "X-User": "Alex Morgan"}).json()["name"] == "Sarah Patel"
+
+
+def test_only_a_signed_in_admin_may_act_as_someone_else(tmp_path):
+    app = create_app(Settings(db_path=tmp_path / "login.sqlite3", login="google", iap_audience=AUD, logins=LOGINS, admins=("Alex Morgan",)))
+    app.state.login.fetch = lambda: {"k1": PUBLIC}
+    api = TestClient(app)
+    assert api.get("/api/me", headers=signed()).json()["admin"] is True
+    assert api.get("/api/me", headers=signed(email=SARAH)).json()["admin"] is False
+    r = api.post("/api/opportunities", json={"company": "Act As Co"}, headers={**signed(email=SARAH), "X-Act-As": "Alex Morgan"})
+    assert r.status_code == 403 and r.json()["code"] == "not_admin"
+    r = api.post("/api/opportunities", json={"company": "Act As Co"}, headers={**signed(), "X-Act-As": "Sarah Patel"})
+    assert r.status_code == 200, r.text
+    assert api.get("/api/people", headers={**signed(), "X-Act-As": "Sarah Patel"}).json()["actingAs"] == "Sarah Patel"
 
 
 def test_nobody_can_act_under_another_name(api):
@@ -130,7 +146,9 @@ def test_people_who_can_sign_in_join_an_existing_workspace(tmp_path):
 
 def test_without_sign_in_the_workspace_works_as_before(tmp_path):
     api = TestClient(create_app(Settings(db_path=tmp_path / "off.sqlite3")))
-    assert api.get("/api/me").json() == {"login": "off", "name": "", "email": ""}
+    me = api.get("/api/me").json()
+    assert {k: me[k] for k in ("login", "name", "email")} == {"login": "off", "name": "", "email": ""} and me["admin"] is False
+    assert api.get("/api/me", headers={"X-User": "Sarah Patel"}).json()["name"] == "Sarah Patel"  # one computer: the name picked
     assert api.get("/api/config").status_code == 200
 
 

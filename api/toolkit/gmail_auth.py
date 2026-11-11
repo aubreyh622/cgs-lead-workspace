@@ -1,5 +1,7 @@
 """Sign the workspace in to Gmail once: python -m api.toolkit.gmail_auth
 Sign it in to Google Drive (read only, for the CGS library): python -m api.toolkit.gmail_auth --drive
+Connect one consultant's own Gmail, so their emails go out from it: python -m api.toolkit.gmail_auth --person "Sarah Patel"
+  (that person signs in with their own Google account; saved as GMAIL_REFRESH_TOKEN_SARAH_PATEL beside the shared one)
 
 Before you run it:
   1. In Google Cloud Console, enable the Gmail API for a project.
@@ -81,8 +83,16 @@ def _wait_for_code(state: str) -> tuple[str, int, HTTPServer]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    drive = "--drive" in (sys.argv[1:] if argv is None else argv)
+    args = sys.argv[1:] if argv is None else argv
+    drive = "--drive" in args
+    person = args[args.index("--person") + 1].strip() if "--person" in args and args.index("--person") + 1 < len(args) else ""
+    if "--person" in args and not person:
+        print('Say whose Gmail this is: --person "Sarah Patel" (the name as it appears in the workspace).')
+        return 1
     scopes, key = (DRIVE_SCOPES, "DRIVE_REFRESH_TOKEN") if drive else (SCOPES, "GMAIL_REFRESH_TOKEN")
+    if person and not drive:
+        from api.toolkit.mail import person_key
+        key = f"GMAIL_REFRESH_TOKEN_{person_key(person)}"
     _load_dotenv(ROOT / ".env")
     load_credentials()
     client_id, client_secret = os.environ.get("GOOGLE_CLIENT_ID", ""), os.environ.get("GOOGLE_CLIENT_SECRET", "")
@@ -124,6 +134,10 @@ def main(argv: list[str] | None = None) -> int:
         who = GmailMail(client_id, client_secret, token).account()
     except Exception:
         who = "(could not read the address yet)"
+    if person:
+        print(f"Saved {person}'s own Gmail sign-in ({who}) in {CREDENTIALS}. After a restart, emails {person} sends go out "
+              "from this mailbox, and replies there are picked up. The workspace name must match exactly.")
+        return 0
     print(f"Saved the Gmail sign-in for {who} in {CREDENTIALS}. To use it in the workspace, set MAIL_PROVIDER=gmail and "
           "APP_MODE=live in the project .env, then restart.")
     return 0

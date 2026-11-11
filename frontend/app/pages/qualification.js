@@ -16,7 +16,7 @@ const TABS = [
 const DIMS = ["B", "A", "N", "T", "H", "E"];
 const READINESS_TAG = { Ready: "good", "More evidence needed": "warn", "Not ready": "bad" };
 
-let rules = null; // GET /api/rules, loaded once
+let rules = null; // GET /api/rules, loaded with every page load: an admin may change the criteria (People page)
 const ui = { key: null, open: null, error: null, notice: null, folds: new Map() };  // folds: kept while moving between leads
 
 function resetUi(key = null) {
@@ -34,7 +34,7 @@ export async function load(ctx, params) {
   const team = params.team === "1";
   const [all, r] = await Promise.all([
     ctx.api.get(`/opportunities?${TABS.map(([s]) => `stage=${s}`).join("&")}`),
-    rules ? Promise.resolve(rules) : ctx.api.get("/rules"),
+    ctx.api.get("/rules"),
   ]);
   rules = r;
   // Approvers are usually not the owner, so Awaiting approval always shows the whole team.
@@ -242,7 +242,7 @@ function conditionsSummary(o, live) {
 
 // Everything between this lead and Ready, in one list: the rules' gaps (one per question), and the score threshold,
 // which the rules only name once nothing else is missing. Each item says what to ask, and can be confirmed here by hand.
-const Q_NEEDED = 70;
+const qNeeded = () => (rules.ready && rules.ready.q) || 70; // the criteria in use (api/scoring.py)
 
 function toReady(o, a) {
   const byQuestion = new Map();
@@ -251,6 +251,7 @@ function toReady(o, a) {
     if (same) { same.also.push(g.label); same.keys.push(g.key); } else byQuestion.set(g.question, { label: g.label, also: [], keys: [g.key], ask: g.question });
   }
   const items = [...byQuestion.values()];
+  const Q_NEEDED = qNeeded();
   if (a.ql < Q_NEEDED) {
     const up = DIMS.filter((k) => o.scores[k] !== null && o.scores[k] !== undefined && o.scores[k] < 5)
       .map((k) => ({ k, step: rules.weights[k] / 5 })).sort((x, y) => y.step - x.step).slice(0, 3);

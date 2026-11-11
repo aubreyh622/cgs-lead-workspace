@@ -49,7 +49,8 @@ export function crmStatus(config, state) {
   return chip("", ": nothing synced yet", "Leads go to the CRM once a person accepts a company at Step 4.");
 }
 
-export function header({ page, counts, config, users, me, crm, signedIn }) {
+export function header({ page, counts, config, users, me, crm, signedIn, self, admin }) {
+  const other = me && self && me !== self;
   return html`
   <div class="top-in">
     <a class="brand" href="${href("home")}">
@@ -64,13 +65,16 @@ export function header({ page, counts, config, users, me, crm, signedIn }) {
       ${crmStatus(config, crm)}
       ${modeBadge(config)}
       ${me ? html`
-      <span class="avatar round" aria-hidden="true">${initials(me)}</span>
-      ${signedIn ? html`<span class="person" title="Signed in with Google as ${signedIn}">${me}</span>` : html`
-      <label class="person"><span class="person-label sr-only">Acting as</span>
+      <a class="avatar round ${other ? "acting" : ""} ${page === "settings" ? "here" : ""}" href="${href("settings")}"
+        title="People, roles and scoring criteria${other ? `. You (${self}) are acting as ${me}` : ""}" aria-label="People, roles and scoring criteria">${initials(me)}</a>
+      ${admin ? html`
+      <label class="person ${other ? "acting" : ""}" title="${signedIn ? `Signed in with Google as ${signedIn}` : `Signed in as ${self}`}. As an admin you may act as someone else.">
+        <span class="person-label sr-only">Acting as</span>
         <select data-shell="person" aria-label="Acting as">
-          ${users.map((u) => html`<option value="${u}" ${u === me ? "selected" : ""}>${u}</option>`)}
+          ${users.map((u) => html`<option value="${u}" ${u === me ? "selected" : ""}>${u === self ? u : `As ${u}`}</option>`)}
         </select>
-      </label>`}` : ""}
+      </label>`
+      : html`<a class="person" href="${href("settings")}" title="${signedIn ? `Signed in with Google as ${signedIn}` : `Signed in as ${self}`}. People and roles">${me}</a>`}` : ""}
     </div>
   </div>`;
 }
@@ -124,8 +128,9 @@ export async function resolveCrm(t, e, ctx) {
 export function chooser(users, problem) {
   return html`
   <div class="chooser card">
-    <h1>Who is using the workspace?</h1>
-    <p class="meta" style="margin-top:8px">There is no sign-in yet. Every change you make records the name you choose here.</p>
+    <h1>Sign in</h1>
+    <p class="meta" style="margin-top:8px">Choose your name. Every change you make records it. This copy runs on one computer and has no
+      passwords; the hosted workspace signs people in with their Google account. Admins can then act as someone else.</p>
     ${problem ? html`<div class="notice bad" role="alert" style="margin-top:16px">${icon("alert")}<span>${problem}</span></div>` : ""}
     <div class="people">
       ${users.map((u) => html`<button type="button" class="btn" data-shell="choose" data-name="${u}" style="justify-content:flex-start;height:48px">

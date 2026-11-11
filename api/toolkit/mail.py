@@ -30,6 +30,25 @@ PROVIDERS = ("off", "mock", "gmail")
 CREDENTIALS = Path(os.environ.get("GMAIL_CREDENTIALS_FILE") or Path.home() / ".cgs-workspace" / "gmail.env")
 
 
+def person_key(name: str) -> str:
+    """The suffix of a person's own Gmail sign-in in the credentials file: Sarah Patel -> SARAH_PATEL."""
+    return re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_").upper()
+
+
+def own_mailboxes(provider: str, names, http: httpx.Client | None = None) -> dict:
+    """name -> that person's own Gmail, for each person signed in with `python -m api.toolkit.gmail_auth --person "Name"`
+    (GMAIL_REFRESH_TOKEN_<NAME> in the credentials file). Only with MAIL_PROVIDER=gmail; everyone else uses the shared box."""
+    if provider != "gmail":
+        return {}
+    load_credentials()
+    out = {}
+    for name in names:
+        token = os.environ.get(f"GMAIL_REFRESH_TOKEN_{person_key(name)}", "")
+        if token:
+            out[name] = GmailMail(os.environ.get("GOOGLE_CLIENT_ID", ""), os.environ.get("GOOGLE_CLIENT_SECRET", ""), token, http)
+    return out
+
+
 def load_credentials() -> None:
     """Read the Gmail credentials file into the environment (values already set in the environment win)."""
     from api.settings import _load_dotenv
@@ -156,8 +175,8 @@ class GmailMail:
             self._me = (self._call("GET", "/profile") or {}).get("emailAddress", "")
         return self._me
 
-    def create_draft(self, to: str, subject: str, body: str, thread_id: str = "", reply_to_rfc_id: str = "", bcc: str = "") -> dict:
-        msg = {"raw": build_raw(to, subject, body, reply_to_rfc_id=reply_to_rfc_id, bcc=bcc), **({"threadId": thread_id} if thread_id else {})}
+    def create_draft(self, to: str, subject: str, body: str, thread_id: str = "", reply_to_rfc_id: str = "", bcc: str = "", sender: str = "") -> dict:
+        msg = {"raw": build_raw(to, subject, body, sender, reply_to_rfc_id, bcc), **({"threadId": thread_id} if thread_id else {})}
         d = self._call("POST", "/drafts", json={"message": msg}) or {}
         return {"draft_id": d.get("id", ""), "thread_id": (d.get("message") or {}).get("threadId", "")}
 
@@ -167,8 +186,10 @@ class GmailMail:
             raise MailError("That Gmail draft no longer exists.")
         return {"message_id": d.get("id", ""), "thread_id": d.get("threadId", "")}
 
-    def send(self, to: str, subject: str, body: str, thread_id: str = "", reply_to_rfc_id: str = "", bcc: str = "") -> dict:
-        msg = {"raw": build_raw(to, subject, body, reply_to_rfc_id=reply_to_rfc_id, bcc=bcc), **({"threadId": thread_id} if thread_id else {})}
+    def send(self, to: str, subject: str, body: str, thread_id: str = "", reply_to_rfc_id: str = "", bcc: str = "", sender: str = "") -> dict:
+        """sender: a From address. Gmail keeps it only when it is this account's own address or one of its "Send mail as"
+        aliases; otherwise Gmail sends from the account's own address."""
+        msg = {"raw": build_raw(to, subject, body, sender, reply_to_rfc_id, bcc), **({"threadId": thread_id} if thread_id else {})}
         d = self._call("POST", "/messages/send", json=msg) or {}
         return {"message_id": d.get("id", ""), "thread_id": d.get("threadId", "")}
 
@@ -214,16 +235,16 @@ class MockMail:
     def account(self) -> str:
         return self.me
 
-    def create_draft(self, to, subject, body, thread_id="", reply_to_rfc_id="", bcc="") -> dict:
+    def create_draft(self, to, subject, body, thread_id="", reply_to_rfc_id="", bcc="", sender="") -> dict:
         tid = thread_id or self._id("t")
         self.threads.setdefault(tid, [])
         did = self._id("d")
-        self.drafts[did] = {"to": to, "subject": subject, "body": body, "thread_id": tid, "bcc": bcc}
+        self.drafts[did] = {"to": to, "subject": subject, "body": body, "thread_id": tid, "bcc": bcc, "sender": sender}
         return {"draft_id": did, "thread_id": tid}
 
-    def _deliver(self, to, subject, body, tid, bcc="") -> dict:
+    def _deliver(self, to, subject, body, tid, bcc="", sender="") -> dict:
         mid = self._id("m")
-        msg = {"id": mid, "from": self.me, "to": to, "subject": subject, "date": self.today().isoformat(), "rfc_id": f"<{mid}@mock>",
+        msg = {"id": mid, "from": sender or self.me, "to": to, "subject": subject, "date": self.today().isoformat(), "rfc_id": f"<{mid}@mock>",
                "ours": True, "text": body, "bcc": bcc}
         self.threads.setdefault(tid, []).append(msg)
         self.outbox.append(msg)
@@ -233,10 +254,10 @@ class MockMail:
         d = self.drafts.pop(draft_id, None)
         if d is None:
             raise MailError("That Gmail draft no longer exists.")
-        return self._deliver(d["to"], d["subject"], d["body"], d["thread_id"], d.get("bcc", ""))
+        return self._deliver(d["to"], d["subject"], d["body"], d["thread_id"], d.get("bcc", ""), d.get("sender", ""))
 
-    def send(self, to, subject, body, thread_id="", reply_to_rfc_id="", bcc="") -> dict:
-        return self._deliver(to, subject, body, thread_id or self._id("t"), bcc)
+    def send(self, to, subject, body, thread_id="", reply_to_rfc_id="", bcc="", sender="") -> dict:
+        return self._deliver(to, subject, body, thread_id or self._id("t"), bcc, sender)
 
     def draft_exists(self, draft_id) -> bool:
         return draft_id in self.drafts
