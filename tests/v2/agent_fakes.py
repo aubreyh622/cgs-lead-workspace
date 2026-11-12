@@ -4,6 +4,8 @@ play(payload, evidence=..., draft=...) looks at which tools the agent was given 
   research (person lookup)  company pages -> read the leadership page -> answer
   evidence                  read the notes -> propose each item (and ask the research agent) -> finish
   outreach                  read the brief -> submit the draft (again, if it is rejected)
+  outreach reviewer         a JSON answer (no tools): scores against the CGS email standard (default: meets it)
+  contact plan              brief -> related -> company pages -> read the leadership page -> library -> submit the plan
   manager                   read the board -> delegate and write notes -> finish
   discovery                 read the direction -> search the first signal -> nominate -> finish
   next step                 read the situation -> suggest an action for up to three gaps -> finish
@@ -34,7 +36,31 @@ def results(payload) -> list[tuple[str, dict]]:
     return out
 
 
-def play(payload, *, evidence=None, draft=None, manager=None, discovery=None, actions=None, research=None, triage=None, lessons=None):
+def is_review(payload) -> bool:
+    """The outreach reviewer's single JSON request (api/outreach_agent.review_draft)."""
+    system = " ".join(p.get("text", "") for p in (payload.get("systemInstruction") or {}).get("parts", []))
+    return "tools" not in payload and "senior reviewer at CGS" in system
+
+
+def default_review(ask):
+    from api import email_rubric as ER
+    return {**{c["key"]: 4 for c in ER.current()["criteria"]}, "unsupported_claim": False, "fixes": []}
+
+
+def answer(data, tokens=5):
+    return {"candidates": [{"content": {"role": "model", "parts": [{"text": json.dumps(data)}]}}],
+            "usageMetadata": {"promptTokenCount": tokens, "candidatesTokenCount": 1}}
+
+
+def review_ok(tokens=5):
+    """The reviewer's answer for a scripted test: the draft meets the standard."""
+    return answer(default_review(None), tokens)
+
+
+def play(payload, *, evidence=None, draft=None, manager=None, discovery=None, actions=None, research=None, triage=None, lessons=None,
+         review=None, plan=None):
+    if is_review(payload):
+        return answer((review or default_review)(json.loads(payload["contents"][0]["parts"][0]["text"])))
     names = tool_names(payload)
     if "case" in names:  # the manager's triage of one opportunity
         return play_triage(payload, triage or default_triage)
@@ -54,6 +80,8 @@ def play(payload, *, evidence=None, draft=None, manager=None, discovery=None, ac
         return play_manager(payload, manager or (lambda board: []))
     if "propose" in names:
         return play_evidence(payload, evidence or (lambda text: {"proposals": [], "people_to_find": []}))
+    if "submit_plan" in names:
+        return play_plan(payload, plan or default_plan)
     if "submit_draft" in names:
         return play_outreach(payload, draft or default_draft)
     return play_person(payload)
@@ -277,3 +305,41 @@ def play_person(payload):
                 return turn(("finish", {"found": True, "name": person, "title": title, "url": result["url"],
                                         "quote": f"{person}, {title}", "notes": "Named on the leadership page."}))
     return turn(("finish", {**nothing, "notes": "The leadership page does not name anyone in that role."}))
+
+
+def default_plan(seen):
+    """A value-first plan: connect with the contact, share the first library item, then an email."""
+    who = seen["brief"]["contact"]["name"]
+    item = (seen.get("library") or [{}])[0].get("id", "")
+    return {"entry": {"name": who, "title": seen["brief"]["contact"]["title"] or "", "why": "Leads the work behind the news in the brief."},
+            "others": [], "approach": "value_first",
+            "approach_why": "No relationship is on record, so give something useful before asking for time.",
+            "steps": [{"day": 0, "channel": "linkedin_connect", "to": who, "purpose": "Connect with one concrete reason from the news.",
+                       "library_id": "", "introduced_by": ""},
+                      {"day": 4, "channel": "share_content", "to": who, "purpose": "Share the CGS piece that fits, with two lines on why.",
+                       "library_id": item, "introduced_by": ""},
+                      {"day": 11, "channel": "email", "to": who, "purpose": "One sharp question about the hard part and a 20-minute call.",
+                       "library_id": "", "introduced_by": ""}],
+            "stop_when": "Stop when they reply.", "unknowns": ["Who signs the budget"]}
+
+
+def play_plan(payload, plan):
+    """brief, related -> company_pages -> read the leadership page -> search_library -> submit_plan(plan(seen)), again if rejected.
+    seen = {"brief", "related", "library", "pages", "errors"}: what the tools returned so far."""
+    done = results(payload)
+    if not done:
+        return turn(("brief", {}), ("related", {}))
+    names = [n for n, _ in done]
+    if "company_pages" not in names and "company_pages" in tool_names(payload):
+        return turn(("company_pages", {"topic": "leadership team"}))
+    if "read_page" not in names and "read_page" in tool_names(payload):
+        pages = next(r for n, r in done if n == "company_pages").get("pages", [])
+        page = next((x for x in pages if "leadership" in x["url"]), None)
+        if page:
+            return turn(("read_page", {"url": page["url"]}))
+    if "search_library" not in names and "search_library" in tool_names(payload):
+        return turn(("search_library", {"query": "operating model planning integration"}))
+    seen = {"brief": next(r for n, r in done if n == "brief"), "related": next(r for n, r in done if n == "related"),
+            "library": next((r["items"] for n, r in done if n == "search_library"), []),
+            "pages": [r for n, r in done if n == "read_page"], "errors": sum(1 for n, r in done if n == "submit_plan")}
+    return turn(("submit_plan", plan(seen)))

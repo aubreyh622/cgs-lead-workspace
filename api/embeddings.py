@@ -1,7 +1,9 @@
 """Embeddings for the CGS library's meaning search (the semantic half of hybrid search in api/knowledge.py).
 
 Off unless KNOWLEDGE_EMBEDDINGS names a provider:
-  gemini  GEMINI_API_KEY, model gemini-embedding-001 (768 dimensions)
+  gemini  GEMINI_API_KEY, model gemini-embedding-001 (768 dimensions). With GEMINI_BACKEND=agent_platform: CGS's Google
+          Cloud project, signed by the service account, no key (api/google_cloud.py). Express mode has no embeddings, so
+          GEMINI_BACKEND=express keeps embeddings on AI Studio with GEMINI_API_KEY.
   openai  OPENAI_API_KEY, model text-embedding-3-small
   voyage  VOYAGE_API_KEY, model voyage-3.5-lite
 KNOWLEDGE_EMBEDDINGS_MODEL overrides the model.
@@ -49,10 +51,12 @@ def _post(url: str, headers: dict, payload: dict) -> dict:
 class Embedder:
     """embed(texts, kind) -> one vector per text. kind: "document" (library passages) or "query"."""
 
-    def __init__(self, provider: str, key: str, model: str | None = None, transport=_post, cache_dir: Path | None = None):
+    def __init__(self, provider: str, key: str, model: str | None = None, transport=_post, cache_dir: Path | None = None,
+                 backend: str = "ai_studio"):
         if provider not in MODELS:
             raise EmbeddingError(f"Unknown embeddings provider {provider!r}; use one of {sorted(MODELS)}.")
         self.provider, self.key, self.model, self.transport = provider, key, model or MODELS[provider], transport
+        self.backend = backend  # gemini only: ai_studio | agent_platform (the vectors are the same model, so the cache is shared)
         self.name = f"{provider}:{self.model}"
         self.cache_file = (cache_dir or ROOT / "runtime") / f"embeddings-{provider}-{self.model}.json".replace("/", "_")
         self._cache: dict[str, list[float]] | None = None
@@ -60,6 +64,22 @@ class Embedder:
         self._lock = threading.Lock()
 
     def _call(self, texts: list[str], kind: str) -> list[list[float]]:
+        if self.provider == "gemini" and self.backend == "agent_platform":
+            from api.google_cloud import CloudConfigError, auth_headers, model_url
+            task = "RETRIEVAL_DOCUMENT" if kind == "document" else "RETRIEVAL_QUERY"
+            out = []
+            try:
+                url, headers = model_url(self.model, "predict", "agent_platform"), auth_headers(backend="agent_platform")
+            except CloudConfigError as e:
+                raise EmbeddingError(str(e)) from None
+            for text in texts:  # gemini-embedding-001 on Agent Platform takes one text per request
+                data = self.transport(url, headers, {"instances": [{"content": text, "task_type": task}],
+                                                     "parameters": {"outputDimensionality": 768}})
+                try:
+                    out.append(data["predictions"][0]["embeddings"]["values"])
+                except (KeyError, IndexError, TypeError):
+                    raise EmbeddingError("Agent Platform returned no embedding for a passage.") from None
+            return out
         if self.provider == "gemini":
             task = "RETRIEVAL_DOCUMENT" if kind == "document" else "RETRIEVAL_QUERY"
             data = self.transport(f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:batchEmbedContents",
@@ -122,7 +142,10 @@ def from_env() -> Embedder | None:
     provider = os.environ.get("KNOWLEDGE_EMBEDDINGS", "").strip().lower()
     if provider not in KEYS:
         return None  # empty, "off" or unknown: keyword search only
+    model = os.environ.get("KNOWLEDGE_EMBEDDINGS_MODEL", "").strip() or None
+    if provider == "gemini" and os.environ.get("GEMINI_BACKEND", "").strip().lower() == "agent_platform":
+        return Embedder(provider, "", model, backend="agent_platform")  # signed by the service account: no key
     key = os.environ.get(KEYS.get(provider, ""), "").strip()
     if not key:
         return None  # no key: keyword search only (GET /api/knowledge says why)
-    return Embedder(provider, key, os.environ.get("KNOWLEDGE_EMBEDDINGS_MODEL", "").strip() or None)
+    return Embedder(provider, key, model)

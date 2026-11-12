@@ -180,6 +180,7 @@ class Outreach(Base):
     mail_draft_purpose: Mapped[Optional[str]] = mapped_column(String(20))  # first | followup | reconnect
     mail_account: Mapped[Optional[str]] = mapped_column(String(100))  # whose own Gmail holds the thread; empty = the shared mailbox
     linkedin: Mapped[Optional[dict]] = mapped_column(JSON)  # the LinkedIn note and message a person sends themselves (api/linkedin.py)
+    plan: Mapped[Optional[dict]] = mapped_column(JSON)  # the contact plan the outreach agent proposed and a person decided (api/outreach_plan.py)
 
 
 class OutboundEmail(Base):

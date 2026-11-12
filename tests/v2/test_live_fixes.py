@@ -48,6 +48,18 @@ def test_a_website_may_drop_one_word_when_the_page_names_the_company():
                             "Second Nature Brands") == ""  # one word short and the page names another company
 
 
+def test_a_website_may_shorten_words_when_the_page_names_the_company():
+    # the quality check's research cases: these two companies were never researched because no website was found
+    assert D.resolve_domain(Pages(("https://www.silverlinemed.example/", "Silverline Medical Devices | Official site", "")),
+                            "Silverline Medical Devices") == "silverlinemed.example"
+    assert D.resolve_domain(Pages(("https://www.quillonchem.example/", "Quillon Specialty Chemicals | Official site", "")),
+                            "Quillon Specialty Chemicals") == "quillonchem.example"
+    # not without the page naming the company, not with letters the name does not explain, not from short pieces alone
+    assert D.resolve_domain(Pages(("https://www.silverlinemed.example/", "Home", "")), "Silverline Medical Devices") == ""
+    assert D.resolve_domain(Pages(("https://www.silverlinemedx.example/", "Silverline Medical Devices", "")), "Silverline Medical Devices") == ""
+    assert not D.abbreviates("silmeddev.example", ["silverline", "medical", "devices"])
+
+
 def test_the_research_agent_is_told_the_news_the_company_was_picked_for():
     t = RA.task("Olin", "", news='"Olin agreed to merge with Huntsman" (source: https://news.example/olin)')
     assert "Discovery picked this company for this news" in t and "Huntsman" in t and "different organisation" in t

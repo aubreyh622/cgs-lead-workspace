@@ -74,6 +74,8 @@ set `CRM_MODE=write_approved` and `CRM_PROVIDER=insightly`. `Check CRM.cmd` chec
 - Live checks with the real AI on the synthetic internet: `Check AI.cmd`, `Check Research.cmd`, `Check Workflow.cmd`,
   `Check Agents.cmd`, `Check Orchestrator.cmd`; `AI Exam.cmd` grades the evidence agent on cases with known answers.
 - Connections: `Check Mail.cmd` (Gmail), `Check CRM.cmd` (Insightly).
+- The agents run on Google's Agent Development Kit (ADK). `ADK Eval.cmd` runs the quality cases on ADK and on the
+  original loop and compares them with Google's agents-cli ([docs/ADK_EVAL.md](docs/ADK_EVAL.md)).
 
 ## Layout
 
@@ -93,6 +95,7 @@ set `CRM_MODE=write_approved` and `CRM_PROVIDER=insightly`. `Check CRM.cmd` chec
 
 - [Workspace page](docs/FRONTEND.md): the pages, how they are built, the rules they keep, and their checks.
 - [Backend v2 guide](docs/BACKEND_V2.md): decisions, agents, autonomy, manager, toolkit, email, CRM, endpoints.
+- [Agents on Google ADK](docs/ADK_MIGRATION.md): the options, the design, and the [evaluation](docs/ADK_EVAL.md).
 - [Database](docs/DATABASE.md) and [API](docs/API.md).
 - [Search integration](docs/SEARCH_INTEGRATION.md) and [Research v2](docs/RESEARCH_V2.md).
 - Earlier phases (P0–P5) and their verification: [development plan](docs/DEVELOPMENT_PLAN.md) and `docs/VERIFICATION_*.md`.

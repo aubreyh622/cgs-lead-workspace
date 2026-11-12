@@ -175,6 +175,26 @@ def scoring_change(body: ScoringIn, c: S.Ctx = Actor):
     return scoring.change(c, body.weights, body.floors, body.ready, body.bands, body.reason, body.builtIn)
 
 
+@router.get("/email-rubric", tags=["people"], summary="The CGS email standard in use (criteria, weights, bar, review rounds), the built-in one, and earlier versions")
+def email_rubric_view(c: S.Ctx = Actor):
+    from api import email_rubric
+    return email_rubric.view(c)
+
+
+class EmailRubricIn(BaseModel):
+    criteria: list[dict[str, Any]] | None = Field(None, description="Each: key, label, weight (whole numbers adding up to 100), question, good, poor")
+    bar: dict[str, Any] | None = Field(None, description="{mean: weighted mean a draft needs, each: lowest score any line may have}")
+    review: dict[str, Any] | None = Field(None, description="{rounds: 0, 1 or 2 times the outreach reviewer may send a draft back}")
+    builtIn: bool = Field(False, description="Go back to the built-in standard")
+    reason: str = ""
+
+
+@router.put("/email-rubric", tags=["people"], summary="An admin changes the email standard the outreach agent, its reviewer and the quality check use")
+def email_rubric_change(body: EmailRubricIn, c: S.Ctx = Actor):
+    from api import email_rubric
+    return email_rubric.change(c, body.criteria, body.bar, body.review, body.reason, body.builtIn)
+
+
 # ---------- Step 1 ----------
 class Skip(BaseModel):
     reason: str = Field(examples=["Too small"])
@@ -469,6 +489,79 @@ def linkedin_draft(opp_id: str, c: S.Ctx = Actor):
 def linkedin_save(opp_id: str, body: LinkedInText, c: S.Ctx = Actor):
     from api import linkedin as LI
     return LI.save(c, opp_id, body.note, body.message)
+
+
+class PlanAsk(BaseModel):
+    comment: str | None = Field(None, description="What the consultant wants different, for a new plan")
+
+
+class PlanDecision(BaseModel):
+    decision: Literal["approve", "reject"]
+    note: str = ""
+
+
+@router.post("/opportunities/{opp_id}/outreach/plan", tags=["step 5"],
+             summary="The outreach agent proposes a contact plan: whom to approach first, who else matters, and 2-5 steps; nothing is sent")
+def plan_propose(opp_id: str, body: PlanAsk, c: S.Ctx = Actor):
+    from api import outreach_plan as OP
+    return OP.propose(c, opp_id, (body.comment or "").strip() or None)
+
+
+@router.post("/opportunities/{opp_id}/outreach/plan/decision", tags=["step 5"],
+             summary="Approve or reject the proposed contact plan (a rejection needs a reason)")
+def plan_decide(opp_id: str, body: PlanDecision, c: S.Ctx = Actor):
+    from api import outreach_plan as OP
+    return OP.decide(c, opp_id, body.decision, body.note)
+
+
+class PlanStep(BaseModel):
+    action: Literal["done", "skip"]
+    note: str = ""
+
+
+class PlanStop(BaseModel):
+    note: str = ""
+
+
+@router.post("/opportunities/{opp_id}/outreach/plan/steps/{n}/prepare", tags=["step 5"],
+             summary="The outreach agent prepares step n of the approved plan now (email draft, LinkedIn note, call notes or introduction request); nothing is sent")
+def plan_prepare(opp_id: str, n: int, c: S.Ctx = Actor):
+    from api import outreach_plan as OP
+    what = OP.prepare(c, opp_id, n)
+    return {**OP.view(c.s.get(m.Outreach, opp_id)), "prepared": what}
+
+
+@router.post("/opportunities/{opp_id}/outreach/plan/steps/{n}", tags=["step 5"],
+             summary="Record that you did step n of the approved plan, or skip it (a skip needs a reason; a call needs what happened)")
+def plan_step(opp_id: str, n: int, body: PlanStep, c: S.Ctx = Actor):
+    from api import outreach_plan as OP
+    return OP.record(c, opp_id, n, body.action, body.note, follow_days(c))
+
+
+@router.post("/opportunities/{opp_id}/outreach/plan/stop", tags=["step 5"], summary="Stop the approved contact plan (needs a reason)")
+def plan_stop(opp_id: str, body: PlanStop, c: S.Ctx = Actor):
+    from api import outreach_plan as OP
+    return OP.stop(c, opp_id, body.note)
+
+
+@router.get("/outreach-playbook", tags=["step 5"], summary="The CGS outreach playbook the contact plans are made with: in use, built in, earlier versions")
+def outreach_playbook(c: S.Ctx = Actor):
+    from api import outreach_plan as OP
+    return OP.playbook_view(c)
+
+
+class PlaybookIn(BaseModel):
+    principles: list[str] | None = None
+    channels: dict[str, dict[str, Any]] | None = Field(None, description="key -> {enabled, use}; keys are the built-in channels")
+    limits: dict[str, Any] | None = Field(None, description="max_steps, min_gap_days, max_span_days, max_people")
+    builtIn: bool = False
+    reason: str = ""
+
+
+@router.put("/outreach-playbook", tags=["people"], summary="An admin changes the outreach playbook new contact plans are made with")
+def outreach_playbook_change(body: PlaybookIn, c: S.Ctx = Actor):
+    from api import outreach_plan as OP
+    return OP.change_playbook(c, body.principles, body.channels, body.limits, body.reason, body.builtIn)
 
 
 @router.post("/opportunities/{opp_id}/linkedin/sent", tags=["step 5"],

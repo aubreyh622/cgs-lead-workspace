@@ -177,6 +177,8 @@ export function overview(d, ctx, st) {
         <label class="field">Daily check hour (0-23)<input type="number" name="patrol_hour" min="0" max="23" step="1" value="${o.patrolHour}"></label>
         <label class="field">Manager agent<select name="manager_mode">${["off", "shadow", "on"].map((m) => html`<option ${m === o.managerMode ? "selected" : ""}>${m}</option>`)}</select>
           <span class="hint">Shadow: it decides and compares, but queues nothing.</span></label>
+        <label class="field">First contact after Step 4<select name="first_contact">${[["email", "The first email"], ["plan", "A contact plan"]].map(([v, l]) => html`<option value="${v}" ${v === o.firstContact ? "selected" : ""}>${l}</option>`)}</select>
+          <span class="hint">A contact plan: the outreach agent proposes whom to approach and how; the owner approves it before any step.</span></label>
       </div>
       <div class="actions"><button type="submit" class="btn primary">Save</button>${cancelButton}</div>
       ${st.err("settings")}

@@ -11,7 +11,7 @@ from api import models as m
 from api.llm import make_provider
 from api.main import create_app
 from api.settings import Settings
-from agent_fakes import results, turn
+from agent_fakes import results, review_ok, turn
 
 ME = {"X-User": "Alex Morgan"}
 
@@ -80,7 +80,8 @@ def test_outreach_agent_adds_a_newer_fact_from_a_page_it_read(tmp_path):
                 turn(("read_page", {"url": FakeWeb.url})),
                 turn(("add_fact", {"url": FakeWeb.url, "quote": quote})),
                 turn(("submit_draft", {"subject": "Ohio", "body": body.replace("full output in January 2027", "record profits")})),  # not the source
-                turn(("submit_draft", {"subject": "Your Ohio ramp-up", "body": body})))
+                turn(("submit_draft", {"subject": "Your Ohio ramp-up", "body": body})),
+                review_ok())
     app, api = live_app(tmp_path, ai, FakeWeb())
     r = api.post("/api/opportunities/halvorsen/outreach/generate", headers=ME, json={})
     assert r.status_code == 200, r.text
@@ -91,7 +92,7 @@ def test_outreach_agent_adds_a_newer_fact_from_a_page_it_read(tmp_path):
     errors = [json.dumps(ai.requests[i]["contents"][-1]) for i in (2, 5)]
     assert "Read the page" in errors[0] and "does not match its source" in errors[1]
     run = next(x for x in api.get("/api/agent-runs").json() if x["agent"] == "Outreach agent")
-    assert run["prompt"] == "outreach-agent-1.1" and run["calls"] == 6
+    assert run["prompt"] == "outreach-agent-1.2" and run["calls"] == 7  # six turns and the review
 
 
 # ---------- approval gate ----------

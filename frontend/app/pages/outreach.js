@@ -312,7 +312,19 @@ function checksRow(notes, extra) {
     [!!extra.confirmed, extra.confirmed ? "Contact confirmed by a person" : "Contact not confirmed by a person yet"],
   ];
   if (extra.blocked) items.push([false, extra.blocked]);
+  if (extra.review) items.push(reviewCheck(extra.review));
   return html`<ul class="checks">${items.map(([ok, text]) => html`<li class="${ok ? "good-text" : "warn-text"}">${icon(ok ? "check" : "alert", 16)}${text}</li>`)}</ul>`;
+}
+
+// The outreach agent's reviewer read the draft against the CGS email standard (Settings, Email standard).
+function reviewText(rv) {
+  if (!rv.scores) return `Not reviewed against the email standard (${rv.error || "the reviewer did not answer"})`;
+  const back = rv.rounds ? `, after ${plural(rv.rounds, "revision")}` : "";
+  return rv.meets ? `Meets the CGS email standard ${rv.standard}: ${rv.summary}${back}`
+    : `Below the CGS email standard ${rv.standard}: ${rv.summary}${back}.${rv.fixes && rv.fixes.length ? ` Reviewer: ${rv.fixes[0]}` : ""}`;
+}
+function reviewCheck(rv) {
+  return [!!(rv.scores && rv.meets), reviewText(rv)];
 }
 
 function lines(text) {
@@ -422,6 +434,7 @@ function firstEmail(d, ctx) {
   ${relatedBlock(d.related)}
   ${noticeBlock()}
   ${waitingNotice(r.waiting, ctx.me)}
+  ${planBlock(o, ctx)}
   ${hasDraft && m !== "edit" ? draftBody(r.subject, r.body, facts, { to: (d.preview && d.preview.to) || "", confirmed: !!o.contact.confirmedBy, checks: true, blocked: d.preview && d.preview.blocked }) : ""}
   ${!hasDraft && m !== "edit" ? html`<div class="block">${emptyState("No draft yet",
     "The outreach agent writes one when the lead is accepted. If none arrived, ask for one now, or write it yourself.")}</div>` : ""}
@@ -442,6 +455,141 @@ function firstEmail(d, ctx) {
       ${skipLink(d)}
     </div>
   </div>` : ""}`;
+}
+
+// ----- contact plan (api/outreach_plan.py) -----
+// The outreach agent proposes whom to approach first and how, over a few weeks; a person approves or rejects it.
+const CHANNEL = {
+  email: "Email", linkedin_connect: "LinkedIn request", linkedin_message: "LinkedIn message", share_content: "Share a CGS piece",
+  invite: "Invitation", warm_intro: "Introduction", call: "Phone call",
+};
+const APPROACH = { warm: "Warm: through someone who knows them", value_first: "Value first: something useful before asking for time", direct: "Direct" };
+const ROLE = { budget: "Likely signs the budget", sponsor: "Sponsor", user: "Works on it", introducer: "Could introduce CGS" };
+
+function planBlock(o, ctx) {
+  const pl = o.outreach && o.outreach.plan;
+  const err = ui.error && ui.error.where === "plan" ? ui.error.message : "";
+  const asking = ui.mode === "planAsk";
+  if (!pl) {
+    return html`<div class="block stack plan">
+      <h3 class="sub-title" style="margin:0">Contact plan</h3>
+      <p class="meta">Before the first email: whom to approach first, who else matters, and a few steps over the next weeks.
+        A cold email is one option, not the default. The outreach agent proposes; you decide. Nothing is sent.</p>
+      ${asking ? planAskForm(o, false) : html`<div><button type="button" class="btn small" data-act="mode" data-mode="planAsk">Ask the outreach agent for a plan…</button></div>`}
+      ${inlineError(err)}
+    </div>`;
+  }
+  const p = pl.plan;
+  const status = pl.status === "approved" && pl.running === false ? html`<span class="tag">Stopped</span>`
+    : pl.status === "approved" ? html`<span class="tag good">${icon("check", 14)}Running since ${day(pl.decidedOn, ctx.today)}</span>`
+    : pl.status === "rejected" ? html`<span class="tag bad">Rejected by ${pl.decidedBy}</span>`
+    : html`<span class="tag warn">Proposed, waiting for you</span>`;
+  const other = p.entry.name !== o.contact.name;
+  return html`
+  <div class="block stack plan">
+    <div class="row-flex"><h3 class="sub-title" style="margin:0">Contact plan</h3>${status}</div>
+    <p class="meta-3">${pl.by}, ${day(pl.on, ctx.today)}. Playbook ${pl.playbook}${pl.comment ? `. Your comment: “${pl.comment}”` : ""}${pl.decidedBy ? `. ${pl.status === "rejected" ? "Rejected" : "Approved"} by ${pl.decidedBy}` : ""}${pl.note ? `: ${pl.note}` : ""}</p>
+    ${pl.running === false ? html`<div class="notice" role="status">${icon("alert")}<span>The plan has stopped: ${pl.stoppedWhy} Ask for a new plan if more outreach is needed.</span></div>` : ""}
+    <div class="plan-entry">
+      <p><b>Start with ${p.entry.name}</b>${p.entry.title ? `, ${p.entry.title}` : ""} <span class="meta-3">(${p.entry.source})</span></p>
+      <p class="meta">${p.entry.why}</p>
+      ${other ? html`<p class="warn-text meta">${icon("alert", 14)} This is not the opportunity's contact (${o.contact.name || "none yet"}). To follow the plan,
+        confirm ${p.entry.name} as the contact first; email steps go to the contact.</p>` : ""}
+    </div>
+    ${p.others.length ? html`<ul class="bullets">${p.others.map((x) => html`<li><b>${x.name}</b>${x.title ? `, ${x.title}` : ""}: ${ROLE[x.role] || x.role}. <span class="meta">${x.why}</span></li>`)}</ul>` : ""}
+    <p><b>${APPROACH[p.approach] || p.approach}.</b> <span class="meta">${p.approach_why}</span></p>
+    <ol class="plan-steps">${p.steps.map((s) => planStep(s, o, pl, ctx))}</ol>
+    ${p.stop_when ? html`<p class="meta"><b>Stop or change course:</b> ${p.stop_when}</p>` : ""}
+    ${p.unknowns.length ? html`<p class="meta"><b>Still unknown:</b> ${p.unknowns.join("; ")}</p>` : ""}
+    ${ui.mode === "planReject" ? html`
+    <form class="panel-form" data-act="planRejectForm" data-on="submit input" data-id="${o.id}">
+      <label class="field">Why reject it <span class="hint">The next plan the agent proposes reads this.</span><textarea name="note" rows="2"></textarea></label>
+      <div class="actions"><button type="submit" class="btn primary small" disabled>Reject the plan</button>
+        <button type="button" class="btn ghost small" data-act="mode" data-mode="">Cancel</button><span class="missing" data-missing>Say why.</span></div>
+    </form>` : asking ? planAskForm(o, true) : html`
+    <div class="actions">
+      ${pl.status === "proposed" ? html`<button type="button" class="btn primary small" data-act="planDecide" data-id="${o.id}" data-decision="approve">Approve the plan</button>
+        <button type="button" class="btn small" data-act="mode" data-mode="planReject">Reject…</button>` : ""}
+      ${pl.running ? html`<button type="button" class="btn ghost small" data-act="mode" data-mode="planStop">Stop the plan…</button>` : ""}
+      <button type="button" class="btn ghost small" data-act="mode" data-mode="planAsk">Ask for another plan…</button>
+    </div>`}
+    ${ui.mode === "planStop" ? html`
+    <form class="panel-form" data-act="planStopForm" data-on="submit input" data-id="${o.id}">
+      <label class="field">Why stop it <span class="hint">For example: they replied on LinkedIn, or the contact left.</span><textarea name="note" rows="2"></textarea></label>
+      <div class="actions"><button type="submit" class="btn primary small" disabled>Stop the plan</button>
+        <button type="button" class="btn ghost small" data-act="mode" data-mode="">Cancel</button><span class="missing" data-missing>Say why.</span></div>
+    </form>` : ""}
+    ${inlineError(err)}
+  </div>`;
+}
+
+const STEP_STATUS = { done: ["good", "Done"], skipped: ["", "Skipped"], ready: ["warn", "Prepared, waiting for you"] };
+
+function planStep(s, o, pl, ctx) {
+  const mine = s.to === o.contact.name;
+  const isCurrent = pl.running && pl.current === s.n;
+  const [cls, label] = STEP_STATUS[s.status] || ["", ""];
+  const when = s.status === "done" || s.status === "skipped"
+    ? `${label} ${day(s.doneOn, ctx.today)}${s.how ? ` (${s.how})` : ""}${s.note ? `: ${s.note}` : ""}`
+    : s.due ? `Due ${day(s.due, ctx.today)}` : pl.status === "approved" ? "After the step before" : "";
+  const recording = ui.mode === `planDo:${s.n}` || ui.mode === `planSkip:${s.n}`;
+  return html`<li class="${isCurrent ? "plan-current" : ""}">
+    <span class="meta-3">Day ${s.day}</span> <b>${CHANNEL[s.channel] || s.channel}</b> to ${s.to}${s.via ? html` <span class="meta">(through ${s.via})</span>` : ""}
+    ${s.status && s.status !== "pending" ? html` <span class="tag ${cls}">${label}</span>` : ""}
+    <div class="meta">${s.purpose}</div>
+    ${s.content ? html`<div class="meta-3">${s.content.type}: ${s.content.title}${s.content.synthetic ? " (SYNTHETIC demo document)" : ""}</div>` : ""}
+    ${when && pl.status === "approved" ? html`<div class="meta-3">${when}</div>` : ""}
+    ${isCurrent && s.prepared ? prepared(s, o) : ""}
+    ${isCurrent && !recording ? stepActions(s, o, mine) : ""}
+    ${isCurrent && recording ? stepForm(s, o, ui.mode.startsWith("planDo")) : ""}
+  </li>`;
+}
+
+// What the outreach agent prepared for the current step.
+function prepared(s, o) {
+  const p = s.prepared;
+  const copy = (text, label) => html`<button type="button" class="btn ghost small" data-act="liCopy" data-text="${text}">${label}</button>`;
+  if (p.kind === "email") {
+    return html`<div class="meta">The email draft “${p.subject}” waits in <a href="${href("outreach", { tab: "approve", item: p.item, team: "1" })}">To approve</a>.
+      Sending it there completes this step.</div>`;
+  }
+  if (p.kind === "linkedin") return html`<div class="meta">The LinkedIn note is ready in the LinkedIn block below. Recording it as sent there completes this step.</div>`;
+  if (p.kind === "call") {
+    return html`<div class="plan-prepared"><p><b>Opening:</b> ${p.opening}</p>
+      <ul class="bullets">${p.questions.map((q) => html`<li>${q}</li>`)}</ul>
+      <p class="meta"><b>Voicemail:</b> ${p.voicemail}</p></div>`;
+  }
+  return html`<div class="plan-prepared"><p class="meta">To ${p.to || "your colleague"}:</p><div class="email-plain">${p.message}</div>
+    <div class="actions">${copy(p.message, "Copy the message")}</div></div>`;
+}
+
+function stepActions(s, o, mine) {
+  const contactOnly = ["email", "share_content", "invite", "linkedin_connect", "linkedin_message", "call"].includes(s.channel);
+  return html`<div class="actions">
+    ${s.status === "pending" ? html`<button type="button" class="btn small" data-act="planPrepare" data-id="${o.id}" data-n="${s.n}" ${contactOnly && !mine ? "disabled" : ""}>Prepare it now</button>` : ""}
+    <button type="button" class="btn small" data-act="mode" data-mode="planDo:${s.n}">I did it…</button>
+    <button type="button" class="btn ghost small" data-act="mode" data-mode="planSkip:${s.n}">Skip…</button>
+    ${contactOnly && !mine ? html`<span class="meta-3">Goes to ${s.to}: confirm them as the contact first, or skip it.</span>` : ""}
+  </div>`;
+}
+
+function stepForm(s, o, done) {
+  const need = !done || s.channel === "call";
+  const hint = !done ? "Why you skip it." : s.channel === "call" ? "What happened on the call." : "Optional, for example where you sent it.";
+  return html`<form class="panel-form" data-act="planStepForm" data-on="submit input" data-id="${o.id}" data-n="${s.n}" data-action="${done ? "done" : "skip"}" data-need="${need ? "1" : ""}">
+    <label class="field">${done ? "Note" : "Reason"} <span class="hint">${hint}</span><textarea name="note" rows="2"></textarea></label>
+    <div class="actions"><button type="submit" class="btn primary small" ${need ? "disabled" : ""}>${done ? "Record it as done" : "Skip this step"}</button>
+      <button type="button" class="btn ghost small" data-act="mode" data-mode="">Cancel</button><span class="missing" data-missing>${need ? "Write a few words." : ""}</span></div>
+  </form>`;
+}
+
+function planAskForm(o, again) {
+  return html`<form class="panel-form" data-act="planAskForm" data-on="submit" data-id="${o.id}">
+    ${again ? html`<label class="field">What should be different <span class="hint">Optional. The agent also sees the plan before.</span><textarea name="comment" rows="2"></textarea></label>`
+      : html`<label class="field">Anything the agent should know <span class="hint">Optional, for example "Sarah knows their COO".</span><textarea name="comment" rows="2"></textarea></label>`}
+    <div class="actions"><button type="submit" class="btn primary small">${again ? "Ask for a new plan" : "Make the plan"}</button>
+      <button type="button" class="btn ghost small" data-act="mode" data-mode="">Cancel</button></div>
+  </form>`;
 }
 
 function revisePanel(o, hasDraft) {
@@ -496,7 +644,7 @@ function agentDraft(d, ctx) {
   ${noticeBlock()}
   ${waitingNotice(o.outreach.waiting, ctx.me)}
   ${it.data.editedBy ? html`<div class="block"><span class="tag info">Edited by ${it.data.editedBy}${it.data.editedOn ? `, ${day(it.data.editedOn, ctx.today)}` : ""}</span></div>` : ""}
-  ${m === "editItem" ? itemEditPanel(it) : draftBody(it.data.subject, it.data.body, facts, { to: (d.preview && d.preview.to) || "", confirmed: !!o.contact.confirmedBy, checks: true, blocked: d.preview && d.preview.blocked })}
+  ${m === "editItem" ? itemEditPanel(it) : draftBody(it.data.subject, it.data.body, facts, { to: (d.preview && d.preview.to) || "", confirmed: !!o.contact.confirmedBy, checks: true, blocked: d.preview && d.preview.blocked, review: it.data.review })}
   ${m === "send" ? sendPanel(d, { itemId: it.id, hash: it.payloadHash }) : ""}
   ${(!m || m === "contact") && !emailWaits(o.outreach.waiting) ? html`
   <div class="decision-bar">
@@ -623,6 +771,7 @@ function waiting(d, ctx) {
     ${pending ? html`<div class="notice info">${icon("inbox")}<span>The ${pending.agent.toLowerCase()} wrote a ${PURPOSE[pending.data.purpose]?.toLowerCase() || "draft"}. <a href="${href("outreach", { tab: "approve", item: pending.id })}">Review it</a></span></div>` : ""}
   </div>
   ${noticeBlock()}
+  ${o.outreach.plan ? planBlock(o, ctx) : ""}
   ${m === "reply" ? replyPanel(o, ctx) : ""}
   ${m === "nurture" ? nurturePanel(o, ctx) : ""}
   ${linkedinBlock(o, ctx)}
@@ -810,6 +959,7 @@ export const actions = {
     if (!res) return;
     ui.mode = null;
     ui.notice = (res.warnings || []).map((w) => ({ text: w, cls: "warn" }));
+    if (res.review) ui.notice.push({ text: reviewText(res.review), cls: res.review.scores && res.review.meets ? "good" : "warn" });
     if ((res.newFacts || []).length) ui.notice.push({ text: `The agent added ${plural(res.newFacts.length, "newer fact")} to the research brief.`, cls: "" });
     if (!ui.notice.length) ui.notice = null;
     ctx.refresh();
@@ -866,6 +1016,49 @@ export const actions = {
   undoEmail: undoEmailAct,
   sendNow: sendNowAct,
   secondForm: secondFormAct,
+  async planAskForm(form, e, ctx) {
+    const res = await attempt("plan", form.querySelector("[type=submit]"), ctx, () =>
+      ctx.api.post(`/opportunities/${enc(form.dataset.id)}/outreach/plan`, { comment: form.elements.comment.value.trim() || null }));
+    if (!res) return;
+    ui.mode = null;
+    ctx.toast(`The plan is ready: start with ${res.plan.entry.name}. Nothing was sent.`);
+    ctx.refresh();
+  },
+  async planDecide(t, e, ctx) {
+    const ok = await attempt("plan", t, ctx, () => ctx.api.post(`/opportunities/${enc(t.dataset.id)}/outreach/plan/decision`, { decision: t.dataset.decision }));
+    if (ok) { ui.mode = null; ctx.toast("Plan approved. Draft each step when you are ready; nothing is sent without you."); }
+    ctx.refresh();
+  },
+  async planRejectForm(form, e, ctx) {
+    const note = form.elements.note.value.trim();
+    if (e.type !== "submit") return missing(form, note.length < 5 ? "Say why." : "");
+    const ok = await attempt("plan", form.querySelector("[type=submit]"), ctx, () =>
+      ctx.api.post(`/opportunities/${enc(form.dataset.id)}/outreach/plan/decision`, { decision: "reject", note }));
+    if (ok) ui.mode = null;
+    ctx.refresh();
+  },
+  async planPrepare(t, e, ctx) {
+    const res = await attempt("plan", t, ctx, () => ctx.api.post(`/opportunities/${enc(t.dataset.id)}/outreach/plan/steps/${t.dataset.n}/prepare`));
+    if (res) ctx.toast(`Step ${t.dataset.n}: ${res.prepared}. Nothing was sent.`);
+    ctx.refresh();
+  },
+  async planStepForm(form, e, ctx) {
+    const note = form.elements.note.value.trim();
+    const need = form.dataset.need === "1";
+    if (e.type !== "submit") return missing(form, need && note.length < 3 ? "Write a few words." : "");
+    const ok = await attempt("plan", form.querySelector("[type=submit]"), ctx, () =>
+      ctx.api.post(`/opportunities/${enc(form.dataset.id)}/outreach/plan/steps/${form.dataset.n}`, { action: form.dataset.action, note }));
+    if (ok) { ui.mode = null; ctx.toast(form.dataset.action === "done" ? `Step ${form.dataset.n} recorded.` : `Step ${form.dataset.n} skipped.`); }
+    ctx.refresh();
+  },
+  async planStopForm(form, e, ctx) {
+    const note = form.elements.note.value.trim();
+    if (e.type !== "submit") return missing(form, note.length < 3 ? "Say why." : "");
+    const ok = await attempt("plan", form.querySelector("[type=submit]"), ctx, () =>
+      ctx.api.post(`/opportunities/${enc(form.dataset.id)}/outreach/plan/stop`, { note }));
+    if (ok) ui.mode = null;
+    ctx.refresh();
+  },
   async liDraft(t, e, ctx) {
     const ok = await attempt("linkedin", t, ctx, () => ctx.api.post(`/opportunities/${enc(t.dataset.id)}/linkedin/draft`));
     if (ok) ctx.toast("The LinkedIn note is ready. Nothing was sent: copy it into LinkedIn yourself.");

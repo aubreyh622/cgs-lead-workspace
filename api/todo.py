@@ -8,7 +8,8 @@ row what is needed (not an internal status), and counts honestly (a group's coun
   agents search for and learn). Every source of work belongs to exactly one group, so nothing is listed twice.
 - One piece of work, one row: an agent's "Ready to submit" note replaces the rules' own Ready row for that opportunity, a
   follow-up draft replaces the "no reply yet" alert, and a direction or lesson proposal replaces the inbox note that
-  announced it.
+  announced it. While an approved contact plan runs, its due step replaces the follow-up and overdue rows, and a step
+  whose email draft is in the inbox is listed once, as that draft.
 - Health lists only what is wrong with the workspace itself (agents paused, AI budget used up, Gmail not connected, agent
   jobs that failed today). A healthy workspace takes no space.
 """
@@ -129,8 +130,42 @@ def todo(c: S.Ctx, follow_days: int, mail=None) -> dict:
         rows.append(_row(group, label, i.title, f"{i.agent}, {S.fmt(i.created_on)}" + (f". {o.company.name}" if o else ""), o, open,
                          ref={"type": "inbox", "id": i.id, "hash": i.payload_hash}, act=act, key=f"inbox:{i.id}"))
 
+    # ---------- contact plans (api/outreach_plan.py) ----------
+    from api import outreach_plan as OP
+    planned = set()
+    for r in s.scalars(select(m.Outreach).where(m.Outreach.plan.is_not(None))):
+        o = opps.get(r.opportunity_id)
+        if not o or not _mine(o, me) or o.stage not in OP.STAGES:
+            continue
+        pl = r.plan or {}
+        link = {"page": "outreach", "params": {"id": o.id, "team": "1"}}
+        if pl.get("status") == "proposed":
+            p_ = pl["plan"]
+            rows.append(_row("decide", "Decide the contact plan", f"{o.company.name}: start with {p_['entry']['name']}",
+                             f"{p_['approach'].replace('_', ' ').capitalize()}, {len(p_['steps'])} steps. Approve, reject or ask for another.",
+                             o, link, key=f"plan:{o.id}"))
+            continue
+        run = OP.running(o, r)
+        if not run:
+            continue
+        planned.add(o.id)
+        st = OP.current(run)
+        due = OP._d(st.get("due"))
+        what = f"{OP.LABEL[st['channel']]} to {st['to']}" + (f" through {st['via']}" if st.get("via") else "")
+        if st["status"] == "ready" and (st.get("prepared") or {}).get("kind") == "email":
+            continue  # its draft is listed as an inbox draft (Review and send)
+        if st["status"] == "ready":
+            rows.append(_row("decide", "Do the plan step", f"{o.company.name}, step {st['n']}: {what}",
+                             "Prepared by the outreach agent. Do it, then record it on the Outreach page (or skip it).", o, link,
+                             key=f"planstep:{o.id}:{st['n']}"))
+        elif due and due <= c.today:
+            rows.append(_row("waiting", "Plan step due", f"{o.company.name}, step {st['n']}: {what}",
+                             f"Due {S.fmt(due)}. The outreach agent prepares it at the next patrol, or prepare it now.", o, link,
+                             key=f"planstep:{o.id}:{st['n']}"))
+
     # ---------- the rules ----------
-    alerts = [a for a in S.alerts(c, follow_days) if opps.get(a["opportunityId"]) is not None and opps[a["opportunityId"]].owner == me]
+    alerts = [a for a in S.alerts(c, follow_days) if opps.get(a["opportunityId"]) is not None and opps[a["opportunityId"]].owner == me
+              and not (a["opportunityId"] in planned and a["type"] in ("overdue", "follow_up_due"))]  # the plan's step row covers it
     overdue = {a["opportunityId"] for a in alerts if a["type"] == "overdue"}
     for a in alerts:
         o = opps[a["opportunityId"]]

@@ -4,3 +4,11 @@ psycopg[binary]==3.3.8
 # Google sign-in (CGS_LOGIN=google): checks the signed note Identity-Aware Proxy adds to each request.
 google-auth==2.62.2
 cryptography==50.0.2
+# Traces and metrics to Cloud Trace / Cloud Monitoring (OTEL_TO_CLOUD=on, api/telemetry.py): ADK's OTLP exporter and what it needs.
+opentelemetry-exporter-otlp-proto-http==1.45.2
+opentelemetry-exporter-otlp-proto-common==1.45.2
+opentelemetry-exporter-http-transport==0.66b2
+opentelemetry-exporter-otlp-common==0.66b2
+opentelemetry-proto==1.45.2
+googleapis-common-protos==1.76.0
+protobuf==7.36.2

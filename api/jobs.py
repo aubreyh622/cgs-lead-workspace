@@ -22,6 +22,10 @@ KINDS = {
     "first_draft": ("Outreach agent", True, "Writes the first email once a lead is accepted at Step 4; the owner approves and sends it"),
     "followup_draft": ("Outreach agent", True, "Writes a follow-up draft when a sent email has no reply"),
     "reconnect_draft": ("Outreach agent", True, "Writes a reconnect draft that cites the company's latest news"),
+    "contact_plan": ("Outreach agent", True, "Proposes a contact plan once a lead is accepted at Step 4 (when the first contact is a plan); "
+                                             "the owner approves it"),
+    "plan_step": ("Outreach agent", True, "Prepares the next step of an approved contact plan when it is due (an email draft, the "
+                                          "LinkedIn note, call notes or an introduction request); a person does it"),
     "research_refresh": ("Research agent", True, "Checks a company again for news since the last brief"),
     "person_lookup": ("Research agent", True, "Looks for a person another agent needs (for example the CFO who approves)"),
     "note_evidence": ("Evidence agent", True, "Reads the client's first reply for qualification evidence, for the owner to review"),
@@ -42,7 +46,8 @@ TRIGGERS = ("event", "patrol", "handoff", "person", "manager")
 MAX_DEPTH = 2          # a handoff may lead to one more handoff, no further
 HANDOFF_CAP = 3        # handoffs per opportunity per day
 INBOX_DAYS = 14        # what an agent prepared expires after two weeks: news and drafts go out of date
-DEFAULTS = {"agents_paused": False, "paused_agents": [], "patrol_hour": 8, "follow_days": 7, "stall_days": 14}
+DEFAULTS = {"agents_paused": False, "paused_agents": [], "patrol_hour": 8, "follow_days": 7, "stall_days": 14,
+            "first_contact": "email"}  # first_contact: what Step 4 accept starts, the first email or a contact plan
 # Agents a person can pause one at a time. Their jobs stay on the board and wait; the rest of the board keeps running.
 # The evidence agent runs when a person saves notes; its one job (reading the first reply) is paused with everything,
 # as are the rules.

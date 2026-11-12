@@ -30,7 +30,7 @@ class ManagerAI:
         self.manager_turns = 0
 
     def __call__(self, url, headers, payload, **kw):
-        if "delegate" in {d["name"] for d in payload["tools"][0]["functionDeclarations"]}:
+        if "delegate" in {d["name"] for d in (payload.get("tools") or [{"functionDeclarations": []}])[0]["functionDeclarations"]}:
             self.manager_turns += 1
         return play(payload, manager=plan)
 
@@ -164,7 +164,7 @@ def test_one_voice_per_opportunity_in_on_mode_the_triage_writes_and_hears_both_r
         return default_triage(case)
 
     def ai(url, headers, payload, **kw):
-        if "suggest" in {d["name"] for d in payload["tools"][0]["functionDeclarations"]}:
+        if "suggest" in {d["name"] for d in (payload.get("tools") or [{"functionDeclarations": []}])[0]["functionDeclarations"]}:
             next_step_runs.append(1)
         return play(payload, manager=plan2, triage=triage)
 

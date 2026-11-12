@@ -18,6 +18,7 @@ import re
 
 import httpx
 
+from api import agent_runtime
 from api.llm import LLMError, Provider, Usage
 from lead_agent.providers import ProviderError, post, redact
 
@@ -44,7 +45,7 @@ QUERY_SCHEMA = {"type": "object", "properties": {"queries": {"type": "array", "i
 
 
 def write_queries(provider: Provider, direction: dict, intent: str, today: date) -> tuple[list[str], Usage]:
-    data, usage = provider.json(QUERY_SYSTEM, json.dumps({"direction": direction, "consultant_request": intent, "today": today.isoformat()}),
+    data, usage = agent_runtime.ask(provider, QUERY_SYSTEM, json.dumps({"direction": direction, "consultant_request": intent, "today": today.isoformat()}),
                                 QUERY_SCHEMA, "search_queries")
     qs = [q.strip()[:200] for q in data.get("queries", []) if isinstance(q, str) and 3 <= len(q.strip()) <= 200][:MAX_SEARCHES]
     return (qs or queries(direction, intent, today)), usage
@@ -130,7 +131,7 @@ def discover(provider: Provider, search, direction: dict, intent: str, known: se
         return ([], info), u1
     user = json.dumps({"direction": direction, "consultant_request": intent, "already_known_companies": sorted(known)[:200],
                        "search_results": [{"index": i, **r} for i, r in enumerate(results)]}, ensure_ascii=False)
-    data, u2 = provider.json(SYSTEM, user, SCHEMA, "candidates")
+    data, u2 = agent_runtime.ask(provider, SYSTEM, user, SCHEMA, "candidates")
     raw = data.get("candidates", [])
     kept, dropped = check_nominations(raw, results, direction.get("excluded_domains", []), known)
     _debug(debug_file, qs, results, raw)
@@ -175,7 +176,8 @@ def company_site(raw: str, company: str, source_url: str, source_text: str) -> s
 def resolve_domain(search, company: str) -> str:
     """Find the official website for a company name with one search. A result is taken when its host carries every
     distinctive word of the name, or all but one when the result's own title or text names the company in full (a
-    website often drops a word: kesslermotion for Kessler Motion Controls). Seen live on 5 Nov 2026: the first word
+    website often drops a word: kesslermotion for Kessler Motion Controls), or shortens words when the page names the
+    company in full (silverlinemed for Silverline Medical Devices; see abbreviates). Seen live on 5 Nov 2026: the first word
     alone took "Second Nature Brands" to secondnature.com, another company, and "Olin" to a college. Colleges, government
     sites and social or data sites are never taken. Returns "" when nothing fits: research then asks a person for the
     website instead of guessing."""
@@ -190,9 +192,26 @@ def resolve_domain(search, company: str) -> str:
             continue
         hits = sum(w in flat for w in words)
         named = full in " ".join(re.findall(r"[a-z0-9]+", f"{r.get('title', '')} {r.get('content', '')}".lower()))
-        if hits == len(words) or (hits >= len(words) - 1 and hits >= 1 and named):
+        if hits == len(words) or (hits >= len(words) - 1 and hits >= 1 and named) or (named and abbreviates(host, words)):
             return ".".join(host.split(".")[-3:]) if host.count(".") >= 3 else host
     return ""
+
+
+def abbreviates(host: str, words: list[str]) -> bool:
+    """True when the site's name is some of the company's words in full plus the start (3 letters or more) of others, and
+    nothing else: silverlinemed = silverline + med(ical), quillonchem = quillon + chem(icals). At least one word must be
+    there in full, so a host made only of short pieces never counts."""
+    label = host.split(".")[0].replace("-", "")
+    whole = [w for w in words if w in label]
+    if not whole:
+        return False
+    rest = label
+    for w in whole:
+        rest = rest.replace(w, "", 1)
+    i = 0
+    for w in (w for w in words if w not in whole):
+        i += max((n for n in range(3, len(w) + 1) if rest.startswith(w[:n], i)), default=0)
+    return 0 < i == len(rest)
 
 
 # ---------- tool-using discovery agent (multi-agent step 4) ----------

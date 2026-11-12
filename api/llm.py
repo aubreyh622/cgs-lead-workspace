@@ -101,6 +101,11 @@ class Provider:
             raise LLMError(redact(str(e), [self.key]), e.kind) from None
         except httpx.HTTPError as e:
             raise LLMError(f"Could not reach the AI service ({type(e).__name__}). Check the internet connection, VPN or proxy.", "temporary") from None
+        except Exception as e:
+            from api.google_cloud import CloudConfigError
+            if isinstance(e, CloudConfigError):
+                raise LLMError(str(e), "auth") from None
+            raise
 
     def json(self, system: str, user: str, schema: dict, schema_name: str) -> tuple[dict, Usage]:
         text, usage = self._send(self._call, system, user, schema, schema_name)
@@ -133,12 +138,21 @@ def _result_text(content: str) -> str:
 class GeminiProvider(Provider):
     name = "gemini"
 
+    def __init__(self, model: str, key: str, transport=post, backend: str = "ai_studio"):
+        super().__init__(model, key, transport)
+        self.backend = backend  # ai_studio | agent_platform | express (api/google_cloud.py, GEMINI_BACKEND)
+
     @property
     def url(self) -> str:
-        return f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        from api.google_cloud import model_url
+        return model_url(self.model, "generateContent", self.backend)
+
+    def _headers(self) -> dict:
+        from api.google_cloud import auth_headers
+        return auth_headers(self.key, self.backend)
 
     def _call(self, system, user, schema, schema_name):
-        data = self.transport(self.url, {"x-goog-api-key": self.key},
+        data = self.transport(self.url, self._headers(),
                               {"systemInstruction": {"parts": [{"text": system}]},
                                "contents": [{"role": "user", "parts": [{"text": user}]}],
                                "generationConfig": {"responseMimeType": "application/json", "responseJsonSchema": schema,
@@ -161,7 +175,7 @@ class GeminiProvider(Provider):
                 contents.append({"role": "user", "parts": [
                     {"functionResponse": {**({"id": c.id} if c.native_id else {}), "name": c.name, "response": {"result": _result_text(r)}}}
                     for c, r, _ in msg["results"]] + ([{"text": msg["note"]}] if msg.get("note") else [])})
-        data = self.transport(self.url, {"x-goog-api-key": self.key}, {
+        data = self.transport(self.url, self._headers(), {
             "systemInstruction": {"parts": [{"text": system}]}, "contents": contents,
             "tools": [{"functionDeclarations": [{"name": t["name"], "description": t["description"], "parametersJsonSchema": t["parameters"]}
                                                 for t in tools]}],
@@ -316,6 +330,19 @@ def make_provider(name: str, model: str = "", key: str | None = None, transport=
     model = (model or DEFAULT_MODELS[name]).strip()
     if not model:
         raise LLMError(f"Set AI_MODEL in .env to a {name} model your account can use.", "config")
+    if name == "gemini":
+        from api.google_cloud import CloudConfigError, express_key, gemini_backend
+        try:
+            backend = gemini_backend()
+        except CloudConfigError as e:
+            raise LLMError(str(e), "config") from None
+        if backend == "agent_platform":  # signed by the service account (api/google_cloud.py): no key
+            return GeminiProvider(model, "", transport, backend)
+        if backend == "express":
+            key = key if key is not None else express_key()
+            if not (key or "").strip():
+                raise LLMError("GEMINI_BACKEND=express needs the express mode key in GOOGLE_GENAI_API_KEY.", "auth")
+            return GeminiProvider(model, key.strip(), transport, backend)
     key = (key if key is not None else os.environ.get(KEY_NAMES[name], "")).strip()
     if not key or key.lower() in ("your-api-key", "redacted") or any(ch.isspace() for ch in key):
         raise LLMError(f"Add your {KEY_NAMES[name]} to the .env file, then restart.", "auth")

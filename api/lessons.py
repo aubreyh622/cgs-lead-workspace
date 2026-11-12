@@ -31,6 +31,8 @@ MAX_ACTIVE = 5          # approved lessons per agent
 MAX_PER_REVIEW = 3      # lessons the weekly review may propose
 TEXT_MIN, TEXT_MAX = 20, 400
 REFUSED_SHARE = 0.3     # manager decisions the code refused, as a share of at least MIN_SAMPLE
+REJECTED_PLANS = 0.3    # contact plans people rejected, as a share of at least MIN_SAMPLE decided
+SKIPPED_STEPS = 0.5     # steps of one channel people skipped, as a share of at least MIN_SAMPLE done or skipped
 LOOSENS = re.compile(r"\b(ignore|ignoring|override|bypass|skip|skipping|disregard)\b", re.I)
 
 
@@ -82,6 +84,16 @@ def findings(s, today: date, days: int = SC.WINDOW_DAYS) -> list[dict]:
                                    f"left {r['ignored']} unread until they expired",
                         "numbers": {k: r[k] for k in ("judged", "used", "dismissed", "ignored", "usefulRate", "ignoredRate")},
                         "reviewer_reasons": []})
+    pl = SC.plans(s, today, days)
+    if pl["decided"] >= SC.MIN_SAMPLE and pl["rejected"] / pl["decided"] >= REJECTED_PLANS:
+        out.append({"ref": "plans:rejected", "agent": "Outreach agent",
+                    "summary": f"people rejected {pl['rejected']} of {pl['decided']} contact plans",
+                    "numbers": plan_numbers(pl), "reviewer_reasons": pl["rejectionNotes"][-5:]})
+    for r in pl["byChannel"]:
+        if r["enough"] and r["skipRate"] >= SKIPPED_STEPS:
+            out.append({"ref": f"plans:skipped:{r['channel']}", "agent": "Outreach agent",
+                        "summary": f"people skipped {r['skipped']} of {r['done'] + r['skipped']} '{r['channel']}' steps in contact plans",
+                        "numbers": {k: r[k] for k in ("done", "skipped", "skipRate")}, "reviewer_reasons": r["skipNotes"]})
     mg = manager_numbers(s, today, days)
     if mg["decisions"] >= SC.MIN_SAMPLE and mg["refused"] / mg["decisions"] >= REFUSED_SHARE:
         details = [d.detail for d in s.scalars(select(m.ManagerDecision).where(
@@ -90,6 +102,10 @@ def findings(s, today: date, days: int = SC.WINDOW_DAYS) -> list[dict]:
                     "summary": f"the code refused {mg['refused']} of the manager's {mg['decisions']} decisions",
                     "numbers": mg, "reviewer_reasons": list(dict.fromkeys(details))[:5]})
     return out
+
+
+def plan_numbers(pl: dict) -> dict:
+    return {"decided": pl["decided"], "approved": pl["approved"], "rejected": pl["rejected"]}
 
 
 def manager_numbers(s, today: date, days: int) -> dict:
@@ -109,6 +125,11 @@ def numbers(s, today: date, ref: str, days: int) -> dict | None:
         return {k: r[k] for k in ("judged", "used", "dismissed", "ignored", "usefulRate", "ignoredRate")} if r else {"judged": 0}
     if ref == "manager:refused":
         return manager_numbers(s, today, days)
+    if ref == "plans:rejected":
+        return plan_numbers(SC.plans(s, today, days))
+    if kind == "plans" and key.startswith("skipped:"):
+        r = next((x for x in SC.plans(s, today, days)["byChannel"] if x["channel"] == key.split(":", 1)[1]), None)
+        return {k: r[k] for k in ("done", "skipped", "skipRate")} if r else {"done": 0, "skipped": 0, "skipRate": 0}
     return None
 
 

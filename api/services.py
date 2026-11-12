@@ -698,7 +698,11 @@ def step4(c: Ctx, opp_id: str, b) -> None:
         c.s.add(m.Decision(opportunity_id=o.id, step=4, decision="Accepted", by=c.actor, note=f"Rating {b.rating}, owner {b.owner}", on=c.today))
         log(c, o.id, "h", f"Accepted by {c.actor}: rating {b.rating}, owner {b.owner}")
         CRM.mark(c, o)  # with an undo window the sync skips it until the window ends
-        job = J.enqueue(c.s, c.today, "first_draft", o.id, "event", f"Accepted at Step 4 by {c.actor}: write the first email", requested_by=c.actor)
+        if J.setting(c.s, "first_contact") == "plan":  # the agents propose a contact plan first (api/outreach_plan.py)
+            job = J.enqueue(c.s, c.today, "contact_plan", o.id, "event", f"Accepted at Step 4 by {c.actor}: propose a contact plan",
+                            requested_by=c.actor)
+        else:
+            job = J.enqueue(c.s, c.today, "first_draft", o.id, "event", f"Accepted at Step 4 by {c.actor}: write the first email", requested_by=c.actor)
         if seconds:
             c.s.flush()
             U.hold_step4(c, o, "Accepted", before, seconds, fb.id, job)
@@ -814,6 +818,11 @@ def generate_draft(c: Ctx, opp_id: str, angle: str | None, tone: str) -> dict:
     r.subject, r.body, r.angle, r.tone, r.status = draft["subject"], draft["body"], angle, tone, "draft"
     touch(c, o)
     log(c, o.id, "a", "Outreach agent wrote a draft from the research brief. Nothing was sent.")
+    rv = draft.get("review")
+    if rv:
+        log(c, o.id, "a", f"Reviewer ({rv['standard']}): " + (f"{rv['summary']}, " + ("meets the email standard" if rv["meets"] else "below the email standard")
+                                                             if rv.get("scores") else f"could not review the draft ({rv.get('error')})")
+            + (f"; sent back {rv['rounds']}x before this draft" if rv.get("rounds") else ""))
     if new_facts:
         draft["newFacts"] = new_facts
     lib = knowledge.library().by_id
@@ -995,6 +1004,8 @@ def record_mail_sent(c: Ctx, o: m.Opportunity, purpose: str, on: date | None = N
     touch(c, o)
     log(c, o.id, "h", f"{purpose.capitalize()} email sent through Gmail{how} to {r.to_email}.")
     CRM.mark(c, o)
+    from api import outreach_plan as OP
+    OP.step_done(c, o, OP.EMAIL_LIKE, "email sent through Gmail")  # an approved contact plan's email step is done
 
 
 def email_out(c: Ctx, opp_id: str, to: str, mode: str, seen_hash: str, item_id: str | None = None, delay: int = 0) -> dict:

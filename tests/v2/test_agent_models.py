@@ -14,7 +14,7 @@ from api import services as S
 from api.check_quality import cost
 from api.main import create_app
 from api.settings import Settings, load_settings
-from agent_fakes import turn
+from agent_fakes import review_ok, turn
 
 ME = {"X-User": "Alex Morgan"}
 
@@ -44,7 +44,7 @@ def test_a_draft_is_written_and_logged_with_the_outreach_agents_model(tmp_path, 
     seen = []
     good = {"subject": "Your new Ohio foundry",
             "body": "Hi Priya, I saw that [[f1|Halvorsen opened a third foundry in Ohio]]. Open to 20 minutes? Alex Morgan, CGS Advisors"}
-    answers = [turn(("brief", {})), turn(("submit_draft", good))]
+    answers = [turn(("brief", {})), turn(("submit_draft", good)), review_ok(tokens=40)]
 
     def fake(url, headers, payload, **kw):
         seen.append(url)
@@ -57,10 +57,36 @@ def test_a_draft_is_written_and_logged_with_the_outreach_agents_model(tmp_path, 
                               agent_models=(("Outreach agent", "writer-model"),)))
     r = TestClient(app).post("/api/opportunities/halvorsen/outreach/generate", json={}, headers=ME)
     assert r.status_code == 200, r.text
-    assert all("models/writer-model:" in u for u in seen) and len(seen) == 2
+    assert all("models/writer-model:" in u for u in seen) and len(seen) == 3  # the review runs on the writer's model too
     with app.state.db.session() as s:
         run = s.scalars(select(m.AgentRun).where(m.AgentRun.agent == "Outreach agent", m.AgentRun.opportunity_id == "halvorsen")).one()
         assert run.model == "gemini:writer-model"
+
+
+def test_the_outreach_reviewer_may_have_its_own_model(tmp_path, monkeypatch):
+    monkeypatch.setenv("AI_MODEL_OUTREACH_REVIEW", "judge-model")
+    assert load_settings(env_file=None).model_for("Outreach reviewer") == "judge-model"
+    seen = []
+    good = {"subject": "Your new Ohio foundry",
+            "body": "Hi Priya, I saw that [[f1|Halvorsen opened a third foundry in Ohio]]. Open to 20 minutes? Alex Morgan, CGS Advisors"}
+    answers = [turn(("brief", {})), turn(("submit_draft", good)), review_ok(tokens=40)]
+
+    def fake(url, headers, payload, **kw):
+        seen.append(url)
+        return answers.pop(0)
+    real = llm.make_provider
+    monkeypatch.setattr(S, "make_provider", lambda name, model="", **kw: real(name, model, key="k", transport=fake))
+    db = tmp_path / "w.sqlite3"
+    create_app(Settings(db_path=db)).state.db.engine.dispose()
+    app = create_app(Settings(app_mode="live", db_path=db, ai_provider="gemini", ai_model="base-model",
+                              agent_models=(("Outreach agent", "writer-model"), ("Outreach reviewer", "judge-model"))))
+    r = TestClient(app).post("/api/opportunities/halvorsen/outreach/generate", json={}, headers=ME)
+    assert r.status_code == 200, r.text
+    assert r.json()["review"]["meets"] is True and r.json()["review"]["standard"] == "built-in-1"
+    assert ["writer-model" in u for u in seen] == [True, True, False] and "models/judge-model:" in seen[2]
+    with app.state.db.session() as s:
+        run = s.scalars(select(m.AgentRun).where(m.AgentRun.agent == "Outreach agent", m.AgentRun.opportunity_id == "halvorsen")).one()
+        assert run.tokens_in == 5 + 5 + 40  # the reviewer's tokens count toward the run
 
 
 def test_claude_requests_cache_the_repeated_prefix_and_count_cache_tokens():

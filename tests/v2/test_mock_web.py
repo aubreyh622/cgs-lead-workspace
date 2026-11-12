@@ -10,7 +10,7 @@ from api.main import create_app
 from api.mock_research import MockResearchBridge, research
 from api.search import PROVIDERS, MockSearch, make_search, search_config
 from api.settings import Settings
-from agent_fakes import turn
+from agent_fakes import review_ok, turn
 
 ME = {"X-User": "Alex Morgan"}
 
@@ -96,7 +96,7 @@ def test_draft_citing_a_synthetic_case_carries_a_warning(tmp_path):
     passage = library().search(query, k=3, types=("case", "service", "document"))[0]
     good = {"subject": "Your new Ohio foundry", "body": f"Hi Priya, I saw that [[f1|Halvorsen opened a third foundry in Ohio]]. "
             f"[[{passage['id']}|{' '.join(passage['text'].split()[:6])}]]. Open to 20 minutes? Alex Morgan, CGS Advisors"}
-    fake = FakeAI(turn(("brief", {})), turn(("search_library", {"query": query})), turn(("submit_draft", good)))
+    fake = FakeAI(turn(("brief", {})), turn(("search_library", {"query": query})), turn(("submit_draft", good)), review_ok())
     app.state.provider_factory = lambda: make_provider("gemini", "m", key="k", transport=fake)
     r = TestClient(app).post("/api/opportunities/halvorsen/outreach/generate", json={}, headers=ME).json()
     assert "SYNTHETIC" in r["warnings"][0]

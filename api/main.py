@@ -249,6 +249,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"login": settings.login, "name": name, "email": email, "admin": admin, "mayActAs": admin,
                 "admins": admins, "everyoneIsAdmin": not admins}
 
+    def agent_runtime_name() -> str:
+        """adk (Google's Agent Development Kit) or legacy (the hand-written loop): AGENT_RUNTIME in .env."""
+        from api.agent_runtime import runtime
+        from api.llm import LLMError
+        try:
+            return runtime()
+        except LLMError as e:
+            return f"not available: {e}"
+
+    def gemini_backend_name() -> str:
+        """Where Gemini requests go: AI Studio with a key, or Agent Platform in CGS's project (GEMINI_BACKEND)."""
+        from api.google_cloud import describe
+        return describe()
+
+    def cloud_telemetry_status() -> str:
+        from api.telemetry import STATE
+        return STATE["status"]
+
     @app.get("/api/config", tags=["system"], summary="Current modes")
     def config():
         from api.actions import simulated
@@ -257,7 +275,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"appMode": settings.app_mode, "crmMode": settings.crm_mode, "crm": crm.name if crm else "off", "ruleVersion": rule_version(),
                 "aiConnected": settings.app_mode == "live", "aiProvider": settings.ai_provider if settings.app_mode == "live" else "demo rules",
                 "web": search_config()["provider"], "timeTravel": simulated(settings), "agentWorker": bool(app.state.worker),
-                "demoData": app.state.demo_data,
+                "demoData": app.state.demo_data, "agentRuntime": agent_runtime_name(), "gemini": gemini_backend_name(),
+                "cloudTelemetry": cloud_telemetry_status(),
                 "note": "Demo mode uses text rules instead of AI. In live mode, AI actions return an error rather than demo results."}
 
     @app.get("/api/rules", tags=["rules"], summary="The qualification rules (weights, anchors, minimums)")
@@ -303,9 +322,23 @@ def port_in_use(port: int) -> bool:
 
 
 def main():
+    import os
     import uvicorn
     s = app.state.settings
-    print(f"CGS Lead Workspace v2 ({s.app_mode} mode, CRM {s.crm_mode})")
+    from api.agent_runtime import runtime
+    from api.llm import LLMError
+    try:
+        engine = {"adk": "Google ADK", "legacy": "legacy loop"}[runtime()]
+    except LLMError as e:
+        engine = str(e)
+    print(f"CGS Lead Workspace v2 ({s.app_mode} mode, CRM {s.crm_mode}, agents on {engine})")
+    from api.google_cloud import describe
+    from api.telemetry import setup_cloud_telemetry
+    if s.ai_provider == "gemini" or os.environ.get("KNOWLEDGE_EMBEDDINGS", "").strip().lower() == "gemini":
+        print(f"Gemini: {describe()}")
+    telemetry = setup_cloud_telemetry()
+    if telemetry != "off":
+        print(f"Cloud traces and metrics: {telemetry}")
     local_db = s.database_url.startswith("sqlite")
     if s.app_mode == "live" and app.state.demo_data:
         print(f"Note: {s.db_path if local_db else 'the database'} holds the synthetic demo records. For real leads, set CGS_V2_DB_PATH in .env to a new file.")

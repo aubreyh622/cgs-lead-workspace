@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 
+from api import agent_runtime
 from api import models as m
 from api import services as S
 
@@ -110,7 +111,7 @@ def draft(c: S.Ctx, opp_id: str) -> dict:
                            "email_draft_already_written": email[:1500] or None,
                            "stage": "not contacted yet" if o.stage == "identified" else "emailed, no reply yet" if o.stage == "contacted" else "in nurture"},
                           ensure_ascii=False)
-        return p.json(SYSTEM, user, SCHEMA, "linkedin_outreach")
+        return agent_runtime.ask(p, SYSTEM, user, SCHEMA, "linkedin_outreach")
 
     d, _ = S.run_agent(c, "Outreach agent", o, "linkedin-demo-1.0", lambda: demo_text(o, sender), live=live, live_prompt=VERSION)
     d = {"note": _fit(_CITE.sub(lambda g: g.group(2), d.get("note", "")), NOTE_MAX),
@@ -160,6 +161,8 @@ def record(c: S.Ctx, opp_id: str, what: str, follow_days: int) -> dict:
     sent = dict((r.linkedin or {}).get("sent") or {})
     sent[what] = c.today.isoformat()
     r.linkedin = {**(r.linkedin or {}), "sent": sent}
+    from api import outreach_plan as OP  # an approved contact plan's LinkedIn step is done
+    OP.step_done(c, o, ("linkedin_connect",) if what == "note" else ("linkedin_message",), f"{label} recorded")
     return view(o, r)
 
 

@@ -117,6 +117,7 @@ function teamView(d, ctx) {
           <li><span>Daily patrol</span><span>${String(o.patrolHour).padStart(2, "0")}:00</span></li>
           <li><span>Last patrol</span><span>${o.lastPatrol ? day(o.lastPatrol, ctx.today) : "Never"}</span></li>
           <li><span>Manager agent</span><span>${o.managerMode}</span></li>
+          <li><span>First contact</span><span>${o.firstContact === "plan" ? "Contact plan" : "First email"}</span></li>
           <li><span>Jobs queued</span><span>${o.queued}</span></li>
         </ul>
         <button type="button" class="btn ${o.paused ? "primary" : ""}" data-act="pause" data-paused="${o.paused ? "" : "1"}">${o.paused ? "Resume the agents" : "Pause all agents"}</button>
@@ -126,6 +127,8 @@ function teamView(d, ctx) {
           <label class="field">Patrol hour (0-23)<input type="number" name="patrol_hour" min="0" max="23" step="1" value="${o.patrolHour}"></label>
           <label class="field">Manager agent<select name="manager_mode">${["off", "shadow", "on"].map((m) => html`<option ${m === o.managerMode ? "selected" : ""}>${m}</option>`)}</select>
             <span class="hint">Shadow: it decides and compares, but queues nothing.</span></label>
+          <label class="field">First contact after Step 4<select name="first_contact">${[["email", "The first email"], ["plan", "A contact plan"]].map(([v, l]) => html`<option value="${v}" ${v === o.firstContact ? "selected" : ""}>${l}</option>`)}</select>
+          <span class="hint">A contact plan: the outreach agent proposes whom to approach and how; the owner approves it before any step.</span></label>
           <div class="actions"><button type="submit" class="btn primary">Save</button>${cancelButton}</div>
           ${st.err("settings")}
         </form>` : openButton("settings", "Change budget, patrol or manager…")}
@@ -487,6 +490,7 @@ function scorecardView(d, ctx) {
           <td class="num">${k.decided}</td><td class="num">${k.accepted}</td><td class="num">${k.raised}</td><td class="num">${k.lowered}</td><td class="num">${k.rejected}</td><td class="num">${k.byHandNeverProposed}</td></tr>`)}</tbody>
       </table></div>` : emptyState("No evidence decisions yet", "Rows appear once people decide on evidence proposals.")}
     </section>
+    ${plansCard(s.plans)}
     <section class="card" aria-labelledby="dec-h">
       <div class="card-head"><h2 id="dec-h">The manager agent's decisions</h2></div>
       ${d.decisions.error ? html`<div class="card-body"><div class="notice bad">${icon("alert")}<span>${d.decisions.error}</span></div></div>`
@@ -495,6 +499,30 @@ function scorecardView(d, ctx) {
         : emptyState("No decisions yet", "The manager agent decides during its daily review and when something happens to an opportunity.")}
     </section>
   </div>`;
+}
+
+const APPROACH_LABEL = { warm: "Warm (an introduction)", value_first: "Value first", direct: "Direct" };
+
+// Contact plans (api/scorecard.py plans): how people decided them and what came of the approved ones.
+function plansCard(p) {
+  if (!p) return "";
+  return html`<section class="card" aria-labelledby="plans-h">
+    <div class="card-head"><div><h2 id="plans-h">Contact plans</h2>
+      <p class="meta">${p.decided ? `${p.approved} approved, ${p.rejected} rejected.` : "No plan decided yet."} A reply counts when it came after the plan started.</p></div></div>
+    ${p.decided || p.byChannel.length ? html`<div class="table-wrap"><table class="list">
+      <thead><tr><th scope="col">Approach</th><th scope="col">Approved</th><th scope="col">Rejected</th><th scope="col">Running</th><th scope="col">Replied</th><th scope="col">Reply rate</th></tr></thead>
+      <tbody>${p.byApproach.filter((a) => a.decided || a.plans).map((a) => html`<tr><td><b>${APPROACH_LABEL[a.approach] || a.approach}</b></td>
+        <td class="num">${a.approved}</td><td class="num">${a.rejected}</td><td class="num">${a.running}</td><td class="num">${a.replied}</td>
+        <td class="num">${pct(a.replyRate)}${a.enough ? "" : html`<div class="meta-3">small sample</div>`}</td></tr>`)}</tbody>
+    </table></div>
+    ${p.byChannel.length ? html`<div class="table-wrap"><table class="list">
+      <thead><tr><th scope="col">Step</th><th scope="col">Done</th><th scope="col">Skipped</th><th scope="col">Last step before a reply</th></tr></thead>
+      <tbody>${p.byChannel.map((c) => html`<tr><td><b>${c.channel.replace(/_/g, " ")}</b>${c.skipNotes.length ? html`<div class="meta-3">Skipped because: ${c.skipNotes.join("; ")}</div>` : ""}</td>
+        <td class="num">${c.done}</td><td class="num">${c.skipped}</td><td class="num">${c.beforeReply}</td></tr>`)}</tbody>
+    </table></div>` : ""}
+    ${p.rejectionNotes.length ? html`<div class="card-body"><p class="meta"><b>Why plans were rejected:</b> ${p.rejectionNotes.join("; ")}</p></div>` : ""}`
+    : html`<div class="card-body">${emptyState("Nothing to count yet", "Rows appear once people approve or reject contact plans.")}</div>`}
+  </section>`;
 }
 
 // ---------- actions ----------
@@ -548,7 +576,8 @@ export const actions = {
   settingsForm(form, e, ctx) {
     const f = form.elements;
     st.write("settings", form.querySelector("[type=submit]"), ctx, () => ctx.api.patch("/agents",
-      { ai_budget: Number(f.ai_budget.value), patrol_hour: Number(f.patrol_hour.value), manager_mode: f.manager_mode.value }));
+      { ai_budget: Number(f.ai_budget.value), patrol_hour: Number(f.patrol_hour.value), manager_mode: f.manager_mode.value,
+        ...(f.first_contact ? { first_contact: f.first_contact.value } : {}) }));
   },
   crmPull(t, e, ctx) {
     st.write("crm", t, ctx, () => ctx.api.post("/crm/pull"), (res) => {

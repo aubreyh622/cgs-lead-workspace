@@ -1,0 +1,27 @@
+# agents-cli eval config for the research cases (traces from python -m api.adk_eval generate). Local metrics only:
+# no Google Cloud project is needed. The parity bar against the legacy loop is in api/adk_eval.py (BAR).
+metrics_to_run:
+  - research_checks
+  - no_invented_name
+  - task_completed
+  - model_turns
+  - answers_sent_back
+  - tokens_in_k
+
+custom_metrics:
+  - name: research_checks
+    custom_function_file: metrics/research_checks.py
+  - name: no_invented_name
+    custom_function_file: metrics/no_invented_name.py
+  - name: task_completed
+    custom_function_file: metrics/task_completed.py
+  - name: model_turns
+    custom_function_file: metrics/model_turns.py
+  - name: answers_sent_back
+    custom_function_file: metrics/answers_sent_back.py
+  - name: tokens_in_k
+    custom_function_file: metrics/tokens_in_k.py
+
+# hard limits: a serious error in any case fails the run
+thresholds:
+  no_invented_name: 1.0

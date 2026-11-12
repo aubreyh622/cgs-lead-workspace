@@ -1,0 +1,50 @@
+{
+  "about": "How CGS first reaches a company: the principles, the ways in (channels) and the limits the outreach agent plans with (api/outreach_plan.py). The agent proposes a contact plan for one lead: whom to approach first and why, who else matters, and two to five steps over a few weeks; a person approves it before anything is drafted. Written by the project team from general B2B practice and CGS's public website. It holds nothing from CGS's internal guides: replace or extend it with CGS's own playbook once CGS agrees to share it with the AI.",
+  "version": "built-in-1",
+  "principles": [
+    "A warm path beats any cold channel: if a colleague already works with this company or knows this person, start there.",
+    "Without a relationship, give something useful before asking for time: a relevant CGS piece, an invitation, or one sharp question about the reader's own situation.",
+    "A cold email is one option, not the default. Use it first only when it is clearly the best way in, and say why.",
+    "The best way in is the person who owns the problem behind the news and can open a conversation, not automatically the most senior name. Say who signs the budget only when the sources show it.",
+    "Approach one person at a time. Add a second person only with a reason the sources support, and never send two people the same message.",
+    "Sharing alone is not a plan: by the last step at the latest, ask for one easy, specific conversation.",
+    "Every step gives the reader a new reason to talk; never repeat the step before.",
+    "Stop the plan when the person replies, accepts a meeting or says no. A person decides what happens next."
+  ],
+  "channels": {
+    "email": {
+      "label": "Email",
+      "use": "A short personal email with one point about the reader's situation and one easy ask."
+    },
+    "linkedin_connect": {
+      "label": "LinkedIn connection request",
+      "use": "A connection note (at most 200 characters) with one concrete reason to connect. The person sends it on LinkedIn."
+    },
+    "linkedin_message": {
+      "label": "LinkedIn message",
+      "use": "A message after the person accepted the connection. Only after a linkedin_connect step to the same person."
+    },
+    "share_content": {
+      "label": "Share a CGS piece",
+      "use": "Send one CGS report, whitepaper, article or case that fits the reader's situation, with two lines on why it is relevant. No ask beyond 'worth a look'."
+    },
+    "invite": {
+      "label": "Invitation",
+      "use": "Invite the person to a CGS workshop, talk, roundtable or webinar that fits their situation."
+    },
+    "warm_intro": {
+      "label": "Introduction through someone who knows them",
+      "use": "Ask a CGS colleague or an existing contact who knows the person to introduce CGS. Only when the brief or other CGS work shows such a path."
+    },
+    "call": {
+      "label": "Phone call",
+      "use": "A short call, usually after an earlier step got a response or when a colleague made the introduction."
+    }
+  },
+  "limits": {
+    "max_steps": 5,
+    "min_gap_days": 3,
+    "max_span_days": 45,
+    "max_people": 3
+  }
+}

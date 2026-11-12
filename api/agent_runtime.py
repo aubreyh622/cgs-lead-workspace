@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+import os
 import re
 from typing import Any, Callable
 
@@ -150,8 +151,49 @@ def repair_args(args: dict, schema: dict) -> dict:
     return out
 
 
+RUNTIMES = ("auto", "adk", "legacy")
+
+
+def adk_installed() -> bool:
+    try:
+        import google.adk  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def runtime() -> str:
+    """Which loop runs the agents: AGENT_RUNTIME in .env. "adk" = Google's Agent Development Kit (api/adk_runtime.py);
+    "legacy" = the hand-written loop below; "auto" (default) = adk when google-adk is installed, else legacy."""
+    name = os.environ.get("AGENT_RUNTIME", "auto").strip().lower() or "auto"
+    if name not in RUNTIMES:
+        raise LLMError(f"AGENT_RUNTIME must be one of {RUNTIMES}, not {name!r}.", "config")
+    if name == "auto":
+        return "adk" if adk_installed() else "legacy"
+    if name == "adk" and not adk_installed():
+        raise LLMError("AGENT_RUNTIME=adk needs Google's Agent Development Kit: pip install -r requirements.lock", "config")
+    return name
+
+
 def run(spec: AgentSpec, provider: Provider, task: str, may_call: Callable[[], bool] = lambda: True) -> Outcome:
     """Run one agent on one task. may_call() is asked before every AI request (the daily budget)."""
+    if runtime() == "adk":
+        from api import adk_runtime
+        return adk_runtime.run(spec, provider, task, may_call)
+    return run_legacy(spec, provider, task, may_call)
+
+
+def ask(provider: Provider, system: str, user: str, schema: dict, name: str) -> tuple[dict, Usage]:
+    """One answer in a fixed JSON shape, for the single-step agents (labelling a reply, the weekly feedback review, a LinkedIn
+    note ...). Runs on the runtime AGENT_RUNTIME picks; either way the AI company gets provider.json's request."""
+    if runtime() == "adk":
+        from api import adk_runtime
+        return adk_runtime.run_json(provider, system, user, schema, name)
+    return provider.json(system, user, schema, name)
+
+
+def run_legacy(spec: AgentSpec, provider: Provider, task: str, may_call: Callable[[], bool] = lambda: True) -> Outcome:
+    """The hand-written loop. Kept as the reference the ADK runtime is measured against."""
     tools = {t.name: t for t in spec.tools + [spec.finish]}
     declarations = [t.declaration() for t in tools.values()]
     messages: list[dict] = [{"role": "user", "text": task}]

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import uuid
 
+from api import agent_runtime
 from api.demo_agents import quote_in_text
 from api.llm import LLMError
 from api.search import MockSearch
@@ -45,7 +46,7 @@ def research(provider, pages: list[dict], company: str, domain: str) -> tuple[di
     user = json.dumps({"company": company, "domain": domain,
                        "pages": [{"index": i, "url": p["url"], "title": p["title"], "published": p["published"], "text": p["content"]}
                                  for i, p in enumerate(pages)]}, ensure_ascii=False)
-    data, usage = provider.json(SYSTEM, user, SCHEMA, "research_brief")
+    data, usage = agent_runtime.ask(provider, SYSTEM, user, SCHEMA, "research_brief")
     evidence, sources, dropped = [], {}, {"bad_page": 0, "quote_not_found": 0}
     for f in data.get("facts", [])[:6]:
         i = f.get("page_index")

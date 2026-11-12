@@ -56,14 +56,52 @@ ones that matter for hosting:
 | `CGS_LOGIN`, `CGS_IAP_AUDIENCE`, `CGS_USERS` | see Sign-in above | who may use the workspace, and under which name |
 | `APP_MODE` | `live` | real AI; `demo` uses text rules and the synthetic sample |
 | `AI_PROVIDER`, `AI_MODEL` | `gemini` and a Gemini model | CGS's default reasoning engine |
+| `GEMINI_BACKEND` | `agent_platform` | Gemini (and the library's embeddings) through Agent Platform in CGS's own project, signed by the service account: no `GEMINI_API_KEY` at all. See "Gemini without an API key" below |
+| `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` | the project id; `global` (or a region such as `us-central1`) | where those requests go. Without `GOOGLE_CLOUD_PROJECT` the service account's own project is used |
+| `OTEL_TO_CLOUD` | `on` | the agents' traces to Cloud Trace and metrics to Cloud Monitoring, without message text. See "Traces and metrics" below |
 | `TZ` | the office's time zone, for example `America/New_York` | the daily patrol starts at an hour of the local day |
 
 Secrets (store each in Secret Manager and map it to the variable of the same name): `DATABASE_URL`,
-`GEMINI_API_KEY`, `TAVILY_API_KEY`, and when used `ANTHROPIC_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+`TAVILY_API_KEY` (and `GEMINI_API_KEY` only if you keep `GEMINI_BACKEND=ai_studio`), and when used `ANTHROPIC_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
 `GMAIL_REFRESH_TOKEN`, `INSIGHTLY_API_KEY`, `INSIGHTLY_API_URL`. A value in the environment always wins over the
 credentials files, so no file is needed in the container.
 
 The workspace will not start with `CGS_HOST=0.0.0.0` unless `CGS_PUBLIC_HOSTS` is set.
+
+## Gemini without an API key (Agent Platform)
+
+With `GEMINI_BACKEND=agent_platform` the workspace sends Gemini requests to Agent Platform (formerly Vertex AI) in CGS's
+project instead of to AI Studio, signed with the service account the Cloud Run service runs as (`api/google_cloud.py`).
+There is no Gemini key to store, rotate or leak, and requests and billing stay in CGS's Google Cloud project. The
+request bodies are the same, so agents and prompts are unchanged. Library embeddings (`KNOWLEDGE_EMBEDDINGS=gemini`)
+follow the same setting.
+
+1. Enable the Agent Platform API: `gcloud services enable aiplatform.googleapis.com`
+2. Give the service account the Agent Platform User role:
+   `gcloud projects add-iam-policy-binding PROJECT --member=serviceAccount:SERVICE_ACCOUNT --role=roles/aiplatform.user`
+3. Set `GEMINI_BACKEND=agent_platform`, `GOOGLE_CLOUD_LOCATION=global` (or a region the model is offered in) and
+   `AI_MODEL` to a model id Agent Platform offers. `GOOGLE_CLOUD_PROJECT` is optional on Cloud Run.
+
+On a laptop the same setting works after `gcloud auth application-default login`. To try Agent Platform without a
+project, `GEMINI_BACKEND=express` uses an express-mode key from console.cloud.google.com/expressmode in
+`GOOGLE_GENAI_API_KEY`: free for 90 days on a @gmail.com account, only some Gemini models, no embeddings (they stay on
+AI Studio). `GET /api/config` shows which backend is in use (`gemini`). Like the rest of this page, it has been tested
+only against fake responses, not against a real project.
+
+## Traces and metrics (Cloud Trace, Cloud Monitoring)
+
+With `OTEL_TO_CLOUD=on` the workspace sends what the agents' runtime (Google ADK) records to CGS's project
+(`api/telemetry.py`): a trace for every agent run with each model request (model, tokens) and each tool call, and metrics
+such as token use and tool duration per agent and model. The text of prompts, notes, emails and answers is **not**
+sent; the workspace refuses to start the export if `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` asks for it,
+unless `OTEL_CONTENT_TO_CLOUD=allowed`. The agent steps people see on the Agents page are still kept in the database.
+
+1. Enable the APIs: `gcloud services enable telemetry.googleapis.com cloudtrace.googleapis.com monitoring.googleapis.com`
+2. Give the service account `roles/cloudtrace.agent` and `roles/monitoring.metricWriter`.
+3. Set `OTEL_TO_CLOUD=on`. The packages are in `requirements-cloud.txt`, which the Dockerfile installs.
+
+The start-up log says whether it started (`Cloud traces and metrics: on ...`) or why not; `GET /api/config` shows the
+same (`cloudTelemetry`). A problem never stops the workspace.
 
 ## One instance, always running
 
@@ -104,7 +142,7 @@ gcloud run deploy cgs-workspace \
   --memory 1Gi \
   --add-cloudsql-instances PROJECT:REGION:INSTANCE \
   --env-vars-file cloud-env.yaml \
-  --set-secrets DATABASE_URL=cgs-database-url:latest,GEMINI_API_KEY=gemini-api-key:latest,TAVILY_API_KEY=tavily-api-key:latest
+  --set-secrets DATABASE_URL=cgs-database-url:latest,TAVILY_API_KEY=tavily-api-key:latest
 ```
 
 `cloud-env.yaml` holds the settings that are not secrets (the list of people contains commas, which a file handles
@@ -113,6 +151,9 @@ and `--set-env-vars` does not):
 ```yaml
 APP_MODE: live
 AI_PROVIDER: gemini
+GEMINI_BACKEND: agent_platform
+GOOGLE_CLOUD_LOCATION: global
+OTEL_TO_CLOUD: "on"
 TZ: America/New_York
 CGS_PUBLIC_HOSTS: SERVICE_HOST
 CGS_LOGIN: google

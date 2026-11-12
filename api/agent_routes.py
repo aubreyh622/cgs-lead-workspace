@@ -39,7 +39,8 @@ def agents(request: Request):
                 "lastPatrol": J.setting(s, "last_patrol"), "patrolHour": int(J.setting(s, "patrol_hour")),
                 "queued": s.scalar(select(func.count()).select_from(m.AgentJob).where(m.AgentJob.status == "queued")), "worker": bool(getattr(request.app.state, "worker", None)),
                 "lanes": getattr(getattr(request.app.state, "worker", None), "lanes", 0),
-                "managerMode": J.setting(s, "manager_mode"), "pausedAgents": sorted(paused), "agents": list(team.values())}
+                "managerMode": J.setting(s, "manager_mode"), "firstContact": J.setting(s, "first_contact"),
+                "pausedAgents": sorted(paused), "agents": list(team.values())}
 
 
 @router.get("/agents/jobs", summary="The task board: who is working on what, and why")
@@ -73,20 +74,24 @@ class AgentSettings(BaseModel):
     ai_budget: int | None = Field(None, ge=0, le=2000, description="AI calls the agents may make per day")
     patrol_hour: int | None = Field(None, ge=0, le=23)
     manager_mode: Literal["off", "shadow", "on"] | None = Field(None, description="off, shadow (decide and compare, queue nothing) or on")
+    first_contact: Literal["email", "plan"] | None = Field(None, description="What accepting a lead at Step 4 starts: the first email, or a contact plan")
 
 
 @router.patch("/agents", summary="Pause or resume all agents, or change the daily AI budget or patrol hour")
 def configure(body: AgentSettings, c: S.Ctx = Actor):
     for key, val in (("agents_paused", body.paused), ("agent_ai_budget", body.ai_budget), ("patrol_hour", body.patrol_hour),
-                     ("manager_mode", body.manager_mode)):
+                     ("manager_mode", body.manager_mode), ("first_contact", body.first_contact)):
         if val is not None:
             J.set_setting(c.s, key, val)
     if body.paused is not None:
         S.log(c, None, "h", f"Agents {'paused' if body.paused else 'resumed'} by {c.actor}")
     if body.manager_mode is not None:
         S.log(c, None, "h", f"Manager agent set to {body.manager_mode} by {c.actor}")
+    if body.first_contact is not None:
+        S.log(c, None, "h", f"First contact after Step 4 set to {'a contact plan' if body.first_contact == 'plan' else 'the first email'} by {c.actor}")
     return {"paused": bool(J.setting(c.s, "agents_paused")), "aiBudget": int(J.setting(c.s, "agent_ai_budget")),
-            "patrolHour": int(J.setting(c.s, "patrol_hour")), "managerMode": J.setting(c.s, "manager_mode")}
+            "patrolHour": int(J.setting(c.s, "patrol_hour")), "managerMode": J.setting(c.s, "manager_mode"),
+            "firstContact": J.setting(c.s, "first_contact")}
 
 
 class AgentPause(BaseModel):

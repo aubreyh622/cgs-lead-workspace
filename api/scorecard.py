@@ -8,6 +8,9 @@ Everything comes from records the workspace already keeps:
                lowered (too high), rejected, and values a person entered by hand that the agent never proposed
   reliability  agent runs that failed, jobs that failed or were skipped
   manager      the manager's own decisions by outcome (queued, refused, declined ...)
+  plans        contact plans (api/outreach_plan.py): how people decided them (approved, rejected, with their reasons), per
+               approach; what came of approved plans (a reply after the start, stopped another way, still running); and
+               per channel how often a step was done or skipped, and which channel was the last step before a reply
 
 A rate is only judged when it rests on at least MIN_SAMPLE decisions; below that the row says so. The manager sees the
 owner rows (api/manager_agent.py, api/manager_triage.py) and gets a caution, not a refusal, when it hands an owner work
@@ -177,8 +180,58 @@ def manager(s, today: date, days: int = WINDOW_DAYS) -> list[dict]:
     return [{"scope": k[0], "mode": k[1], "outcome": k[2], "count": v} for k, v in sorted(rows.items())]
 
 
+def plans(s, today: date, days: int = WINDOW_DAYS) -> dict:
+    """Contact plans decided in the window, and what came of the approved ones. Rules only."""
+    from api import outreach_plan as OP
+    since = today - timedelta(days=days)
+    decided, outcomes = [], []
+    channels: dict[str, dict] = defaultdict(lambda: {"done": 0, "skipped": 0, "beforeReply": 0, "skipNotes": []})
+    for r in s.scalars(select(m.Outreach).where(m.Outreach.plan.is_not(None))):
+        p = r.plan or {}
+        o = s.get(m.Opportunity, r.opportunity_id)
+        for h in (p.get("history") or []) + ([p] if p.get("plan") else []):
+            approach = h.get("approach") or ((h.get("plan") or {}).get("approach"))
+            when = h.get("decidedOn")
+            if h.get("status") in ("approved", "rejected") and when and date.fromisoformat(when) >= since:
+                decided.append({"approach": approach, "status": h["status"], "note": h.get("note")})
+        run = p.get("run") or {}
+        if p.get("status") != "approved" or not run.get("start") or date.fromisoformat(run["start"]) < since or o is None:
+            continue
+        start = date.fromisoformat(run["start"])
+        replied = bool(r.reply_on and r.reply_on >= start)
+        why = OP.why_stopped(o, r, p)
+        outcomes.append({"approach": p["plan"]["approach"], "result": "replied" if replied else "running" if why is None else "stopped"})
+        done = [st for st in p["plan"]["steps"] if st.get("status") in ("done", "skipped")]
+        for st in done:
+            row = channels[st["channel"]]
+            row["done" if st["status"] == "done" else "skipped"] += 1
+            if st["status"] == "skipped" and st.get("note"):
+                row["skipNotes"].append(st["note"])
+        last = [st for st in done if st["status"] == "done" and replied and date.fromisoformat(st["doneOn"]) <= r.reply_on]
+        if last:
+            channels[last[-1]["channel"]]["beforeReply"] += 1
+    by_approach = []
+    for a in OP.APPROACHES:
+        ds = [d for d in decided if d["approach"] == a]
+        os_ = [x for x in outcomes if x["approach"] == a]
+        ended = [x for x in os_ if x["result"] != "running"]
+        by_approach.append({"approach": a, "decided": len(ds), "approved": sum(d["status"] == "approved" for d in ds),
+                            "rejected": sum(d["status"] == "rejected" for d in ds), "plans": len(os_),
+                            "replied": sum(x["result"] == "replied" for x in os_), "running": sum(x["result"] == "running" for x in os_),
+                            "replyRate": round(sum(x["result"] == "replied" for x in ended) / len(ended), 2) if ended else None,
+                            "enough": len(ended) >= MIN_SAMPLE})
+    rows = [{"channel": k, **{x: v[x] for x in ("done", "skipped", "beforeReply")},
+             "skipRate": round(v["skipped"] / (v["done"] + v["skipped"]), 2), "enough": v["done"] + v["skipped"] >= MIN_SAMPLE,
+             "skipNotes": v["skipNotes"][-5:]} for k, v in sorted(channels.items())]
+    return {"decided": len(decided), "approved": sum(d["status"] == "approved" for d in decided),
+            "rejected": sum(d["status"] == "rejected" for d in decided),
+            "rejectionNotes": [d["note"] for d in decided if d["status"] == "rejected" and d["note"]][-8:],
+            "byApproach": by_approach, "byChannel": rows}
+
+
 def build(s, today: date, days: int = WINDOW_DAYS, owner: str | None = None) -> dict:
     """The whole scorecard (GET /api/manager/scorecard)."""
     return {"today": today.isoformat(), "days": days, "since": (today - timedelta(days=days)).isoformat(), "minSample": MIN_SAMPLE,
             "work": work(s, today, days, owner=owner), "owners": work(s, today, days, owner=owner, by_owner=True),
-            "evidence": evidence(s, today, days), "reliability": reliability(s, today, days), "manager": manager(s, today, days)}
+            "evidence": evidence(s, today, days), "reliability": reliability(s, today, days), "manager": manager(s, today, days),
+            "plans": plans(s, today, days)}

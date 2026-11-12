@@ -22,7 +22,9 @@ CRM_MODES = ("disabled", "read_only", "write_approved")
 # Each agent may use its own model (same AI company as AI_PROVIDER): a stronger one where judgement and writing matter,
 # a cheaper one for searching and reading. Unset = AI_MODEL. Compare choices with Check Quality.cmd before changing them.
 AGENT_MODEL_ENV = {"Discovery agent": "AI_MODEL_DISCOVERY", "Direction agent": "AI_MODEL_DIRECTION", "Research agent": "AI_MODEL_RESEARCH",
-                   "Outreach agent": "AI_MODEL_OUTREACH", "Evidence agent": "AI_MODEL_EVIDENCE", "Manager agent": "AI_MODEL_MANAGER"}
+                   "Outreach agent": "AI_MODEL_OUTREACH", "Evidence agent": "AI_MODEL_EVIDENCE", "Manager agent": "AI_MODEL_MANAGER",
+                   # not an agent of its own: the step that reads each outreach draft against the CGS email standard
+                   "Outreach reviewer": "AI_MODEL_OUTREACH_REVIEW"}
 
 
 def _load_dotenv(path: Path) -> None:

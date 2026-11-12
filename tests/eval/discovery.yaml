@@ -1,0 +1,27 @@
+# agents-cli eval config for the discovery cases (traces from python -m api.adk_eval generate). Local metrics only:
+# no Google Cloud project is needed. The parity bar against the legacy loop is in api/adk_eval.py (BAR).
+metrics_to_run:
+  - discovery_fit
+  - discovery_no_misfit
+  - task_completed
+  - model_turns
+  - answers_sent_back
+  - tokens_in_k
+
+custom_metrics:
+  - name: discovery_fit
+    custom_function_file: metrics/discovery_fit.py
+  - name: discovery_no_misfit
+    custom_function_file: metrics/discovery_no_misfit.py
+  - name: task_completed
+    custom_function_file: metrics/task_completed.py
+  - name: model_turns
+    custom_function_file: metrics/model_turns.py
+  - name: answers_sent_back
+    custom_function_file: metrics/answers_sent_back.py
+  - name: tokens_in_k
+    custom_function_file: metrics/tokens_in_k.py
+
+# hard limits: a serious error in any case fails the run
+thresholds:
+  discovery_no_misfit: 1.0

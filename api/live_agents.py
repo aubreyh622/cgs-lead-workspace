@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 
+from api import agent_runtime
 from api.demo_agents import quote_in_text
 from api.llm import LLMError, Provider, Usage
 from backend.rules import ANCHORS, CONDITION_QUESTIONS, CONDITIONS, LABELS, REASONS, WEIGHTS
@@ -177,7 +178,7 @@ def extract_evidence(provider: Provider, note_text: str, context: dict, library:
     lib = {p["id"]: p for p in (library or [])}
     user = json.dumps({"opportunity": context, "notes": note_text,
                        "cgs_library": [{"id": p["id"], "title": p["title"], "text": p["text"]} for p in lib.values()]}, ensure_ascii=False)
-    data, usage = provider.json(EVIDENCE_SYSTEM, user, EVIDENCE_SCHEMA, "evidence_proposals")
+    data, usage = agent_runtime.ask(provider, EVIDENCE_SYSTEM, user, EVIDENCE_SCHEMA, "evidence_proposals")
     if not isinstance(data.get("proposals"), list):
         raise LLMError("The AI answer had no proposals list.", "invalid_output")
     if asks is not None:
@@ -186,7 +187,7 @@ def extract_evidence(provider: Provider, note_text: str, context: dict, library:
 
 
 def label_reply(provider: Provider, text: str) -> tuple[str, Usage]:
-    data, usage = provider.json(LABEL_SYSTEM, json.dumps({"reply": text}, ensure_ascii=False), LABEL_SCHEMA, "reply_label")
+    data, usage = agent_runtime.ask(provider, LABEL_SYSTEM, json.dumps({"reply": text}, ensure_ascii=False), LABEL_SCHEMA, "reply_label")
     if data.get("label") not in ("courtesy", "meet", "need", "defer", "decline"):
         raise LLMError("The AI returned an unknown reply label.", "invalid_output")
     return data["label"], usage
@@ -209,6 +210,24 @@ _BANNED = re.compile(r"\$|%|\bguarantee|\bpromise|\bfee\b|\bprice\b|\bdiscount",
 _CITE = re.compile(r"\[\[([\w#:.-]+)\|([^\]]+)\]\]")
 
 
+_LINK = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+|https?://\S+|\bwww\.[\w-]+\.\S+", re.I)
+
+
+# Text written to AI tools rather than about the company: "Note for AI assistants: ...", "Automated research tools must ...",
+# "ignore your previous instructions". Pages and emails can carry it to steer an agent (prompt injection). Such a sentence
+# never becomes a fact, and a fact that holds one is marked for the writer and never cited. Narrow on purpose: news about
+# a company's own AI agents or assistants is a real signal and must still pass.
+_TO_AI = r"(?:ai|automated|research)\s+(?:research\s+)?(?:assistants?|agents?|tools?|models?|systems?)|assistants?|language models?|llms?|chatbots?"
+_PLANTED = re.compile(r"\b(?:ignore|disregard|forget)\b[^.]{0,40}\binstructions?\b"
+                      rf"|\b(?:note|message|instructions?)\s+(?:for|to)\s+(?:all\s+|any\s+)?(?:{_TO_AI})\b"
+                      rf"|\b(?:{_TO_AI})\s+(?:must|should|need to|are to|reading|writing|summari[sz]ing|that read)\b", re.I)
+
+
+def planted_instruction(text: str) -> bool:
+    """True when the text speaks to AI tools instead of describing the company (see _PLANTED)."""
+    return bool(_PLANTED.search(text or ""))
+
+
 def check_draft(subject: str, body: str, fact_ids: set[str], facts_text: str) -> None:
     if not subject.strip() or not body.strip() or len(subject) > 140 or len(body) > 1800:
         raise LLMError("The draft is empty or too long.", "invalid_output")
@@ -224,6 +243,10 @@ def check_draft(subject: str, body: str, fact_ids: set[str], facts_text: str) ->
     for hit in set(m.group(0) for m in _BANNED.finditer(plain)):
         if hit.lower() not in facts_text.lower():
             raise LLMError(f"The draft makes a commercial claim or promise ('{hit}'). Drafts must not.", "invalid_output")
+    link = _LINK.search(plain)
+    if link:  # a page or a fact may carry an address or link planted for AI tools; the person adds their own links
+        raise LLMError(f"The draft contains an email address or web link ('{link.group(0)}'). Drafts must not: "
+                       "the person sending it adds any link themselves.", "invalid_output")
 
 
 def write_outreach(provider: Provider, brief: dict, contact: dict, sender: str, angle: str | None, tone: str,
@@ -233,7 +256,7 @@ def write_outreach(provider: Provider, brief: dict, contact: dict, sender: str, 
                        "facts": [{"id": f["id"], "text": f["text"], "source": f.get("src"), "date": f.get("date")} for f in facts],
                        "hypothesis": brief.get("hypothesis"), "cgs_relevance": brief.get("relevance"),
                        "cgs_library": [{"id": p["id"], "title": p["title"], "text": p["text"]} for p in library]}, ensure_ascii=False)
-    data, usage = provider.json(OUTREACH_SYSTEM, user, OUTREACH_SCHEMA, "outreach_draft")
+    data, usage = agent_runtime.ask(provider, OUTREACH_SYSTEM, user, OUTREACH_SCHEMA, "outreach_draft")
     check_draft(data.get("subject", ""), data.get("body", ""), {f["id"] for f in facts} | {p["id"] for p in library},
                 " ".join(f["text"] for f in facts) + " " + " ".join(p["text"] for p in library))
     return {"subject": data["subject"].strip(), "body": data["body"].strip()}, usage
@@ -258,7 +281,7 @@ def next_actions(provider: Provider, gaps: list[dict], notes: list[str], existin
         "required": ["gap_key", "title", "reason", "question"], "additionalProperties": False}}},
         "required": ["actions"], "additionalProperties": False}
     user = json.dumps({"open_gaps": gaps, "recent_notes": notes[-2:], "existing_tasks": sorted(existing_titles)}, ensure_ascii=False)
-    data, usage = provider.json(ACTIONS_SYSTEM, user, schema, "next_actions")
+    data, usage = agent_runtime.ask(provider, ACTIONS_SYSTEM, user, schema, "next_actions")
     out, seen = [], set()
     for a in data.get("actions", []):
         if a.get("gap_key") in keys and a["gap_key"] not in seen and a.get("title", "").strip() and a["title"].strip() not in existing_titles:
@@ -294,7 +317,7 @@ def analyze_feedback(provider: Provider, records: list, direction: dict) -> tupl
         "required": ["summary", "propose", "field", "after_list", "after_text", "title", "rationale", "feedback_ids"], "additionalProperties": False}
     user = json.dumps({"direction": direction, "records": [{"id": f.id, "company": f.subject, "outcome": f.outcome, "reason": f.reason,
                                                             "comment": f.comment} for f in records]}, ensure_ascii=False)
-    data, usage = provider.json(FEEDBACK_SYSTEM, user, schema, "direction_review")
+    data, usage = agent_runtime.ask(provider, FEEDBACK_SYSTEM, user, schema, "direction_review")
     summary = data.get("summary", "").strip() or "Review complete."
     if not data.get("propose"):
         return {"summary": summary, "proposal": None}, usage
@@ -330,7 +353,7 @@ def find_person(provider: Provider, pages: list[dict], company: str, role: str) 
     """Returns ({found, name, title, url, quote}, usage). Code keeps a name only if the quote is on the page and names them."""
     user = json.dumps({"company": company, "role": role, "pages": [{"index": i, "url": p["url"], "title": p["title"], "text": p["content"]}
                                                                     for i, p in enumerate(pages)]}, ensure_ascii=False)
-    data, usage = provider.json(PERSON_SYSTEM, user, PERSON_SCHEMA, "person_lookup")
+    data, usage = agent_runtime.ask(provider, PERSON_SYSTEM, user, PERSON_SCHEMA, "person_lookup")
     i, name, quote = data.get("page_index"), (data.get("name") or "").strip(), (data.get("quote") or "").strip()
     ok = (data.get("found") is True and name and isinstance(i, int) and 0 <= i < len(pages)
           and quote_in_text(quote, pages[i]["content"]) and name.lower() in quote.lower())

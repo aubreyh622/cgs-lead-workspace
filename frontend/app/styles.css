@@ -276,6 +276,10 @@ main:focus { outline: none; }
 .metric .value { font-size: 16px; font-weight: 500; }
 .bullets { padding-left: 20px; }
 .bullets li { margin: 2px 0; }
+.plan-steps { padding-left: 24px; margin: 4px 0; }
+.plan-steps li { margin: 8px 0; }
+.plan-steps li.plan-current { border-left: 3px solid var(--accent); padding-left: 10px; margin-left: -13px; }
+.plan-prepared { margin: 6px 0; }
 .decision-bar { position: sticky; bottom: 0; background: var(--surface); border-top: 1px solid var(--border); padding: 14px 24px; border-radius: 0 0 var(--r-card) var(--r-card); }
 .panel-form { display: flex; flex-direction: column; gap: 14px; }
 

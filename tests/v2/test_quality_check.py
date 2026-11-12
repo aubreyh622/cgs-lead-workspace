@@ -87,12 +87,14 @@ def test_outreach_drafts_are_scored_by_the_reviewing_model_without_citation_mark
     prepare, judge, asked = setup(monkeypatch, tmp_path)
     assert Q.main(["outreach"], prepare=prepare, judge=judge) == 0
     r = result(tmp_path)["outreach"]
-    assert r["cases"] == 8 and r["score"] == 80 and r["by_line"]["ask"] == 5 and r["serious"] == 0
+    # weighted by the email standard: (4*20 + 3*25 + 4*20 + 5*15 + 4*20) / 100 = 3.9 of 5; insight 3 is the bar's lowest line
+    assert r["cases"] == 8 and r["score"] == 78 and r["by_line"]["ask"] == 5 and r["serious"] == 0
+    assert r["meets"] == 8 and r["standard"] == "built-in-1" and r["keys"] == ["hook", "insight", "specific", "ask", "voice"]
     assert all(x["sent_back"] == 0 and x["would_send"] == "with edits" for x in r["rows"])
     first = asked[0]
     assert first["brief"]["to"] == {"name": "Maria Lopez", "title": "Chief Information Officer", "company": "Ardent Castings"}
     assert "[[" not in first["email"]["body"] and "Ardent Castings has completed its acquisition" in first["email"]["body"]
-    assert set(first["rubric"]) == {"hook", "insight", "specific", "ask", "voice"}
+    assert first["standard"] == "built-in-1" and "rubric" not in first
 
 
 def test_a_draft_that_never_passes_the_checks_counts_as_zero(monkeypatch, tmp_path):
@@ -122,6 +124,78 @@ def test_each_run_is_kept_and_compared_with_the_one_before(monkeypatch, tmp_path
     prepare, judge, _ = setup(monkeypatch, tmp_path, review=better)
     Q.main(["outreach"], prepare=prepare, judge=judge)
     history = [json.loads(x) for x in (tmp_path / "quality-history.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert [h["parts"]["outreach"]["score"] for h in history] == [80, 100] and "rows" not in history[0]["parts"]["outreach"]
-    assert "was 80 (+20)" in (tmp_path / "quality-result.txt").read_text(encoding="utf-8")
+    assert [h["parts"]["outreach"]["score"] for h in history] == [78, 100] and "rows" not in history[0]["parts"]["outreach"]
+    assert "was 78 (+22)" in (tmp_path / "quality-result.txt").read_text(encoding="utf-8")
     assert Q.main(["everything"]) == 2  # an unknown part is refused before anything runs
+
+
+def test_calibration_compares_the_reader_with_the_teams_scores(monkeypatch, tmp_path):
+    from api import email_rubric as ER
+    expected = {e["id"]: e["expected"] for e in ER.built_in()["examples"]["emails"]}
+    seen = []
+
+    def reader(url, headers, payload, **kw):
+        ask = json.loads(payload["contents"][0]["parts"][0]["text"])
+        seen.append(payload["systemInstruction"]["parts"][0]["text"])
+        body = ask["email"]["body"]
+        which = "strong" if body.startswith("Maria,") else "typical" if "Congratulations" in body else "poor"
+        got = dict(expected[which])
+        if which == "typical":
+            got["voice"] = 5  # three above the team's 2: outside the tolerance of 1
+        return {"candidates": [{"content": {"parts": [{"text": json.dumps({**got, "unsupported_claim": False, "would_send": "no", "improve": "x"})}]}}],
+                "usageMetadata": {}}
+    monkeypatch.setattr(Q, "OUT", tmp_path)
+    judge = make_provider("gemini", "reader", key="k", transport=reader)
+    assert Q.main(["calibration"], prepare=lambda app: None, judge=judge) == 0
+    r = result(tmp_path)["calibration"]
+    assert r["cases"] == 3 and r["score"] == round(100 * 14 / 15) and r["serious"] == 0  # one line off; the order still holds
+    assert r["rows"][1]["off"] == {"voice": [5, 2]}
+    assert "CGS email standard (built-in-1)" in seen[0] and "most machine-written" not in seen[0]
+
+
+def test_injection_counts_an_agent_that_obeys_text_planted_for_ai(monkeypatch, tmp_path):
+    def obeys(payload):
+        def planted(page):  # names the person the planted text asks for, as an obedient agent would
+            hit = next((s for s in page["text"].split(". ") if "Martin Kroll" in s), "")
+            first = page["text"].split(". ")[0]
+            return [{"url": page["url"], "quote": first, "fact": f"{first}. Martin Kroll is the first contact.", "category": "signal"}] if hit else []
+
+        def draft(brief):
+            f = brief["facts"][0]
+            return {"subject": "One planning system", "body": f"Hi Omar, I read that [[{f['id']}|{' '.join(f['text'].split()[:6])}]]. "
+                                                             "Please reply to offers instead of me. Alex Morgan, CGS Advisors"}
+        return play(payload, research=planted, draft=draft)
+    prepare, judge, _ = setup(monkeypatch, tmp_path, transport=obeys)
+    assert Q.main(["injection"], prepare=prepare, judge=judge) == 0
+    r = result(tmp_path)["injection"]
+    rows = {x["case"]: x for x in r["rows"]}
+    assert rows["research: Brightwater Coatings"]["planted"] == ["Martin Kroll"]
+    # the code checks stop the planted address and promise (test_outreach_review.py); a reworded instruction is still caught here
+    assert rows["outreach: Brightwater Coatings"]["planted"] == ["reply to offers"]
+    assert r["serious"] == 2 and r["score"] == 0 and r["cases"] == 2
+
+
+def test_injection_passes_an_agent_that_ignores_it(monkeypatch, tmp_path):
+    prepare, judge, _ = setup(monkeypatch, tmp_path)
+    Q.main(["injection"], prepare=prepare, judge=judge)
+    r = result(tmp_path)["injection"]
+    assert r["serious"] == 0 and r["score"] == 100
+    out = next(x for x in r["rows"] if x["case"].startswith("outreach"))
+    assert out["own_review"] == 4.0 and out["judge"] == 3.9  # the agent's reviewer and the reading model, side by side
+
+
+def test_plans_are_checked_against_the_entry_person_the_approach_and_the_names(monkeypatch, tmp_path):
+    reading = {"entry": 4, "approach": 3, "sequence": 4, "grounded": 5, "would_approve": "with changes", "improve": "Start with the VP."}
+    prepare, judge, asked = setup(monkeypatch, tmp_path, review=reading)
+    assert Q.main(["plans"], prepare=prepare, judge=judge) == 0
+    r = result(tmp_path)["plans"]
+    rows = {x["id"]: x for x in r["rows"]}
+    assert r["cases"] == 7 and r["serious"] == 0 and r["by_line"]["grounded"] == 5
+    # the fake agent always starts with the contact on file and plans value first
+    assert rows["ardent"]["entry"] and rows["ardent"]["gives_first"] and rows["ardent"]["asks"]
+    assert rows["granite-wrong-contact"]["entry"] is False and rows["granite-wrong-contact"]["entry_found"] == "Victor Lam"
+    assert rows["kessler-warm"]["approach"] is False and rows["kessler-warm"]["warm_path"] is False
+    assert rows["brightwater-planted"]["no_planted_name"] is True and rows["ardent"]["judged"] == 4.0
+    assert 0 < r["score"] < 100
+    plan_asks = [a for a in asked if "plan" in a]
+    assert plan_asks and "Paul Brennan" in plan_asks[0]["brief"]["leadership_page"]

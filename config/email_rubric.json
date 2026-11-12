@@ -1,0 +1,101 @@
+{
+  "about": "The CGS email standard: what makes a good first outreach email, and how good is good enough. One rubric serves three readers: the outreach agent writes to it, its reviewer checks each draft against it before a person sees it (api/outreach_agent.py), and the quality check's reading model scores drafts with it (api/check_quality.py, agents-cli eval). An admin can change the criteria, weights, bar and review rounds on the Settings page (api/email_rubric.py); every change is a new version. This file holds the built-in standard and the calibration examples. The criteria and examples were written by the project team: replace them with CGS's own when CGS has decided its standard.",
+  "version": "built-in-1",
+  "scale": {
+    "1": "Fails: it would hurt CGS with this reader, or misses the point of the line entirely.",
+    "2": "Weak: the line needs rewriting, not editing.",
+    "3": "Acceptable: it works, but a consultant would make real edits before sending.",
+    "4": "Good: a consultant would send it after small edits.",
+    "5": "Excellent: a senior consultant would send it as it is."
+  },
+  "criteria": [
+    {
+      "key": "hook",
+      "label": "Opening",
+      "weight": 20,
+      "question": "Does it open from a specific, recent development at this company that matters to this person's role, rather than from CGS, a greeting formula or congratulations?",
+      "good": "The first sentence names the development and turns at once to what it means for this person.",
+      "poor": "Opens with 'Congratulations', 'I hope this finds you well', or a summary of the reader's own announcement."
+    },
+    {
+      "key": "insight",
+      "label": "Insight",
+      "weight": 25,
+      "question": "Does it offer a pointed, plausible view of the hard part behind the news, as a question or an observation, not as a claim about what the company needs?",
+      "good": "Names the specific tension the reader is likely facing (for example, agreeing one planning process across sites before the systems work), in a way the reader recognises.",
+      "poor": "Restates the hypothesis or the news, or asks a vague question any firm could ask."
+    },
+    {
+      "key": "specific",
+      "label": "Specific",
+      "weight": 20,
+      "question": "Could it be sent to another company by swapping the names? A good email cannot: the detail carries the message.",
+      "good": "Uses this company's own details (sites, deal, role, timing) in a way that matters to the point.",
+      "poor": "Generic consulting language with the company name inserted."
+    },
+    {
+      "key": "ask",
+      "label": "Ask",
+      "weight": 15,
+      "question": "Does it end with one clear request that is easy to say yes to, asked once?",
+      "good": "One short, specific request (a 20-minute conversation, a date range), asked once.",
+      "poor": "No ask, several asks, or the same request repeated."
+    },
+    {
+      "key": "voice",
+      "label": "Voice",
+      "weight": 20,
+      "question": "Does it read like a senior consultant writing personally: plain words, no hype, flattery, jargon or filler, and the right length for the tone asked for?",
+      "good": "Short sentences in plain words; sounds like one person writing to another; within the length asked for.",
+      "poor": "Jargon copied from marketing material, filler, flattery, garbled or repeated phrases, or the wrong length."
+    }
+  ],
+  "bar": {
+    "mean": 3.5,
+    "each": 3,
+    "explain": "A draft meets the standard when its weighted mean is at least 'mean' and no line is below 'each'."
+  },
+  "review": {
+    "rounds": 1,
+    "explain": "How many times the outreach agent's reviewer may send a draft back for revision before a person sees it. 0 = no review."
+  },
+  "length": {"standard": [90, 140], "brief": [0, 70]},
+  "examples": {
+    "about": "Calibration: emails with the scores the team expects. The calibration check (python -m api.check_quality calibration) has the reading model score them and reports how far it is from these, so a change of model or rubric that makes the scores drift is noticed. Synthetic company. Replace or extend with emails CGS has rated itself.",
+    "brief": {
+      "to": {"name": "Maria Lopez", "title": "Chief Information Officer", "company": "Ardent Castings"},
+      "tone": "standard",
+      "facts": [
+        "Ardent Castings has completed its acquisition of Hollow Pine Foundry, adding two foundries in Wisconsin and bringing its network to seven sites.",
+        "Chief Information Officer Maria Lopez said the combined company will spend the next year bringing Hollow Pine onto Ardent's planning and quality systems.",
+        "\"Our first priority is one way of planning production across seven foundries,\" Lopez said."
+      ],
+      "hypothesis": "Ardent may need a common production planning process across seven foundries before the systems work can start.",
+      "cgs_relevance": "CGS helps manufacturers design operating models after an acquisition."
+    },
+    "emails": [
+      {
+        "id": "strong",
+        "subject": "One way of planning across seven foundries",
+        "body": "Maria,\n\nYou said Ardent's first priority after Hollow Pine is one way of planning production across seven foundries. In integrations like this, the systems work often stalls on a question that comes before it: whose planning process becomes the common one, and who decides when two plants plan the same product differently.\n\nIs that decision already settled, or is it part of the year ahead? CGS helps manufacturers design the operating model after an acquisition, and that question is usually where we start.\n\nWould a 20-minute call in the next two weeks be useful to compare notes?\n\nAlex Morgan\nCGS Advisors",
+        "expected": {"hook": 4, "insight": 4, "specific": 5, "ask": 4, "voice": 4},
+        "note": "Opens on her own words, names the hard part, one plain CGS line, one ask."
+      },
+      {
+        "id": "typical",
+        "subject": "Seven foundries, one way of planning",
+        "body": "Dear Ms. Lopez,\n\nCongratulations on completing the acquisition of Hollow Pine Foundry, which brought its network to seven sites. I noticed your comment that your first priority is one way of planning production across seven foundries.\n\nWould a common planning process need to be settled across all seven foundries before the systems work on Hollow Pine can begin? CGS Advisors has helped manufacturers drive holistic functional strategy alignment and unlock synergies across decentralized operating models after transactions.\n\nWould you be open to a short 20-minute conversation to compare notes on how you are approaching this?\n\nBest regards,\n\nAlex Morgan\nCGS Advisors",
+        "expected": {"hook": 3, "insight": 3, "specific": 4, "ask": 4, "voice": 2},
+        "note": "A real agent draft (live run, 11 Nov 2026): congratulations opener, recap of her announcement, marketing jargon (reworded here so no CGS website text is copied)."
+      },
+      {
+        "id": "poor",
+        "subject": "CGS Advisors - transformation partner",
+        "body": "Dear Maria,\n\nI hope this email finds you well. CGS Advisors is a leading management consulting firm that helps organizations unlock value through transformation, operating model design and digital innovation.\n\nWe work with many manufacturers and believe we could add significant value to Ardent Castings. Would you be available for a call? Alternatively, I would be happy to send some materials. Please let me know a convenient time to connect.\n\nKind regards,\n\nAlex Morgan\nCGS Advisors",
+        "expected": {"hook": 1, "insight": 1, "specific": 1, "ask": 2, "voice": 2},
+        "note": "About CGS, not about her; could go to any company; several soft asks."
+      }
+    ],
+    "tolerance": 1
+  }
+}

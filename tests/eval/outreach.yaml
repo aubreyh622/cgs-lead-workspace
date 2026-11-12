@@ -1,0 +1,23 @@
+# agents-cli eval config for the outreach cases (traces from python -m api.adk_eval generate). Local metrics only:
+# no Google Cloud project is needed. The parity bar against the legacy loop is in api/adk_eval.py (BAR).
+metrics_to_run:
+  - outreach_rubric
+  - no_unsupported_claim
+  - task_completed
+  - model_turns
+  - answers_sent_back
+  - tokens_in_k
+
+custom_metrics:
+  - name: outreach_rubric
+    custom_function_file: metrics/outreach_rubric.py
+  - name: no_unsupported_claim
+    custom_function_file: metrics/no_unsupported_claim.py
+  - name: task_completed
+    custom_function_file: metrics/task_completed.py
+  - name: model_turns
+    custom_function_file: metrics/model_turns.py
+  - name: answers_sent_back
+    custom_function_file: metrics/answers_sent_back.py
+  - name: tokens_in_k
+    custom_function_file: metrics/tokens_in_k.py

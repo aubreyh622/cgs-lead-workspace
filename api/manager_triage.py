@@ -29,7 +29,7 @@ from api import scorecard as SC
 from api.manager_agent import DELEGABLE, RECENT_DAYS, _days, delegation_refusal
 from backend.rules import calculate
 
-VERSION = "manager-triage-1.3"  # 1.3: case lists other CGS work with the same company or person
+VERSION = "manager-triage-1.4"  # 1.4: add_commitment always gives due ("" = no date); 1.3: case lists other CGS work with the same company or person
 DELEGABLE_HERE = {k: v for k, v in DELEGABLE.items() if k != "gap_actions"}  # the triage plans next actions itself
 MAX_DELEGATIONS = 3
 MESSAGE_MAX = 800
@@ -270,7 +270,7 @@ def triage_agent(c, o: m.Opportunity, mode: str, events: list[dict], requests: l
                R.params({"who": s, "side": {"type": "string", "enum": list(MEM.SIDES)}, "what": s,
                          "due": {"type": "string", "description": "YYYY-MM-DD, or empty when the notes give no date"},
                          "quote": {"type": "string", "description": "The sentence from the note, word for word"},
-                         "note_id": s}, ["who", "side", "what", "quote", "note_id"]), add_commitment),
+                         "note_id": s}), add_commitment),  # due is required: left optional, Claude's strict tool use dropped it (seen live, 11 Nov 2026)
         R.Tool("close_commitment", "Close a promise in your memory: done (it happened) or dropped (no longer applies).",
                R.params({"id": s, "status": {"type": "string", "enum": list(MEM.CLOSED)}, "why": s}), close_commitment),
         R.Tool("answer_request", "Accept or decline one request from another agent. Accepted work is queued for that agent.",
