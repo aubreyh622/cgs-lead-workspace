@@ -1,5 +1,5 @@
 """Sign the workspace in to Gmail once: python -m api.toolkit.gmail_auth
-Sign it in to Google Drive (read only, for the CGS library): python -m api.toolkit.gmail_auth --drive
+Sign it in to Google Drive (read the CGS library; save the workspace's own records): python -m api.toolkit.gmail_auth --drive
 Connect one consultant's own Gmail, so their emails go out from it: python -m api.toolkit.gmail_auth --person "Sarah Patel"
   (that person signs in with their own Google account; saved as GMAIL_REFRESH_TOKEN_SARAH_PATEL beside the shared one)
 
@@ -14,9 +14,10 @@ email and read email. Google sends the answer back to this computer only (127.0.
 token in that same file as GMAIL_REFRESH_TOKEN and never prints it. Then set MAIL_PROVIDER=gmail and APP_MODE=live in the
 project .env, and restart.
 
---drive asks only to read Drive files (drive.readonly; enable the Google Drive API in the same project) and saves
-DRIVE_REFRESH_TOKEN in the same file, beside the Gmail sign-in, which it leaves alone. Then set DRIVE_PROVIDER=google and
-DRIVE_FOLDER_IDS in the project .env (api/toolkit/drive.py).
+--drive asks to read Drive files (drive.readonly) and to create and change only the files the workspace itself makes
+(drive.file: the records folder with its Docs and Sheets, api/drive_records.py); enable the Google Drive API in the same
+project. It saves DRIVE_REFRESH_TOKEN in the same file, beside the Gmail sign-in, which it leaves alone. Then set
+DRIVE_PROVIDER=google and DRIVE_FOLDER_IDS (and DRIVE_RECORDS=on to save records) in the project .env (api/toolkit/drive.py).
 
 To sign out: delete GMAIL_REFRESH_TOKEN (or DRIVE_REFRESH_TOKEN) from the file and remove the app at https://myaccount.google.com/permissions.
 """

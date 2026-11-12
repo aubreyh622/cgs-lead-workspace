@@ -666,6 +666,10 @@ real CGS solutions document may go to an external AI provider only if CGS approv
 through its gate (`web_for`, `library_for`, `mail_for`, `connector`, or `grant` for ready-made tools), so one permission
 table governs every agent. `GET /api/toolkit` shows the connectors and the table.
 
+The web, CRM and Drive connectors are also MCP servers (`cgs_tools/`: `cgs-search`, `cgs-insightly`, `cgs-drive`), so
+they carry over to Google ADK unchanged. `TOOLS_TRANSPORT=mcp` makes the workspace reach them through those servers;
+the gate, permissions and metering stay the same. See docs/MCP_TOOLS.md; `python -m api.check_mcp` checks them.
+
 | Connector | Data | Status |
 |---|---|---|
 | web (Tavily or the synthetic web) | public | in use |
@@ -928,6 +932,16 @@ says, per document, how many passages it gives and which files would be skipped.
 SoW section 9: Drive documents are CGS's own. They are never sent for embeddings (`knowledge.embeddable`) unless
 `KNOWLEDGE_EMBED_PRIVATE=allowed`, and reach an AI provider only as passages an agent searched, like any document in
 `knowledge/`. Point `DRIVE_FOLDER_IDS` only at folders CGS has approved for that.
+
+### Records saved to Drive
+
+With `DRIVE_RECORDS=on` the workspace also saves its records to Drive (`api/drive_records.py`): one Google Doc per
+opportunity (brief, contact plan, drafts and sent emails, notes, agent notes, evidence, packs, decisions) and a Google
+Sheet with the activity log, in `DRIVE_RECORDS_FOLDER_ID` (else a folder "CGS Workspace Records" it makes). Job
+`drive_records` ("Drive rules") runs after a person's change and once a day, and saves only what changed; failures stay
+on the row (`drive_records.error`) and are tried again. `GET /api/drive/records`, `POST /api/drive/records/save`.
+Uploads are HTML and CSV that Drive converts, so the sign-in needs only `drive.file` beside `drive.readonly`. Which
+tables are caches, records or working state: docs/DATA_OWNERSHIP.md.
 
 ## CRM (Insightly)
 

@@ -16,6 +16,13 @@ from api.toolkit.mail import MailError
 from tests.v2.test_crm import ME, accept, get, make, post
 from tests.v2.test_toolkit_mail import BODY
 
+
+@pytest.fixture(autouse=True)
+def in_process_connectors(monkeypatch):
+    """These tests read and steer the mock's own memory (leads, edit, fail_next), which lives in another process under
+    TOOLS_TRANSPORT=mcp. The MCP path gives the same answers: tests/v2/test_mcp_tools.py."""
+    monkeypatch.setenv("TOOLS_TRANSPORT", "inprocess")
+
 TO = "dana@halvorsen.example"
 
 

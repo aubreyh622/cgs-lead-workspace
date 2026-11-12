@@ -1,6 +1,6 @@
 # The workspace database, in plain language
 
-The database is the workspace's ledger. It is one file, `runtime/workspace-v2.sqlite3`, made of 29 tables. Each table holds one kind of record, the way an Excel workbook has one sheet per topic.
+The database is the workspace's ledger. It is one file, `runtime/workspace-v2.sqlite3`, made of 35 tables. Which are caches, which hold CGS's records (saved to Google Drive) and which are working state: docs/DATA_OWNERSHIP.md. Each table holds one kind of record, the way an Excel workbook has one sheet per topic.
 
 Code reaches the file through SQLAlchemy, a translator layer. To move to a shared PostgreSQL database later (for several people at once), set `DATABASE_URL`. The code stays the same.
 
@@ -39,6 +39,7 @@ Code reaches the file through SQLAlchemy, a translator layer. To move to a share
 | `connector_switches` | which connector a person switched on or off for an agent (`*` = every agent), with who, when and why | all | person (permission screen) |
 | `permission_changes` | every change to the agents' connector permissions and daily limits, with the state before and after and the previous setting (for undo) | all | person (append-only) |
 | `drive_documents` | a CGS library document copied from Google Drive: Drive file id, name, folder path, link, type, Drive's modified time, the text, when it was copied. The library reads these as real CGS documents | library | Drive sync (`api/drive_sync.py`) |
+| `drive_records` | where one of the workspace's records lives in Google Drive (one Doc per opportunity, the activity log Sheet): Drive file id, link, the hash of the content last saved, when, and the last error | all | Drive records (`api/drive_records.py`) |
 | `connector_uses` | one call to a connector: day, agent (or "Workspace (person)", "Mail rules"), connector, what was called, outcome (ok, failed, denied, limit) | all | the toolkit gate (append-only) |
 
 ## Rules the database follows

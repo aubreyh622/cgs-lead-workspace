@@ -557,13 +557,19 @@ class MockCRM:
         return {"organisation": org["id"], "contact": contact["id"], "opportunity": d["id"], "url": d["url"]}
 
 
-def make_crm(provider: str, app_mode: str, crm_mode: str):
-    """The CRM for these settings, or None when it is off. Empty provider: mock in demo mode, off in live mode."""
+def make_crm(provider: str, app_mode: str, crm_mode: str, local: bool = False):
+    """The CRM for these settings, or None when it is off. Empty provider: mock in demo mode, off in live mode.
+    TOOLS_TRANSPORT=mcp: a client of the cgs-insightly MCP server instead (local=True always builds the client here; the
+    server itself does that)."""
     if crm_mode == "disabled":
         return None
     p = provider or ("mock" if app_mode == "demo" else "off")
     if p == "off":
         return None
+    if not local:
+        from cgs_tools import client as MCP
+        if MCP.wanted():
+            return MCP.CrmClient(p)
     if p == "mock":
         return MockCRM()
     return InsightlyCRM.from_env()

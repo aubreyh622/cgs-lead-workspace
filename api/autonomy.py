@@ -111,6 +111,9 @@ def patrol(c: S.Ctx) -> list[m.AgentJob]:
     from api import drive_sync as DRV
     if DRV.due(c, t):
         add("drive_sync", None, "Daily copy of the CGS library documents from Google Drive")
+    from api import drive_records as DREC
+    if DREC.due(c, t):
+        add("drive_records", None, "Daily save of the workspace's records to Google Drive")
     from api import outreach_plan as OP
     for o, st in OP.due_steps(c):  # an approved contact plan's next step is due: the outreach agent prepares it
         add("plan_step", o, f"Step {st['n']} of the contact plan is due: {OP.LABEL[st['channel']].lower()} to {st['to']}", {"step": st["n"]})
@@ -598,6 +601,17 @@ def do_crm_sync(c, job, o):
     return "done", " ".join(parts)
 
 
+def do_drive_records(c, job, o):
+    from api import drive_records as DREC
+    res = DREC.save(c)
+    if res.get("off"):
+        return "skipped", res["why"]
+    text = f"Saved {res['saved']} record(s) to Google Drive ({res['unchanged']} unchanged)."
+    if res["errors"]:
+        return ("failed" if not res["saved"] and not res["unchanged"] else "done"), text + " Problems: " + "; ".join(res["errors"][:3])
+    return "done", text
+
+
 def do_drive_sync(c, job, o):
     from api import drive_sync as DRV
     res = DRV.sync(c)
@@ -662,7 +676,8 @@ HANDLERS = {"first_draft": do_first_draft, "contact_plan": do_contact_plan, "pla
             "person_lookup": do_person_lookup, "gap_actions": do_gap_actions, "defer_nurture": do_defer_nurture, "note_evidence": do_note_evidence,
             "ready_reminder": do_ready_reminder, "discovery_round": do_discovery_round, "feedback_review": do_feedback_review,
             "manager_review": do_manager_review, "manager_triage": do_manager_triage, "lessons_review": do_lessons_review, "mail_sync": do_mail_sync,
-            "crm_sync": do_crm_sync, "drive_sync": do_drive_sync}
+            "crm_sync": do_crm_sync, "drive_sync": do_drive_sync,
+            "drive_records": do_drive_records}
 assert set(HANDLERS) == set(J.KINDS)
 
 

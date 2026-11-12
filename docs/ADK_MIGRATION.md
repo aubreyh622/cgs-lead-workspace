@@ -88,6 +88,7 @@ reaches the loop. This single seam drives the recommendation below.
 | Gemini / Claude / OpenAI switch | Gemini native. Claude and OpenAI through `LiteLlm("anthropic/…")`. `AI_PROVIDER` keeps working. |
 | `record` closure, `Pages` | Unchanged at first (closures still work). Later `tool_context.state["temp:…"]`. |
 | Toolkit gate, metering | Unchanged (tools are still built through the gate). Optionally a runner-wide `ToolkitPlugin` audits every call (the `safety-plugins` recipe pattern). |
+| Connectors (web search, Insightly, Google Drive) | **MCP servers** `cgs-search`, `cgs-insightly`, `cgs-drive` (cgs_tools/, docs/MCP_TOOLS.md). ADK uses them unchanged through `McpToolset` (stdio, or streamable HTTP on Cloud Run); `tool_filter` gives agents the read tools only, `require_confirmation` can guard writes. The workspace uses the same servers with `TOOLS_TRANSPORT=mcp`. |
 | Task board, lanes, patrol, budget, restart recovery | No direct ADK equivalent. Keep them, or move to `Workflow` and Pub/Sub (option B). |
 | Inbox approval (days, hash, expiry) | ADK HITL (`ResumabilityConfig`, `request_confirmation`, `RequestInput`) pauses a *session*. That is a poor fit for approvals that take days and must check staleness. Keep the inbox. |
 | `OpportunityMemory` | Keep it relational and quote-checked. Memory Bank is a managed Google Cloud (Gemini platform) service: it is unstructured, and it raises SoW §9 questions. |

@@ -12,6 +12,7 @@ dependencies = [
   "uvicorn==0.54.0",
   "sqlalchemy==2.1.6",
   "google-adk==2.14.0",
+  "mcp==1.30.0",
 ]
 
 [tool.pytest.ini_options]

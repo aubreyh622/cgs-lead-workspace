@@ -156,11 +156,17 @@ class MockSearch:
 PROVIDERS = {"mock": MockSearch, "tavily": TavilySearch}
 
 
-def make_search(provider: str | None = None, as_of: date | None = None):
+def make_search(provider: str | None = None, as_of: date | None = None, local: bool = False):
+    """The search client. TOOLS_TRANSPORT=mcp: a client of the cgs-search MCP server instead (local=True always builds the
+    client here; the server itself does that)."""
     cfg = search_config()
     name = (provider or cfg["provider"]).lower()
     if name not in PROVIDERS:
         raise LLMError(f"Search provider {name!r} is not installed. Choose one of {tuple(PROVIDERS)} in config/search.json.", "config")
+    if not local:
+        from cgs_tools import client as MCP
+        if MCP.wanted():
+            return MCP.SearchClient(name, as_of)
     if name == "mock":
         return MockSearch(results=int(cfg["results_per_query"]), as_of=as_of)
     return PROVIDERS[name](results=int(cfg["results_per_query"]))

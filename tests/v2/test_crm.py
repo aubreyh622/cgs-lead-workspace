@@ -11,6 +11,13 @@ from api.main import create_app
 from api.settings import Settings
 from api.toolkit.crm import CrmError, InsightlyCRM, MockCRM, crm_config, make_crm, split_name
 
+
+@pytest.fixture(autouse=True)
+def in_process_connectors(monkeypatch):
+    """These tests read and steer the mock's own memory (leads, edit, fail_next), which lives in another process under
+    TOOLS_TRANSPORT=mcp. The MCP path gives the same answers: tests/v2/test_mcp_tools.py."""
+    monkeypatch.setenv("TOOLS_TRANSPORT", "inprocess")
+
 ME = {"X-User": "Alex Morgan"}
 
 

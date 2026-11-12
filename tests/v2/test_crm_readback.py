@@ -1,8 +1,16 @@
 """The CRM read-back: edits made in the CRM are not overwritten, a person decides; the CRM opportunity's stage and tasks
 done there are reported; the next step is a CRM task. Insightly over the fake Insightly, the workflow on the MockCRM."""
+import pytest
 from api.toolkit.crm import MockCRM, core_name, search_name
 
 from tests.v2.test_crm import LEAD, ME, FakeInsightly, accept, get, insightly, make, post
+
+
+@pytest.fixture(autouse=True)
+def in_process_connectors(monkeypatch):
+    """These tests read and steer the mock's own memory (leads, edit, fail_next), which lives in another process under
+    TOOLS_TRANSPORT=mcp. The MCP path gives the same answers: tests/v2/test_mcp_tools.py."""
+    monkeypatch.setenv("TOOLS_TRANSPORT", "inprocess")
 
 
 def test_insightly_reads_fields_back_and_leaves_skipped_fields_alone():

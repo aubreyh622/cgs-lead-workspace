@@ -475,6 +475,21 @@ class DriveDocument(Base):
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class DriveRecord(Base):
+    """Where one of the workspace's records lives in CGS's Google Drive (api/drive_records.py): the Google Doc of one
+    opportunity, or the activity log Sheet. The Drive file is the record; the workspace keeps the working copy in its
+    own tables and saves it again whenever it changes (hash)."""
+    __tablename__ = "drive_records"
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)   # opp:<opportunity id> | log
+    opportunity_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    file_id: Mapped[Optional[str]] = mapped_column(String(120))
+    link: Mapped[str] = mapped_column(String(500), default="")
+    name: Mapped[str] = mapped_column(String(300), default="")
+    hash: Mapped[str] = mapped_column(String(64), default="")          # of the content last saved; a change saves it again
+    saved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    error: Mapped[Optional[str]] = mapped_column(Text)                 # the last save failed: why (it is tried again next time)
+
+
 class PermissionChange(Base):
     """Append-only history of the permission table. kind switch: enabled None = back to the default.
     kind limit: a daily limit (in before/after). prev: the setting before, so the change can be undone."""

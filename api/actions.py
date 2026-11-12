@@ -69,6 +69,9 @@ def ctx(request: Request, x_user: str | None = Header(None, description="The per
     scoring.refresh(session)  # another server instance may have changed the scoring criteria
     try:
         yield c
+        if request.method not in ("GET", "HEAD", "OPTIONS"):  # a person changed something: their records go to Drive soon
+            from api import drive_records
+            drive_records.queue(c, f"{c.actor} changed something ({request.method} {request.url.path})")
         session.commit()
     except Exception:
         session.rollback()
@@ -653,6 +656,21 @@ def drive_sync_now(c: S.Ctx = Actor):
     res = DRV.sync(c)
     if res.get("off"):
         raise S.ActionError(res["why"], 409, "drive_off")
+    return res
+
+
+@router.get("/drive/records", tags=["drive"], summary="The workspace's records in Google Drive: on or off, the folder, the last save, each record's file")
+def drive_records_status(c: S.Ctx = Actor):
+    from api import drive_records as DREC
+    return DREC.status(c)
+
+
+@router.post("/drive/records/save", tags=["drive"], summary="Save the records that changed to Google Drive now")
+def drive_records_save(c: S.Ctx = Actor):
+    from api import drive_records as DREC
+    res = DREC.save(c)
+    if res.get("off"):
+        raise S.ActionError(res["why"], 409, "drive_records_off")
     return res
 
 

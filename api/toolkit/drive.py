@@ -20,18 +20,34 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import itertools
+import json
 import os
 import time
 
 import httpx
 
 API = "https://www.googleapis.com/drive/v3"
+UPLOAD = "https://www.googleapis.com/upload/drive/v3"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 METADATA_TOKEN = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"
-SCOPES = ("https://www.googleapis.com/auth/drive.readonly",)
+# A person's sign-in: read every file they can open (the library folders), and create and change only the files the
+# workspace itself made (drive.file: the records folder and its Docs and Sheets). A sign-in made before records existed
+# holds drive.readonly only; reading still works, saving records asks to sign in again.
+SCOPES = ("https://www.googleapis.com/auth/drive.readonly", "https://www.googleapis.com/auth/drive.file")
+# The Cloud Run service account sees only the folders shared with it; to save records into a folder CGS made (a shared
+# drive), it needs the full drive scope, still limited by what is shared with it.
+METADATA_SCOPES = {"read": ("https://www.googleapis.com/auth/drive.readonly",), "write": ("https://www.googleapis.com/auth/drive",)}
 PROVIDERS = ("off", "mock", "google")
 FOLDER = "application/vnd.google-apps.folder"
 GOOGLE_DOC = "application/vnd.google-apps.document"
+GOOGLE_SHEET = "application/vnd.google-apps.spreadsheet"
+# What a record is uploaded as, and what Drive turns it into (Drive converts on upload: no Docs or Sheets API scope needed)
+RECORD_KINDS = {"doc": ("text/html", GOOGLE_DOC), "sheet": ("text/csv", GOOGLE_SHEET)}
+
+
+def records_on() -> bool:
+    """DRIVE_RECORDS=on: the workspace saves its records (drafts, notes, the activity log) to Drive (api/drive_records.py)."""
+    return os.environ.get("DRIVE_RECORDS", "off").strip().lower() == "on"
 TEXT_TYPES = ("text/plain", "text/markdown", "text/x-markdown")
 TEXT_ENDINGS = (".md", ".markdown", ".txt")
 MAX_DEPTH = 4          # subfolders below a named folder
@@ -138,7 +154,8 @@ class GoogleDrive(_Walker):
             return self._token
         if self.auth == "metadata":
             try:
-                r = self.http.get(METADATA_TOKEN, params={"scopes": ",".join(SCOPES)}, headers={"Metadata-Flavor": "Google"})
+                scopes = METADATA_SCOPES["write" if records_on() else "read"]
+                r = self.http.get(METADATA_TOKEN, params={"scopes": ",".join(scopes)}, headers={"Metadata-Flavor": "Google"})
             except httpx.HTTPError as e:
                 raise DriveError(f"DRIVE_AUTH=metadata works only on Google Cloud (could not reach the metadata server: {type(e).__name__}).") from None
             if r.status_code != 200:
@@ -223,6 +240,65 @@ class GoogleDrive(_Walker):
             raise DriveError(f"{f.name} is no longer in Drive.")
         return r.content.decode("utf-8", "replace")[:MAX_CHARS]
 
+    # ----- writing records (api/drive_records.py) -----
+    def _send(self, method: str, url: str, params: dict, **kw):
+        try:
+            r = self.http.request(method, url, params={**params, "supportsAllDrives": "true"},
+                                  headers={"Authorization": f"Bearer {self._access()}", **kw.pop("headers", {})}, **kw)
+        except httpx.HTTPError as e:
+            raise DriveError(f"Could not reach Google Drive ({type(e).__name__}).") from None
+        if r.status_code == 404:
+            return None
+        if r.status_code in (401, 403):
+            try:
+                reason = (r.json().get("error") or {}).get("message", "")[:240]
+            except ValueError:
+                reason = ""
+            if "insufficient" in reason.lower() and "scope" in reason.lower():
+                raise DriveError("This Drive sign-in may only read. Run `python -m api.toolkit.gmail_auth --drive` again so the "
+                                 "workspace may also save its records, then restart.")
+            raise DriveError("Google Drive refused to save." + (f" Google says: {reason}" if reason else ""))
+        if r.status_code >= 400:
+            raise DriveError(f"Google Drive answered {r.status_code}: {r.text[:200]}")
+        return r.json()
+
+    def find_folder(self, name: str, parent: str = "") -> str | None:
+        """A folder with this name (in parent, or anywhere this sign-in may see), or None."""
+        safe = name.replace("\\", "\\\\").replace("'", "\\'")
+        q = f"mimeType = '{FOLDER}' and name = '{safe}' and trashed = false"
+        if parent:
+            q += f" and '{parent}' in parents"
+        page = self._get("/files", {"q": q, "fields": "files(id)", "pageSize": "1", "supportsAllDrives": "true",
+                                    "includeItemsFromAllDrives": "true"}) or {}
+        return next((f["id"] for f in page.get("files", [])), None)
+
+    def make_folder(self, name: str, parent: str = "") -> str:
+        meta = {"name": name, "mimeType": FOLDER, **({"parents": [parent]} if parent else {})}
+        x = self._send("POST", API + "/files", {"fields": "id"}, json=meta)
+        if not x:
+            raise DriveError(f"The folder {parent} was not found, or this account may not add to it.")
+        return x["id"]
+
+    def save(self, folder_id: str, name: str, body: str, kind: str = "doc", file_id: str = "") -> dict:
+        """Save a record as a Google Doc (body = HTML) or Sheet (body = CSV): replace file_id's content, or create the file
+        in folder_id. Returns {"id", "link"}. A file_id that no longer exists (someone deleted it) is made again."""
+        source, target = RECORD_KINDS[kind]
+        boundary = "cgs-record-boundary"
+        meta = {"name": name} if file_id else {"name": name, "mimeType": target, "parents": [folder_id]}
+        payload = (f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{json.dumps(meta)}\r\n"
+                   f"--{boundary}\r\nContent-Type: {source}; charset=UTF-8\r\n\r\n{body}\r\n--{boundary}--").encode("utf-8")
+        headers = {"Content-Type": f"multipart/related; boundary={boundary}"}
+        params = {"uploadType": "multipart", "fields": "id,webViewLink"}
+        if file_id:
+            x = self._send("PATCH", f"{UPLOAD}/files/{file_id}", params, content=payload, headers=headers)
+            if x is None:
+                return self.save(folder_id, name, body, kind)
+        else:
+            x = self._send("POST", UPLOAD + "/files", params, content=payload, headers=headers)
+            if x is None:
+                raise DriveError(f"The records folder {folder_id} was not found, or this account may not add to it.")
+        return {"id": x["id"], "link": x.get("webViewLink", "")}
+
 
 # ---------- an in-memory Drive ----------
 class MockDrive(_Walker):
@@ -276,13 +352,39 @@ class MockDrive(_Walker):
             raise DriveError(f"{f.name} is no longer in Drive.")
         return self.items[f.id]["text"]
 
+    def find_folder(self, name: str, parent: str = "") -> str | None:
+        return next((i for i, x in self.items.items() if x["mime"] == FOLDER and x["name"] == name and (not parent or x["parent"] == parent)), None)
 
-def make_drive(provider: str):
+    def make_folder(self, name: str, parent: str = "") -> str:
+        if parent and self.folder(parent) is None:
+            raise DriveError(f"The folder {parent} was not found, or this account may not add to it.")
+        return self.add_folder(name, parent)
+
+    def save(self, folder_id: str, name: str, body: str, kind: str = "doc", file_id: str = "") -> dict:
+        if self.fail_next:
+            msg, self.fail_next = self.fail_next, ""
+            raise DriveError(msg)
+        mime = RECORD_KINDS[kind][1]
+        if file_id and file_id in self.items:
+            self.items[file_id].update(name=name, text=body, modified=self._stamp())
+        else:
+            if self.folder(folder_id) is None:
+                raise DriveError(f"The records folder {folder_id} was not found, or this account may not add to it.")
+            file_id = self.add(folder_id, name, body, mime)
+        return {"id": file_id, "link": f"https://docs.google.com/{'spreadsheets' if kind == 'sheet' else 'document'}/d/{file_id}/edit"}
+
+
+def make_drive(provider: str, local: bool = False):
     """The Drive client for DRIVE_PROVIDER (off | mock | google), or None when it is off. Empty = off: the library then
-    comes only from the knowledge/ folder."""
+    comes only from the knowledge/ folder. TOOLS_TRANSPORT=mcp: a client of the cgs-drive MCP server instead (local=True
+    always builds the client here; the server itself does that)."""
     p = (provider or "off").strip().lower()
     if p == "off":
         return None
+    if not local:
+        from cgs_tools import client as MCP
+        if MCP.wanted():
+            return MCP.DriveClient(p)
     if p == "mock":
         return MockDrive()
     return GoogleDrive.from_env()

@@ -7,10 +7,8 @@ from __future__ import annotations
 
 from urllib.parse import urlsplit
 
-from sqlalchemy import select
-
-from api import models as m
 from api.agent_runtime import Tool, ToolError, params
+# The database is imported where it is used: the MCP tool servers (cgs_tools/) import the toolkit and must not load it.
 
 PREVIEW = 240        # characters of each search result the model sees before it reads the page
 PAGE_LIMIT = 4000    # characters of one page the model sees
@@ -103,6 +101,8 @@ def web_tools(c, pages: Pages, company: str, domain: str, w=None) -> list[Tool]:
 
 def contact_tools(c, company_id: str) -> list[Tool]:
     def known_contacts(_args):
+        from sqlalchemy import select
+        from api import models as m
         rows = c.s.scalars(select(m.Contact).where(m.Contact.company_id == company_id))
         return {"contacts": [{"name": x.name, "title": x.title, "confirmed_by_a_person": bool(x.confirmed_by)} for x in rows if x.name]}
 

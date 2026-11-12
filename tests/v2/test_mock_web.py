@@ -1,4 +1,5 @@
 """Mock web checks: the search plug, the synthetic internet, synthetic research, and search settings for CGS."""
+import pytest
 import json
 from datetime import date
 
@@ -11,6 +12,13 @@ from api.mock_research import MockResearchBridge, research
 from api.search import PROVIDERS, MockSearch, make_search, search_config
 from api.settings import Settings
 from agent_fakes import review_ok, turn
+
+
+@pytest.fixture(autouse=True)
+def in_process_connectors(monkeypatch):
+    """These tests read and steer the mock's own memory (leads, edit, fail_next), which lives in another process under
+    TOOLS_TRANSPORT=mcp. The MCP path gives the same answers: tests/v2/test_mcp_tools.py."""
+    monkeypatch.setenv("TOOLS_TRANSPORT", "inprocess")
 
 ME = {"X-User": "Alex Morgan"}
 
