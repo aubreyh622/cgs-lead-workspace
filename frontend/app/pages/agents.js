@@ -1,5 +1,6 @@
-// Agents: what the six agents are doing, what they prepared, every AI run with its steps, which connectors each agent
-// may use, the lessons people approved for them, and how people received their work.
+// Agent hub: the overview (team.js) and the records: the task board, every AI run with its steps, the lessons people
+// approved, the team instructions, and how people received the agents' work. Connectors, permissions and the CRM are
+// on the Connectors page.
 import { html, icon, day, href, plural } from "../lib.js";
 import { enc } from "../api.js";
 import { emptyState } from "../shell.js";
@@ -7,20 +8,17 @@ import { pageState, missing, tabBar, tabKeys, cancelButton, openButton } from ".
 import { linkFor } from "./links.js";
 import * as team from "./team.js";
 
-export const title = "Agents";
+export const title = "Agent hub";
 
 const TABS = [
-  ["controls", "Controls and CRM"],
   ["work", "Work and inbox"],
   ["runs", "AI runs"],
-  ["permissions", "Permissions"],
   ["lessons", "Lessons"],
   ["team", "Team instructions"],
   ["scorecard", "Scorecard"],
 ];
 const LESSON_AGENTS = ["Research agent", "Outreach agent", "Evidence agent", "Manager agent", "Discovery agent", "Direction agent"];
 const JOB_TAG = { queued: "", running: "info", done: "good", failed: "bad", skipped: "", cancelled: "" };
-const STATE_LABEL = { on: "On", off: "Off", forbidden: "Never (code)", "not built": "Not built", "connector off": "Connector off" };
 
 const st = pageState();
 
@@ -32,13 +30,16 @@ export function otherInbox(items) {
 export async function load(ctx, params) {
   // No tab: the team overview as designed. An agent: its own page. A tab: the records.
   if (params.agent) return team.loadAgent(ctx, params);
+  if (params.tab === "permissions") { // moved to Connectors (R6)
+    ctx.go("connectors", { tab: "permissions" });
+    return { mode: "moved" };
+  }
   if (!TABS.some(([t]) => t === params.tab)) return team.loadOverview(ctx);
   const tab = params.tab;
   const me = enc(ctx.me);
   const [overview, inbox] = await Promise.all([ctx.api.get("/agents"), ctx.api.get(`/inbox?owner=${me}`)]);
   const data = { tab, overview, inbox: otherInbox(inbox) };
   const opt = (p) => p.catch((e) => ({ error: e.message }));
-  if (tab === "controls") data.crm = await opt(ctx.api.get("/crm"));
   if (tab === "work") {
     [data.jobs, data.opps] = await Promise.all([ctx.api.get(`/agents/jobs?limit=100${params.status ? `&status=${enc(params.status)}` : ""}`), ctx.api.get("/opportunities")]);
     data.status = params.status || "";
@@ -47,9 +48,6 @@ export async function load(ctx, params) {
     data.runs = await ctx.api.get("/agent-runs?limit=60");
     data.runId = params.run || "";
     if (data.runId) data.run = await opt(ctx.api.get(`/agent-runs/${enc(data.runId)}`));
-  }
-  if (tab === "permissions") {
-    [data.perms, data.usage, data.history] = await Promise.all([ctx.api.get("/toolkit/permissions"), ctx.api.get("/toolkit/usage"), opt(ctx.api.get("/toolkit/permissions/history"))]);
   }
   if (tab === "lessons") [data.lessons, data.findings] = await Promise.all([ctx.api.get("/lessons"), opt(ctx.api.get("/lessons/findings"))]);
   if (tab === "team") [data.team, data.teamHistory] = await Promise.all([ctx.api.get("/team-text"), ctx.api.get("/team-text/history")]);
@@ -71,15 +69,16 @@ export function after(root, ctx, d) {
 }
 
 export function view(d, ctx) {
+  if (d.mode === "moved") return html`<p class="meta">Permissions are on the Connectors page.</p>`;
   if (d.mode === "overview") return team.overview(d, ctx, st);
   if (d.mode === "agent") return team.detail(d, ctx, st);
   const o = d.overview;
   return html`
-  <a class="back" href="${href("agents")}">${icon("back", 16)}Agents</a>
+  <a class="back" href="${href("agents")}">${icon("back", 16)}Agent hub</a>
   <div class="page-head" style="margin-top:12px">
     <div>
       <h1>Agent records</h1>
-      <p>The task board, every AI run, permissions, lessons and the scorecard. ${o.paused ? "The agents are paused." : o.worker ? `They work in the background in ${plural(o.lanes, "lane")}.` : "No background worker runs in this server: use Run the queue now."}</p>
+      <p>The task board, every AI run, lessons, team instructions and the scorecard. Permissions are on <a href="${href("connectors", { tab: "permissions" })}">Connectors</a>. ${o.paused ? "The agents are paused." : o.worker ? `They work in the background in ${plural(o.lanes, "lane")}.` : "No background worker runs in this server: use Run the queue now."}</p>
     </div>
     <div class="actions">
       <button type="button" class="btn" data-act="patrol">Patrol now</button>
@@ -90,85 +89,8 @@ export function view(d, ctx) {
   ${st.notices()}
   ${tabBar("Agents", TABS, d.tab, { work: d.inbox.length || undefined })}
   <div id="panel" role="tabpanel" aria-labelledby="tab-${d.tab}">
-    ${{ controls: teamView, work: workView, runs: runsView, permissions: permissionsView, lessons: lessonsView, team: teamTextView, scorecard: scorecardView }[d.tab](d, ctx)}
+    ${{ work: workView, runs: runsView, lessons: lessonsView, team: teamTextView, scorecard: scorecardView }[d.tab](d, ctx)}
   </div>`;
-}
-
-// ----- team -----
-function teamView(d, ctx) {
-  const o = d.overview;
-  return html`
-  <div class="two-col">
-    <div class="main stack">
-      <section class="card" aria-labelledby="team-h">
-        <div class="card-head"><h2 id="team-h">The team</h2><span class="meta">Work done today, ${day(o.today, ctx.today)}</span></div>
-        <ul class="rows">${o.agents.map((a) => html`<li style="align-items:flex-start">
-          <span class="what"><b>${a.agent}</b><ul class="bullets meta">${a.does.map((x) => html`<li>${x}</li>`)}</ul></span>
-          <span class="meta num">${plural(a.doneToday, "job")} done</span>
-        </li>`)}</ul>
-      </section>
-    </div>
-    <aside class="side">
-      <section class="card card-body stack" aria-labelledby="brakes-h">
-        <h2 id="brakes-h" class="section-title" style="margin:0">Controls</h2>
-        <ul class="kv">
-          <li><span>State</span><span>${o.paused ? "Paused" : "Working"}</span></li>
-          <li><span>AI calls today</span><span>${o.aiCallsToday} of ${o.aiBudget}</span></li>
-          <li><span>Daily patrol</span><span>${String(o.patrolHour).padStart(2, "0")}:00</span></li>
-          <li><span>Last patrol</span><span>${o.lastPatrol ? day(o.lastPatrol, ctx.today) : "Never"}</span></li>
-          <li><span>Manager agent</span><span>${o.managerMode}</span></li>
-          <li><span>First contact</span><span>${o.firstContact === "plan" ? "Contact plan" : "First email"}</span></li>
-          <li><span>Jobs queued</span><span>${o.queued}</span></li>
-        </ul>
-        <button type="button" class="btn ${o.paused ? "primary" : ""}" data-act="pause" data-paused="${o.paused ? "" : "1"}">${o.paused ? "Resume the agents" : "Pause all agents"}</button>
-        ${st.ui.open === "settings" ? html`
-        <form class="panel-form" data-act="settingsForm" data-on="submit">
-          <label class="field">AI calls per day<input type="number" name="ai_budget" min="0" max="2000" step="1" value="${o.aiBudget}"></label>
-          <label class="field">Patrol hour (0-23)<input type="number" name="patrol_hour" min="0" max="23" step="1" value="${o.patrolHour}"></label>
-          <label class="field">Manager agent<select name="manager_mode">${["off", "shadow", "on"].map((m) => html`<option ${m === o.managerMode ? "selected" : ""}>${m}</option>`)}</select>
-            <span class="hint">Shadow: it decides and compares, but queues nothing.</span></label>
-          <label class="field">First contact after Step 4<select name="first_contact">${[["email", "The first email"], ["plan", "A contact plan"]].map(([v, l]) => html`<option value="${v}" ${v === o.firstContact ? "selected" : ""}>${l}</option>`)}</select>
-          <span class="hint">A contact plan: the outreach agent proposes whom to approach and how; the owner approves it before any step.</span></label>
-          <div class="actions"><button type="submit" class="btn primary">Save</button>${cancelButton}</div>
-          ${st.err("settings")}
-        </form>` : openButton("settings", "Change budget, patrol or manager…")}
-      </section>
-      ${crmCard(d.crm)}
-    </aside>
-  </div>`;
-}
-
-function lastRead(crm) {
-  const times = (crm.opportunities || []).map((x) => x.crm && x.crm.pulledAt).filter(Boolean).sort();
-  if (!times.length) return "Not yet";
-  const t = new Date(times[times.length - 1]);
-  return t.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-}
-
-function crmCard(crm) {
-  if (!crm) return "";
-  if (crm.error) return html`<section class="card card-body"><h2 class="section-title">CRM</h2><div class="notice bad">${icon("alert")}<span>${crm.error}</span></div></section>`;
-  const waiting = (crm.opportunities || []).filter((x) => x.crmSync !== "synced");
-  const disagree = (crm.opportunities || []).filter((x) => x.crm && x.crm.conflicts && x.crm.conflicts.length);
-  return html`
-  <section class="card card-body stack" aria-labelledby="crm-h">
-    <h2 id="crm-h" class="section-title" style="margin:0">CRM</h2>
-    <ul class="kv">
-      <li><span>Provider</span><span>${crm.provider}</span></li>
-      <li><span>Mode</span><span>${crm.mode}</span></li>
-      <li><span>Writes</span><span>${crm.writes ? "On, after a person's action" : "Off"}</span></li>
-      <li><span>Last read-back</span><span>${lastRead(crm)}</span></li>
-    </ul>
-    ${crm.error ? html`<div class="notice bad">${icon("alert")}<span>${crm.error}</span></div>` : ""}
-    ${waiting.length ? html`<p class="meta">${plural(waiting.length, "opportunity", "opportunities")} waiting to sync or failed: ${waiting.map((x) => x.company).join(", ")}.</p>` : html`<p class="meta">Nothing waiting to sync.</p>`}
-    ${disagree.length ? html`<p class="meta">Changed in the CRM, waiting for a person: ${disagree.map((x) => html`<a href="${linkFor(x)}">${x.company}</a>`).reduce((a, b) => html`${a}, ${b}`)}.</p>` : ""}
-    <div class="actions">
-      ${crm.writes && waiting.length ? html`<button type="button" class="btn small" data-act="crmSync">Sync now</button>` : ""}
-      ${crm.reads ? html`<button type="button" class="btn small" data-act="crmPull">Read back from the CRM now</button>` : ""}
-    </div>
-    <p class="meta-3">The read-back runs with the daily check. It notes edits made in the CRM, the CRM opportunity's stage and tasks done there; it never changes a stage here.</p>
-    ${st.err("crm")}
-  </section>`;
 }
 
 // ----- work: task board and the inbox items no other page handles -----
@@ -261,95 +183,6 @@ function runDetail(r, ctx) {
       ${s.error ? html`<span class="bad-text">${s.error}</span>` : ""}
       ${s.reason ? html`<span class="meta-3">${s.reason}</span>` : ""}
     </li>`)}</ol>` : html`<p class="meta">No step record: this was a single call${r.model === "demo-text-rules" ? " (demo text rules, no AI)" : ""}.</p>`}
-  </div>`;
-}
-
-// ----- permissions -----
-function permissionsView(d, ctx) {
-  const p = d.perms;
-  const limits = Object.fromEntries(d.usage.limits.map((l) => [l.connector, l]));
-  return html`
-  <div class="stack">
-    <section class="card" aria-labelledby="conn-h">
-      <div class="card-head"><div><h2 id="conn-h">Connectors</h2><p class="meta">Every outside system goes through one gate with a usage log and daily limits.</p></div></div>
-      <div class="table-wrap"><table class="list">
-        <thead><tr><th scope="col">Connector</th><th scope="col">Data</th><th scope="col">State</th><th scope="col">Today, of daily limit</th><th scope="col"><span class="sr-only">Change</span></th></tr></thead>
-        <tbody>${p.connectors.map((c) => {
-          const l = limits[c.name];
-          return html`<tr>
-            <td><b>${c.name}</b><span class="meta">${c.about}</span></td>
-            <td>${c.data}</td>
-            <td>${!c.built ? "Not built" : c.on ? "On" : "Off"}<div class="meta-3">${c.source}</div></td>
-            <td class="num">${l ? `${l.usedToday} of ${l.perDay ? l.perDay : "no limit"}` : "Not metered"}</td>
-            <td>${c.built ? openButton(`conn:${c.name}`, "Change…", "btn ghost small", `Change the ${c.name} connector`) : ""}</td>
-          </tr>
-          ${st.ui.open === `conn:${c.name}` ? html`<tr><td colspan="5">${connectorForm(c, l)}</td></tr>` : ""}`;
-        })}</tbody>
-      </table></div>
-    </section>
-    <section class="card" aria-labelledby="perm-h">
-      <div class="card-head"><div><h2 id="perm-h">Which agent may use which connector</h2>
-        <p class="meta">"Never" is set in the code and cannot be changed here. A change is recorded with your reason and can be undone.</p></div></div>
-      <div class="table-wrap"><table class="list compact-grid">
-        <thead><tr><th scope="col">Agent</th>${p.connectors.map((c) => html`<th scope="col">${c.name}</th>`)}</tr></thead>
-        <tbody>${p.agents.map((a) => html`<tr>
-          <td><b>${a.agent}</b></td>
-          ${p.connectors.map((c) => {
-            const cell = a.connectors[c.name];
-            const name = `perm:${a.agent}:${c.name}`;
-            return html`<td>${cell.editable ? html`<button type="button" class="btn ghost small" data-act="open" data-open="${name}" aria-label="${a.agent}, ${c.name}: ${STATE_LABEL[cell.state] || cell.state}. Change">${STATE_LABEL[cell.state] || cell.state}</button>`
-              : html`<span class="meta">${STATE_LABEL[cell.state] || cell.state}</span>`}</td>`;
-          })}
-        </tr>
-        ${p.connectors.some((c) => st.ui.open === `perm:${a.agent}:${c.name}`) ? html`<tr><td colspan="${p.connectors.length + 1}">${permForm(a, p.connectors.find((c) => st.ui.open === `perm:${a.agent}:${c.name}`))}</td></tr>` : ""}`)}</tbody>
-      </table></div>
-      ${st.err("perm")}
-    </section>
-    <section class="card" aria-labelledby="hist-h">
-      <div class="card-head"><h2 id="hist-h">Changes</h2></div>
-      ${d.history.error ? html`<div class="card-body"><div class="notice bad">${icon("alert")}<span>${d.history.error}</span></div></div>`
-        : d.history.length ? html`<ul class="rows">${d.history.map((h) => html`<li>
-          <span class="what"><b>${h.kind === "limit" ? `${h.connector} limit set to ${h.set}` : `${h.agent || "All agents"}, ${h.connector}: ${h.set}`}</b>
-            <span class="meta">${h.by}, ${day(h.on, ctx.today)}. ${h.reason}</span></span>
-          ${h.undoable ? (st.ui.open === `undo:${h.id}` ? html`<form class="row-flex" data-act="undoForm" data-on="submit" data-id="${h.id}">
-            <label class="sr-only" for="undo-${h.id}">Why undo</label><input class="input" id="undo-${h.id}" name="reason" placeholder="Why undo" required style="width:220px">
-            <button type="submit" class="btn small">Undo</button>${cancelButton}</form>` : openButton(`undo:${h.id}`, "Undo…", "btn ghost small")) : ""}
-        </li>`)}</ul>` : emptyState("No changes yet", "Changes to the table and the limits appear here.")}
-      ${st.err("undo")}
-    </section>
-  </div>`;
-}
-
-function stateSelect() {
-  return html`<label class="field">Set to<select name="enabled"><option value="true">On</option><option value="false">Off</option><option value="">Back to the default</option></select></label>`;
-}
-
-function permForm(a, c) {
-  return html`
-  <form class="panel-form" data-act="permForm" data-on="submit input" data-agent="${a.agent}" data-connector="${c.name}">
-    <h3 class="sub-title">${a.agent} and ${c.name}</h3>
-    <div class="form-grid">${stateSelect()}<label class="field">Reason<input name="reason" required></label></div>
-    <div class="actions"><button type="submit" class="btn primary" disabled>Save</button>${cancelButton}<span class="missing" data-missing>Give a reason.</span></div>
-  </form>`;
-}
-
-function connectorForm(c, l) {
-  return html`
-  <div class="stack">
-    <form class="panel-form" data-act="connForm" data-on="submit input" data-connector="${c.name}">
-      <h3 class="sub-title">Switch ${c.name} for every agent</h3>
-      <div class="form-grid">${stateSelect()}<label class="field">Reason<input name="reason" required></label></div>
-      <div class="actions"><button type="submit" class="btn primary" disabled>Save</button><span class="missing" data-missing>Give a reason.</span></div>
-    </form>
-    ${l ? html`<form class="panel-form" data-act="limitForm" data-on="submit input" data-connector="${c.name}">
-      <h3 class="sub-title">Daily limit for ${c.name}</h3>
-      <div class="form-grid">
-        <label class="field">Calls per day <span class="hint">0 means no limit; empty means the config file's default.</span><input type="number" name="perDay" min="0" step="1" value="${l.perDay === null ? "" : l.perDay}"></label>
-        <label class="field">Reason<input name="reason" required></label>
-      </div>
-      <div class="actions"><button type="submit" class="btn primary" disabled>Save limit</button>${cancelButton}<span class="missing" data-missing>Give a reason.</span></div>
-    </form>` : ""}
-    ${st.err("conn")}
   </div>`;
 }
 
@@ -526,7 +359,6 @@ function plansCard(p) {
 }
 
 // ---------- actions ----------
-const bool = (v) => (v === "true" ? true : v === "false" ? false : null);
 
 export const actions = {
   ...team.teamActions,
@@ -566,6 +398,7 @@ export const actions = {
       (res) => { st.ui.notice = [{ text: res.status === "completed" ? `Brief ready for ${res.company}. Nothing was saved to the workflow.` : `The research agent is researching ${res.company}. The brief appears below when it is done.`, cls: "good" }]; });
   },
   pauseAgent(t, e, ctx) {
+    if (t.getAttribute("aria-disabled") === "true") return;  // turned off with All agents
     const paused = t.dataset.paused === "1";
     st.write("top", t, ctx, () => ctx.api.post("/agents/pause", { agent: t.dataset.agent, paused }),
       () => { st.ui.notice = [{ text: `${t.dataset.agent} ${paused ? "paused. Its jobs wait on the task board." : "resumed."}`, cls: "good" }]; });
@@ -579,47 +412,10 @@ export const actions = {
       { ai_budget: Number(f.ai_budget.value), patrol_hour: Number(f.patrol_hour.value), manager_mode: f.manager_mode.value,
         ...(f.first_contact ? { first_contact: f.first_contact.value } : {}) }));
   },
-  crmPull(t, e, ctx) {
-    st.write("crm", t, ctx, () => ctx.api.post("/crm/pull"), (res) => {
-      st.ui.notice = [{ text: `Read back ${plural(res.read, "opportunity", "opportunities")} from the CRM: ${plural(res.changes, "new change")} there.`
-        + (res.failed ? ` ${res.failed} could not be read: ${res.errors.join("; ")}` : ""), cls: res.failed ? "warn" : "good" }];
-    });
-  },
-  crmSync(t, e, ctx) {
-    st.write("crm", t, ctx, () => ctx.api.post("/crm/sync"), () => { st.ui.notice = [{ text: "CRM sync ran. The list shows what is still waiting.", cls: "good" }]; });
-  },
-
   item(t, e, ctx) {
     const body = { action: t.dataset.do };
     if (t.dataset.hash) body.payload_hash = t.dataset.hash;
     st.write(`item:${t.dataset.id}`, t, ctx, () => ctx.api.post(`/inbox/${enc(t.dataset.id)}`, body), (res) => { ctx.toast(res.note || "Done."); });
-  },
-
-  permForm(form, e, ctx) {
-    const reason = form.elements.reason.value.trim();
-    if (e.type !== "submit") return missing(form, reason ? "" : "Give a reason.");
-    if (!reason) return;
-    st.write("perm", form.querySelector("[type=submit]"), ctx, () => ctx.api.put(`/toolkit/permissions/${enc(form.dataset.agent)}/${enc(form.dataset.connector)}`,
-      { enabled: bool(form.elements.enabled.value), reason }));
-  },
-  connForm(form, e, ctx) {
-    const reason = form.elements.reason.value.trim();
-    if (e.type !== "submit") return missing(form, reason ? "" : "Give a reason.");
-    if (!reason) return;
-    st.write("conn", form.querySelector("[type=submit]"), ctx, () => ctx.api.put(`/toolkit/connectors/${enc(form.dataset.connector)}`,
-      { enabled: bool(form.elements.enabled.value), reason }));
-  },
-  limitForm(form, e, ctx) {
-    const reason = form.elements.reason.value.trim();
-    if (e.type !== "submit") return missing(form, reason ? "" : "Give a reason.");
-    if (!reason) return;
-    const v = form.elements.perDay.value;
-    st.write("conn", form.querySelector("[type=submit]"), ctx, () => ctx.api.put(`/toolkit/limits/${enc(form.dataset.connector)}`,
-      { perDay: v === "" ? null : Number(v), reason }));
-  },
-  undoForm(form, e, ctx) {
-    st.write("undo", form.querySelector("[type=submit]"), ctx, () => ctx.api.post(`/toolkit/permissions/history/${enc(form.dataset.id)}/undo`,
-      { reason: form.elements.reason.value.trim() }));
   },
 
   teamSave(form, e, ctx) {

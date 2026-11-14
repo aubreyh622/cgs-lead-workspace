@@ -1,8 +1,10 @@
-// Starts the workspace page: who is acting, the header, and the page the URL names.
+// Starts the workspace page: who is acting, the side rail, and the page the URL names.
 import { api, person, actAs, writeCount } from "./api.js";
-import { readRoute, href } from "./lib.js";
-import { header, chooser, toast, loadingCard, errorCard } from "./shell.js";
+import { readRoute, href, ROUTE_ALIASES } from "./lib.js";
+import { rail, railClosed, setRailClosed, chooser, toast, loadingCard, errorCard, problems } from "./shell.js";
+import { initSearch, openSearch, forgetSearch } from "./search.js";
 import * as home from "./pages/home.js";
+import * as inbox from "./pages/inbox.js";
 import * as companies from "./pages/companies.js";
 import * as outreach from "./pages/outreach.js";
 import * as qualification from "./pages/qualification.js";
@@ -10,21 +12,29 @@ import * as sources from "./pages/sources.js";
 import * as agents from "./pages/agents.js";
 import * as team from "./pages/team.js";
 import * as settings from "./pages/settings.js";
+import * as library from "./pages/library.js";
+import * as connectors from "./pages/connectors.js";
+import * as record from "./pages/record.js";
 import { dock } from "./shell.js";
 import * as updates from "./updates.js";
 
+// Routes. Old names (#/home, #/sources) are aliases (lib.js ROUTE_ALIASES) and are rewritten in the URL.
 const PAGES = {
-  home,
+  overview: home,
+  inbox,
+  find: sources,
   companies,
   outreach,
   qualification,
-  sources,
   agents,
+  library,
+  connectors,
   settings,
+  record,  // a company's full record (#/record?id=…); not in the rail
 };
 
 const el = {
-  header: document.getElementById("top"),
+  rail: document.getElementById("rail"),
   main: document.getElementById("main"),
   dock: document.getElementById("dock"),
 };
@@ -55,28 +65,32 @@ const ctx = {
   scrollTop: false,
 };
 
-function drawHeader() {
-  el.header.innerHTML = String(header({ page: ctx.route.page, counts: ctx.counts, config: ctx.config, users: ctx.users, me: ctx.me, crm: ctx.crm,
-    signedIn: ctx.signedIn, self: ctx.self, admin: ctx.admin }));
+// The side rail. Drawn again after every count refresh; a focused rail control keeps its focus.
+function drawRail() {
+  const focused = document.activeElement && el.rail.contains(document.activeElement) ? document.activeElement.dataset.shell : null;
+  el.rail.classList.toggle("closed", railClosed());
+  el.rail.innerHTML = String(rail({ page: ctx.route.page, inboxCount: ctx.counts.inbox || 0, config: ctx.config, users: ctx.users, me: ctx.me,
+    crm: ctx.crm, signedIn: ctx.signedIn, self: ctx.self, admin: ctx.admin, closed: railClosed() }));
+  if (focused) { const again = el.rail.querySelector(`[data-shell="${focused}"]`); if (again) again.focus(); }
 }
 
-// Counts in the navigation: items waiting for a person. Only pages that exist get a count.
-export async function refreshCounts() {
+// The Inbox badge is GET /api/todo's count: exactly the rows the Inbox page lists. The other pages carry their counts
+// on their own tabs.
+// Plain navigation reuses counts read in the last 15 seconds (they cost seven requests); after a write, a background
+// update or a quick action they are read again at once (fresh), so a number never lags what the person just did.
+let countsAt = 0;
+export async function refreshCounts({ fresh = true } = {}) {
+  if (!fresh && Date.now() - countsAt < 15000) { drawRail(); drawProblems(); return; }
+  countsAt = Date.now();
   try {
     const me = encodeURIComponent(ctx.me);
-    const [cands, review, inbox, identified, qual, running, overview, direction, lessons] = await Promise.all([
-      api.get("/candidates?status=new"), api.get("/opportunities?stage=review"),
-      api.get(`/inbox?owner=${me}`), api.get(`/opportunities?stage=identified&stage=contacted&stage=nurture&owner=${me}`),
-      api.get("/opportunities?stage=active&stage=approval"), api.get("/agents/jobs?status=running&limit=20"), api.get("/agents"),
+    const [todo, inbox, running, overview, direction, lessons] = await Promise.all([
+      api.get("/todo"), api.get(`/inbox?owner=${me}`), api.get("/agents/jobs?status=running&limit=20"), api.get("/agents"),
       api.get("/direction"), api.get("/lessons"),
     ]);
-    // Each badge equals what its page shows when opened.
-    ctx.counts = {
-      companies: cands.length + review.length,
-      outreach: outreach.waitingFor(identified, inbox),
-      qualification: qualification.waitingFor(ctx.me, qual).length,
-      agents: team.suggestionCount(inbox, direction, lessons),
-    };
+    ctx.counts = { inbox: todo.count };
+    ctx.health = { health: todo.health || [], rows: ((todo.groups || []).find((g) => g.id === "problem") || {}).items || [],
+      ai: { used: overview.aiCallsToday, budget: overview.aiBudget } };
     // The dock counts agent work waiting for this person: the sum of the agent rows its panel lists.
     ctx.dock = { running: running.length + ((overview.research && overview.research.running.length) || 0), queued: overview.queued, paused: overview.paused,
       waiting: team.AGENTS.reduce((n, a) => n + team.agentWaiting(a, inbox, direction, lessons), 0) };
@@ -88,8 +102,38 @@ export async function refreshCounts() {
   } catch {
     ctx.crm = null; // the header falls back to the setting in /api/config
   }
-  drawHeader();
+  drawRail();
   drawDock();
+  drawProblems();
+}
+
+// The problem banners at the top of the page (shell.js problems), from the last GET /api/todo. Drawn again only when
+// their text changes, so a screen reader does not hear them again on every refresh.
+const LATER = "cgs-problem-later";
+function laterSet() {
+  try { return JSON.parse(localStorage.getItem(LATER) || "{}"); } catch { return {}; }
+}
+let problemsShown = "";
+function problemsHtml() {
+  const h = ctx.health || {};
+  problemsShown = String(problems({ page: ctx.route.page, health: h.health, rows: h.rows, ai: h.ai, dismissed: laterSet(), today: ctx.today }));
+  return problemsShown;
+}
+// Under the page's title, as in the design (or at the top when a page has no title row).
+function placeProblems() {
+  const box = document.createElement("div");
+  box.id = "problems";
+  box.className = "problems";
+  box.innerHTML = problemsHtml();
+  const head = el.main.querySelector(":scope > .page-head");
+  if (head) head.after(box); else el.main.prepend(box);
+}
+function drawProblems() {
+  const box = el.main.querySelector(":scope > #problems");
+  if (!box) return;
+  const before = problemsShown;
+  const next = problemsHtml();
+  if (next !== before) box.innerHTML = next;
 }
 ctx.refreshCounts = refreshCounts;
 
@@ -131,7 +175,7 @@ document.addEventListener("click", async (event) => {
 async function onUpdates(fresh) {
   const shownNow = [...fresh].reverse().slice(-3);
   for (const x of shownNow) toast(x.text, x.link ? { link: x.link, timeout: 8000 } : { timeout: 8000 });
-  if (fresh.length > shownNow.length) toast(`${fresh.length - shownNow.length} more in your notifications (the bell, bottom right).`);
+  if (fresh.length > shownNow.length) toast(`${fresh.length - shownNow.length} more under Activity, bottom right.`);
   await refreshCounts();
   if (dockOpen === "agents") {
     try { dockData = await team.loadOverview(ctx); } catch { /* keep what is shown */ }
@@ -149,6 +193,7 @@ function unsaved() {
 }
 
 let showSeq = 0;
+let countsWrites = 0; // writeCount() when the counts were last read on a page change
 let shown = null; // the page and tab on screen, and the data drawn there
 
 // Picking another item on the page you are on draws it at once when the page already holds its data
@@ -158,9 +203,14 @@ let shown = null; // the page and tab on screen, and the data drawn there
 async function show({ quiet = false } = {}) {
   const seq = ++showSeq;
   ctx.route = readRoute();
-  const page = PAGES[ctx.route.page] || PAGES.home;
-  document.title = `${page.title || "Home"} | CGS Lead Workspace`;
-  drawHeader();
+  const asked = location.hash.replace(/^#\/?/, "").split("?")[0];
+  if (ROUTE_ALIASES[asked] || !PAGES[ctx.route.page]) { // an old or unknown name: show the page under its own name
+    if (!PAGES[ctx.route.page]) ctx.route.page = "overview";
+    history.replaceState(null, "", href(ctx.route.page, ctx.route.params));
+  }
+  const page = PAGES[ctx.route.page];
+  document.title = `${page.title || "Overview"} | CGS Lead Workspace`;
+  drawRail();
   const samePage = !quiet && shown && shown.page === ctx.route.page;
   const sameTab = samePage && shown.tab === (ctx.route.params.tab || "");
   const used = samePage ? usedLink() : null;
@@ -195,14 +245,28 @@ async function show({ quiet = false } = {}) {
     draw(page, data, { scroll, used, quiet });
   }
   if (page.after) page.after(el.main, ctx, data);
-  refreshCounts();
+  if (quiet) forgetSearch(); // something may have changed: the next search reads the records again
+  refreshCounts({ fresh: quiet || writeCount() !== countsWrites });
+  countsWrites = writeCount();
 }
 
 function draw(page, data, { scroll, used, quiet }) {
   el.main.inert = false;
   if (ctx.scrollTop) scroll = 0;
   ctx.scrollTop = false;
+  const hadPanel = !!el.main.querySelector(":scope > .drawer");
   el.main.innerHTML = String(page.view(data, ctx, ctx.route.params));
+  placeProblems();
+  // The side panel (shell.js drawer) covers the page: what is behind it cannot be reached by keyboard either, and a
+  // panel that was already open does not slide in again on a redraw.
+  const panel = el.main.querySelector(":scope > .drawer");
+  if (panel) {
+    for (const x of el.main.children) {
+      if (x === panel) continue;
+      if (x.classList.contains("drawer-scrim")) { if (hadPanel) x.classList.add("still"); } else x.inert = true;
+    }
+    if (hadPanel) panel.classList.add("still");
+  }
   shown = { page: ctx.route.page, tab: ctx.route.params.tab || "", data, writes: writeCount() };
   window.scrollTo(0, scroll);
   // Picking another item on the same page: focus stays on the link that was used, not the top of the page.
@@ -213,6 +277,11 @@ function draw(page, data, { scroll, used, quiet }) {
     const target = el.main.querySelector(ctx.focusAfter);
     ctx.focusAfter = null;
     if (target) target.focus();
+  }
+  // Opened from a link or a bookmark: focus goes into the panel, so Escape and J/K work at once.
+  if (panel && !quiet && !panel.contains(document.activeElement)) {
+    const h = panel.querySelector("#panel-h");
+    if (h) h.focus({ preventScroll: true });
   }
 }
 
@@ -236,7 +305,7 @@ function patchSlots(parts) {
 // One listener per event type; pages name their handlers with data-act="name".
 function delegate(type) {
   el.main.addEventListener(type, (event) => {
-    const page = PAGES[ctx.route.page] || PAGES.home;
+    const page = PAGES[ctx.route.page] || PAGES.overview;
     // The nearest element with data-act that listens for this event type (data-on, default "click").
     let target = event.target.closest("[data-act]");
     while (target && !(target.dataset.on || "click").split(" ").includes(type)) {
@@ -249,7 +318,8 @@ function delegate(type) {
     fn(target, event, ctx);
   });
 }
-["click", "change", "input", "submit", "keydown"].forEach(delegate);
+// mouseover/focusin and mouseout/focusout: a row that highlights what it points to (Qualification, the reply's phrases).
+["click", "change", "input", "submit", "keydown", "mouseover", "mouseout", "focusin", "focusout"].forEach(delegate);
 
 document.addEventListener("click", (event) => {
   const t = event.target.closest("[data-shell]");
@@ -258,6 +328,16 @@ document.addEventListener("click", (event) => {
   if (what === "retry") show();
   if (what === "skip") el.main.focus();
   if (what === "choose") { person.set(t.dataset.name); actAs.clear(); start(); }
+  if (what === "rail-toggle") { setRailClosed(!railClosed()); drawRail(); }
+  if (what === "search") openSearch(api);
+  if (what === "problem-later") { // "Not now" on the AI-limit banner: hidden for the rest of today in this browser
+    const later = laterSet();
+    later[t.dataset.key] = ctx.today;
+    try { localStorage.setItem(LATER, JSON.stringify(later)); } catch { /* private window: it shows again next time */ }
+    drawProblems();
+    el.main.focus({ preventScroll: true });
+  }
+  if (what === "act-as" && ctx.admin) switchTo(t.dataset.name);  // Settings, People: an admin acts as this person
 });
 // Only an admin sees the "Acting as" list; the server refuses anyone else's X-Act-As as well.
 function switchTo(name) {
@@ -275,6 +355,7 @@ document.addEventListener("change", (event) => {
 });
 
 window.addEventListener("hashchange", () => { dockOpen = ""; show(); });
+initSearch(api);
 
 async function start() {
   let users = [];
@@ -296,7 +377,7 @@ async function start() {
     if (saved) person.clear();
     actAs.clear();
     ctx.me = ctx.self = "";
-    drawHeader();
+    drawRail();
     el.main.innerHTML = String(chooser(users, saved ? `${saved} is not a workspace user any more. Choose again.` : ""));
     return;
   }

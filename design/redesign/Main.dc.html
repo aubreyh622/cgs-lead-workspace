@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Overview, CGS Lead Workspace</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap">
+<style>
+body{margin:0}
+.prl{display:grid;grid-template-columns:156px minmax(0,1fr) 32px 16px;gap:14px;align-items:center;padding:7px 8px;margin:0 -8px;border-radius:8px;text-decoration:none;color:#101828}
+.prl:hover{background:#F5F6F9;color:#101828}
+.prl .go{color:#98A2B3;opacity:0;transition:opacity .14s ease-out}
+.prl:hover .go{opacity:1}
+</style>
+</helmet>
+<div class="app">
+<div style="flex: none; display: flex"><dc-import name="Rail" active="overview" hint-size="244px,1012px"></dc-import></div>
+
+<main class="main">
+  <header class="top" style="align-items: flex-end">
+    <div class="col" style="gap: 4px"><h1 class="h1">Overview</h1><span class="mut">Monday 26 October. Nine things need you, and two agents are working.</span></div>
+    <span class="grow"></span>
+    <span class="stack" role="img" aria-label="Team: Quinn Harper, Alex Morgan, Sam Reyes and 2 more"><span class="av r k">QH</span><span class="av r">AM</span><span class="av r">SR</span><span class="av r" style="background: #fff; box-shadow: inset 0 0 0 1px #C8CDD6, 0 0 0 2px #F4F5F8">+2</span></span>
+    <a class="b bp" href="Find.dc.html"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>Find companies</a>
+  </header>
+
+  <div class="row">
+    <section class="card" style="flex: 4 1 340px; gap: 16px">
+      <div class="sb"><h2 class="ttl"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M21 3L10 14M21 3l-7 18-4-7-7-4z"></path></svg>Outreach results</h2><span class="dim sm">Last 4 weeks</span></div>
+      <div class="col" style="gap: 6px">
+        <div class="fx" style="align-items: baseline; gap: 10px; flex-wrap: wrap"><span class="num n2">32%</span><span class="mut">of emails got a reply</span><span class="chip grn">Up from 24%</span></div>
+        <span class="dim sm">7 replies to 22 emails. The 4 weeks before: 5 replies to 21.</span>
+      </div>
+      <div class="col rule" style="gap: 10px">
+        <span class="lbl">Reply rate by route</span>
+        <div role="img" aria-label="Warm introductions: 4 replies to 6 emails. Cold emails: 3 replies to 16." style="display: grid; grid-template-columns: 128px minmax(0, 1fr) 52px; gap: 10px 12px; align-items: center">
+          <span class="md">Warm introduction</span><span class="bar blue" style="height: 8px; border-radius: 4px"><span style="width: 67%; border-radius: 4px"></span></span><span class="tn sm mut" style="text-align: right">4 of 6</span>
+          <span class="md">Cold email</span><span class="bar lite" style="height: 8px; border-radius: 4px"><span style="width: 19%; border-radius: 4px"></span></span><span class="tn sm mut" style="text-align: right">3 of 16</span>
+        </div>
+        <p class="sm mut">Warm introductions get a reply about three times as often. Ask for one before the agent plans cold email.</p>
+      </div>
+      <div class="fx rule push" style="flex-wrap: wrap; gap: 6px">
+        <span class="lbl" style="margin-right: 4px">What replies said</span>
+        <span class="chip grn">3 want to meet</span><span class="chip">2 not now</span><span class="chip org">2 asked a question</span>
+        <a class="sm end" href="Qualification-conv.dc.html">Read replies</a>
+      </div>
+    </section>
+
+    <section class="card" style="flex: 6 1 440px; gap: 10px">
+      <div class="sb"><h2 class="ttl"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4 2v-8z"></path></svg>Pipeline <span class="dim" style="font-weight: 400">companies by stage</span></h2><span class="fx sm mut" style="gap: 14px"><span class="fx" style="gap: 6px"><span class="dot c-blue" aria-hidden="true"></span>Agent works on it</span><span class="fx" style="gap: 6px"><span class="dot c-org" aria-hidden="true"></span>Waiting on you</span></span></div>
+      <nav aria-label="Pipeline stages" class="col" style="gap: 2px">
+        <a class="prl" href="Companies-found.dc.html"><span class="sbd c-org">Found</span><span class="bar org" style="height: 8px; border-radius: 4px"><span style="width: 100%; border-radius: 4px"></span></span><span class="num n3" style="text-align: right">20</span><svg class="i s go" aria-hidden="true" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></svg></a>
+        <a class="prl" href="Companies-research.dc.html"><span class="md">Researching</span><span class="bar blue" style="height: 8px; border-radius: 4px"><span style="width: 10%; border-radius: 4px"></span></span><span class="num n3" style="text-align: right">2</span><svg class="i s go" aria-hidden="true" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></svg></a>
+        <a class="prl" href="Companies.dc.html"><span class="sbd c-org">Your decision</span><span class="bar org" style="height: 8px; border-radius: 4px"><span style="width: 10%; border-radius: 4px"></span></span><span class="num n3" style="text-align: right">2</span><svg class="i s go" aria-hidden="true" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></svg></a>
+        <a class="prl" href="OutreachList.dc.html"><span class="md">Identified, Contacted</span><span class="bar blue" style="height: 8px; border-radius: 4px"><span style="width: 50%; border-radius: 4px"></span></span><span class="num n3" style="text-align: right">10</span><svg class="i s go" aria-hidden="true" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></svg></a>
+        <a class="prl" href="Qualification-conv.dc.html"><span class="md">Active</span><span class="bar blue" style="height: 8px; border-radius: 4px"><span style="width: 15%; border-radius: 4px"></span></span><span class="num n3" style="text-align: right">3</span><svg class="i s go" aria-hidden="true" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></svg></a>
+        <a class="prl" href="Qualification.dc.html"><span class="sbd c-org">Awaiting approval</span><span class="bar org" style="height: 8px; border-radius: 4px"><span style="width: 5%; border-radius: 4px"></span></span><span class="num n3" style="text-align: right">1</span><svg class="i s go" aria-hidden="true" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></svg></a>
+        <a class="prl" href="Qualification-won.dc.html"><span class="md c-grn">Qualified</span><span class="bar grn" style="height: 8px; border-radius: 4px"><span style="width: 20%; border-radius: 4px"></span></span><span class="num n3" style="text-align: right">4</span><svg class="i s go" aria-hidden="true" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></svg></a>
+      </nav>
+    </section>
+  </div>
+
+  <div class="row" style="align-items: flex-start">
+    <div class="kcol">
+      <div class="khead"><svg class="i c-org" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 7v5l3 2M3 12a9 9 0 1018 0 9 9 0 10-18 0"></path></svg>Needs you<span class="cnt">9</span></div>
+      <a class="kc" href="Inbox.dc.html"><span class="fx"><span class="chip org">Approval</span><span class="dim sm end">3 days</span></span><span class="sbd" style="font-size: 14.5px">Northstar Health</span><span class="mut sm">Pack is one change behind</span><span class="sb" style="padding-top: 10px; border-top: 1px solid #EEF0F3"><span class="av r" style="width: 24px; height: 24px; font-size: 10px">AM</span><span class="dim sm">Sent 23 Oct</span></span></a>
+      <a class="kc" href="Companies.dc.html"><span class="fx"><span class="chip org">Decision</span><span class="dim sm end">1 day</span></span><span class="sbd" style="font-size: 14.5px">Ostrander Metalworks</span><span class="mut sm">Agent suggests another look</span><span class="sb" style="padding-top: 10px; border-top: 1px solid #EEF0F3"><span class="chip blue">Research agent</span><span class="dim sm">25 Oct</span></span></a>
+      <a href="Inbox.dc.html" class="b bs" style="align-self: flex-start">7 more in Inbox</a>
+    </div>
+    <div class="kcol">
+      <div class="khead"><svg class="i c-blue" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16v4M17 18h4"></path></svg>Agents working<span class="cnt">2</span></div>
+      <a class="kc" href="Companies-research.dc.html"><span class="fx"><span class="chip blue"><span class="d live" aria-hidden="true" style="margin: 0; width: 6px; height: 6px"></span>Research</span><span class="dim sm end">Step 3 of 4</span></span><span class="sbd" style="font-size: 14.5px">Westbrook Paper &amp; Board</span><span class="mut sm">Checking the contact is still there</span><span class="bar blue" role="img" aria-label="Step 3 of 4"><span style="width: 75%"></span></span></a>
+      <a class="kc" href="Companies-research.dc.html"><span class="fx"><span class="chip blue"><span class="d live" aria-hidden="true" style="margin: 0; width: 6px; height: 6px"></span>Research</span><span class="dim sm end">Step 1 of 4</span></span><span class="sbd" style="font-size: 14.5px">Marlow Fastening Systems</span><span class="mut sm">Finding the company website</span><span class="bar blue" role="img" aria-label="Step 1 of 4"><span style="width: 25%"></span></span></a>
+    </div>
+    <div class="kcol">
+      <div class="khead"><svg class="i" aria-hidden="true" viewBox="0 0 24 24" style="color: #667085"><path d="M6 3h12M6 21h12M7 3c0 5 5 5 5 9s-5 4-5 9M17 3c0 5-5 5-5 9s5 4 5 9"></path></svg>Waiting on others<span class="cnt">3</span></div>
+      <a class="kc" href="Outreach.dc.html"><span class="fx"><span class="chip">Second approval</span><span class="dim sm end">Today</span></span><span class="sbd" style="font-size: 14.5px">Kessler Industrial</span><span class="mut sm">Email to Dana Whitfield</span><span class="sb" style="padding-top: 10px; border-top: 1px solid #EEF0F3"><span class="av r" style="width: 24px; height: 24px; font-size: 10px">AM</span><span class="dim sm">Alex approves</span></span></a>
+      <a class="kc" href="Record-ardent.dc.html"><span class="fx"><span class="chip">Reply due</span><span class="dim sm end">Thu</span></span><span class="sbd" style="font-size: 14.5px">Ardent Logistics</span><span class="mut sm">Follow-up sent 22 Oct</span><span class="sb" style="padding-top: 10px; border-top: 1px solid #EEF0F3"><span class="av r" style="width: 24px; height: 24px; font-size: 10px">PN</span><span class="dim sm">Priya Nair</span></span></a>
+    </div>
+    <div class="kcol">
+      <div class="khead"><svg class="i c-grn" aria-hidden="true" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1018 0 9 9 0 10-18 0M8 12l3 3 5-6"></path></svg>Done this week<span class="cnt">12</span></div>
+      <a class="kc" href="Qualification-won.dc.html"><span class="fx"><span class="chip grn">Qualified</span><span class="dim sm end">Fri</span></span><span class="sbd" style="font-size: 14.5px">Kestrel Robotics</span><span class="mut sm">Opportunity created in Insightly</span><span class="sb" style="padding-top: 10px; border-top: 1px solid #EEF0F3"><span class="av r k" style="width: 24px; height: 24px; font-size: 10px">QH</span><span class="dim sm">6 of 6 conditions</span></span></a>
+      <a class="kc" href="Qualification-conv.dc.html"><span class="fx"><span class="chip grn">Meeting booked</span><span class="dim sm end">Wed</span></span><span class="sbd" style="font-size: 14.5px">Granite Tooling</span><span class="mut sm">Call on 29 Oct</span><span class="sb" style="padding-top: 10px; border-top: 1px solid #EEF0F3"><span class="av r" style="width: 24px; height: 24px; font-size: 10px">SR</span><span class="dim sm">Sam Reyes</span></span></a>
+    </div>
+  </div>
+</main>
+
+<div class="act"><dc-import name="Activity" start-open="{{ false }}" hint-size="130px,40px"></dc-import></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1040}}'>
+class Component extends DCLogic {
+renderVals() {
+  const go = (stage, company) => () => {
+    try { window.localStorage.setItem('cgs-go', JSON.stringify({ stage, company: company || null })); } catch (e) {}
+  };
+  return {
+    go: {
+      found: go('found'), research: go('research'), decision: go('decision'), outreach: go('outreach'),
+      conv: go('conv'), qual: go('qual'), won: go('won'),
+      westbrook: go('research', 'westbrook'), marlow: go('research', 'marlow'),
+      ardent: go('conv', 'ardent'), granite: go('conv', 'granite'), kestrel: go('won', 'kestrel')
+    }
+  };
+}
+}
+</script>
+</body>
+</html>

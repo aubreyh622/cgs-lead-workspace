@@ -1,13 +1,16 @@
-// People: who is an admin, which address each person sends from and whether their own Gmail is connected, and the
-// scoring criteria and the email standard an admin may change (api/people.py, api/scoring.py, api/email_rubric.py).
-// Everyone can read this page; admins change it.
-import { html, icon, day, href } from "../lib.js";
+// Settings (design/redesign/Settings.dc.html): people (who is an admin, which address each person sends from, their
+// open leads, whose emails need a second approval, Act as), the scoring criteria, the email standard and the outreach
+// playbook an admin may change (api/people.py, api/scoring.py, api/email_rubric.py). Everyone can read this page;
+// admins change it.
+import { html, icon, day, href, initials } from "../lib.js";
 import { enc, person, actAs } from "../api.js";
 import { pageState, missing, tabBar, tabKeys } from "../forms.js";
 
-export const title = "People";
+export const title = "Settings";
 
-const TABS = [["people", "People and roles"], ["scoring", "Scoring criteria"], ["email", "Email standard"], ["playbook", "Outreach playbook"]];
+const TABS = [["people", "People"], ["scoring", "Scoring"], ["email", "Email standard"], ["playbook", "Outreach playbook"]];
+// Leads a person still works on: every stage from accepted to the approver's decision.
+const OPEN = ["identified", "contacted", "active", "approval", "nurture"];
 const LIMITS = [["max_steps", "Steps in a plan, at most", 2, 8], ["min_gap_days", "Days between steps, at least", 1, 14],
   ["max_span_days", "Days a plan may span, at most", 14, 120], ["max_people", "People in a plan, at most", 1, 4]];
 const DIMS = ["B", "A", "N", "T", "H", "E"];
@@ -24,21 +27,22 @@ export async function load(ctx, params) {
   if (tab === "scoring") return { tab, scoring: await ctx.api.get("/scoring") };
   if (tab === "email") return { tab, rubric: await ctx.api.get("/email-rubric") };
   if (tab === "playbook") return { tab, playbook: await ctx.api.get("/outreach-playbook") };
-  return { tab, people: await ctx.api.get("/people") };
+  const [people, opps] = await Promise.all([ctx.api.get("/people"), ctx.api.get("/opportunities").catch(() => [])]);
+  return { tab, people: { ...people, open: (name) => opps.filter((o) => o.owner === name && OPEN.includes(o.stage)).length } };
 }
 
 export function view(d, ctx) {
   return html`
   <div class="page-head">
     <div>
-      <h1>People</h1>
-      <p>Who may do what, which address each person's email comes from, and how opportunities are scored. Everyone can read
-        this page; admins change it.</p>
+      <h1>Settings</h1>
+      <p>Who may do what, which address each person's email comes from, how opportunities are scored, and the standard
+        emails are written to. Everyone can read this page; admins change it.</p>
     </div>
   </div>
   ${whoView(d, ctx)}
   ${st.notices()}
-  ${tabBar("People", TABS, d.tab)}
+  ${tabBar("Settings", TABS, d.tab, { people: d.people ? d.people.people.length : undefined })}
   <div id="panel" role="tabpanel" aria-labelledby="tab-${d.tab}">
     ${d.tab === "scoring" ? scoringView(d.scoring, ctx) : d.tab === "email" ? rubricView(d.rubric, ctx) : d.tab === "playbook" ? playbookView(d.playbook, ctx) : peopleView(d.people, ctx)}
   </div>`;
@@ -60,21 +64,21 @@ function whoView(d, ctx) {
 function peopleView(p, ctx) {
   const can = p.canChange;
   return html`
-  <div class="two-col">
-    <div class="main stack">
+  <div class="stack">
+    <div class="stack">
       ${p.everyoneIsAdmin ? html`<div class="notice warn" role="status">${icon("alert")}<span>Nobody is an admin yet, so everyone
         can do admin work and act as anyone. Make one or two people admins to limit that.</span></div>` : ""}
       <section class="card" aria-labelledby="people-h">
         <div class="card-head"><div><h2 id="people-h">People and roles</h2>
           <p class="meta">${can ? "You are an admin: you can change roles and sending addresses." : `Only an admin (${p.admins.join(", ")}) can change these.`}</p></div></div>
         <div class="table-wrap"><table class="list">
-          <thead><tr><th scope="col">Person</th><th scope="col">Role</th><th scope="col">Sends from</th><th scope="col">Second approval</th>${can ? html`<th scope="col"><span class="sr-only">Change</span></th>` : ""}</tr></thead>
+          <thead><tr><th scope="col">Person</th><th scope="col">Role</th><th scope="col">Sends from</th><th scope="col">Open leads</th><th scope="col">Emails need a second approval</th>${can || ctx.admin ? html`<th scope="col"><span class="sr-only">Change</span></th>` : ""}</tr></thead>
           <tbody>${p.people.map((x) => personRow(x, p, ctx))}</tbody>
         </table></div>
         ${st.err("people")}
       </section>
     </div>
-    <aside class="side stack">
+    <div class="two-up">
       <section class="card card-body">
         <h2 class="section-title">What an admin can do</h2>
         <ul class="bullets" style="margin-top:8px">
@@ -84,7 +88,7 @@ function peopleView(p, ctx) {
             anything goes out. Only the people marked need it.</li>
           <li>Change the <a href="${href("settings", { tab: "scoring" })}">scoring criteria</a> and the
             <a href="${href("settings", { tab: "email" })}">email standard</a>.</li>
-          <li>Approve or reject changes to the team's <a href="${href("sources", { tab: "direction" })}">research direction</a>. Anyone may propose one.</li>
+          <li>Approve or reject changes to the team's <a href="${href("find", { tab: "direction" })}">research direction</a>. Anyone may propose one.</li>
           <li>Change agent permissions, lessons and team instructions.</li>
         </ul>
         <p class="meta" style="margin-top:8px">Everyone else acts only as themselves.</p>
@@ -98,7 +102,7 @@ function peopleView(p, ctx) {
         <p class="meta" style="margin-top:8px">A follow-up stays in the mailbox that holds the conversation, so it comes from the person
           who sent the first email (or an admin acting as them).</p>
       </section>
-    </aside>
+    </div>
   </div>`;
 }
 
@@ -107,7 +111,8 @@ function personRow(x, p, ctx) {
   const can = p.canChange;
   const editing = st.ui.open === `email:${x.name}`;
   return html`<tr>
-    <td><b>${x.name}</b>${x.name === ctx.self ? html`<span class="meta-3">You</span>` : ""}</td>
+    <td><span class="co"><span class="avatar round ${x.name === ctx.self ? "ink" : ""}" aria-hidden="true">${initials(x.name)}</span>
+      <span class="co-text"><b>${x.name}</b>${x.name === ctx.self ? html`<span class="meta-3">You</span>` : ""}</span></span></td>
     <td>${x.admin ? html`<span class="tag info">Admin</span>` : p.everyoneIsAdmin ? html`<span class="meta-3">Everyone (no admins yet)</span>` : html`<span class="meta-3">Consultant</span>`}</td>
     <td>
       <span class="tag ${cls}">${label}</span>
@@ -119,15 +124,17 @@ function personRow(x, p, ctx) {
         </form>`
         : html`<div class="meta-3" style="margin-top:4px">${x.email || "No address set"}</div>`}
     </td>
+    <td class="num">${p.open ? p.open(x.name) : ""}</td>
     <td>${can ? html`<label><span class="sr-only">Who approves ${x.name}'s emails a second time</span>
         <select data-act="approver" data-on="change" data-name="${x.name}">
           <option value="" ${x.secondApprover ? "" : "selected"}>Not needed</option>
           ${p.people.filter((y) => y.name !== x.name).map((y) => html`<option value="${y.name}" ${x.secondApprover === y.name ? "selected" : ""}>By ${y.name}</option>`)}
         </select></label>`
       : x.secondApprover ? html`<span class="tag warn">By ${x.secondApprover}</span>` : html`<span class="meta-3">Not needed</span>`}</td>
-    ${can ? html`<td class="acts">
-      ${editing ? "" : html`<button type="button" class="btn ghost small" data-act="open" data-open="email:${x.name}">Change address</button>`}
-      <button type="button" class="btn small" data-act="admin" data-name="${x.name}" data-admin="${x.admin ? "0" : "1"}">${x.admin ? "Remove admin" : "Make admin"}</button>
+    ${can || ctx.admin ? html`<td class="acts">
+      ${can && !editing ? html`<button type="button" class="btn ghost small" data-act="open" data-open="email:${x.name}">Change address</button>` : ""}
+      ${can ? html`<button type="button" class="btn small" data-act="admin" data-name="${x.name}" data-admin="${x.admin ? "0" : "1"}">${x.admin ? "Remove admin" : "Make admin"}</button>` : ""}
+      ${ctx.admin && x.name !== ctx.me ? html`<button type="button" class="btn ghost small" data-shell="act-as" data-name="${x.name}" aria-label="Act as ${x.name}">Act as</button>` : ""}
     </td>` : ""}
   </tr>`;
 }
@@ -312,7 +319,7 @@ function playbookView(v, ctx) {
         <form class="card-body panel-form" data-act="playbookForm" data-on="submit input">
           <fieldset ${can ? "" : "disabled"}>
             <legend class="sub-title">Principles <span class="hint">One per line. The agent plans by them; code checks still apply.</span></legend>
-            <textarea name="principles" rows="9">${cur.principles.join("\n")}</textarea>
+            <textarea name="principles" rows="9" aria-label="Principles, one per line">${cur.principles.join("\n")}</textarea>
           </fieldset>
           <fieldset ${can ? "" : "disabled"}>
             <legend class="sub-title">Ways in <span class="hint">Switch one off and the agent never plans it.</span></legend>

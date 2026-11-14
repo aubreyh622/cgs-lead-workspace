@@ -76,7 +76,7 @@ def go(page, base, route):
 
 def act_as(page, base, name):
     page.evaluate(f"localStorage.setItem('cgs.person', {name!r})")
-    page.goto(f"{base}/?as={name.split()[0]}#/home")
+    page.goto(f"{base}/?as={name.split()[0]}#/overview")
     page.wait_for_selector("main .page-head h1")
     assert page.input_value("[data-shell=person]") == name
 
@@ -87,20 +87,21 @@ def test_whole_workflow_in_the_browser(server, page):
     # who is acting
     page.goto(f"{base}/")
     page.click("[data-shell=choose][data-name='Alex Morgan']")
-    page.wait_for_selector("main .page-head h1:has-text('Waiting for you')")
+    page.wait_for_selector("main .page-head h1:has-text('Overview')")
 
     # Step 1-3: research a candidate (demo research finishes at once)
-    go(page, base, "companies?tab=new")
-    first = page.locator(".cand").first
-    company = first.locator("b").first.inner_text()
-    first.locator("[data-act=researchOne]").click()
+    go(page, base, "companies?tab=found")
+    first = page.locator("table.rows-table tbody tr").first
+    company = first.locator(".nm").inner_text()
+    first.locator(".nm").click()  # opens the side panel
+    page.click(".drawer [data-act=researchOne]")
     page.wait_for_selector(f".toast:has-text('{company}')")
 
     # Step 4: accept it, undo that from the toast, then accept again and let the undo window pass
     def accept_it(oid=None):
-        go(page, base, "companies?tab=review")
+        go(page, base, "companies?tab=decision")
         # by id when known: the demo also makes a second opportunity at the same company, and Undo changes the order
-        page.click(f".pick[href$='id={oid}']" if oid else f".pick:has-text('{company}')")
+        page.click(f".queue .pick[href$='id={oid}']" if oid else f".queue .pick:has-text('{company}')")
         page.wait_for_selector(f"#brief-h:has-text('{company}')")
         picked = page.url.split("id=")[-1]
         page.click("[data-act=mode][data-mode=accept]")
@@ -113,8 +114,8 @@ def test_whole_workflow_in_the_browser(server, page):
     page.wait_for_selector(".toast:has-text('Undone')")
     accept_it(oid)
     page.wait_for_timeout(11500)  # the clock ends the window; then the outreach agent may draft
-    go(page, base, "companies?tab=accepted")
-    page.wait_for_selector(f"table.list b:has-text('{company}')")
+    go(page, base, "companies?tab=identified")
+    page.wait_for_selector(f"table.rows-table .nm:has-text('{company}')")
 
     # the outreach agent drafts the first email when the queue runs
     go(page, base, "agents?tab=team")
@@ -122,31 +123,32 @@ def test_whole_workflow_in_the_browser(server, page):
     page.wait_for_selector(".notice:has-text('Ran')")
 
     # Step 5: approve and send the agent's draft (mock mailbox)
-    go(page, base, "outreach?tab=approve")
-    page.click(f".pick:has-text('{company}')")
+    go(page, base, "outreach?tab=you")
+    page.click(f".queue .pick:has-text('{company}')")
     page.wait_for_selector("#detail-h:has-text('First email')")
-    page.click("[data-act=mode][data-mode=send]")
+    page.click(".side-col [data-act=mode][data-mode=send]")
     page.fill("form[data-act=sendForm] input[name=to]", "contact@e2e-test.example")
     page.click("form[data-act=sendForm] button[value=send]")
     page.wait_for_selector(".toast:has-text('goes to contact@e2e-test.example')")  # it waits so it can be undone
-    page.click(f".pick:has-text('{company}')")
+    page.click(f".queue .pick:has-text('{company}')")
     page.click("[data-act=sendNow]")
     page.wait_for_selector(".toast:has-text('Sent to contact@e2e-test.example')")
 
     # the reply makes the lead Active
-    go(page, base, "outreach?tab=waiting")
-    page.click(f".pick:has-text('{company}')")
-    page.click("[data-act=mode][data-mode=reply]")
+    go(page, base, "outreach?tab=wait")
+    page.click(f"table.rows-table .nm:has-text('{company}')")
+    page.click(".drawer [data-act=mode][data-mode=reply]")
     page.fill("form[data-act=replyForm] textarea[name=text]", "Thanks. Our board wants outside help with this. Can we talk next week?")
     page.click("form[data-act=replyForm] [type=submit]")
     page.wait_for_selector(".toast:has-text('Reply recorded')")
-    go(page, base, "outreach?tab=talking")
-    page.wait_for_selector(f"table.list:has-text('{company}')")
+    go(page, base, "outreach?tab=wait")
+    # it leaves Outreach for Qualification (the list on screen is drawn first, then checked again)
+    page.wait_for_selector(f"table.rows-table .nm:has-text('{company}')", state="detached")
 
     # Step 6-7: close Meridian's two gaps by hand, then send the pack
     go(page, base, "qualification?tab=active&id=meridian")
-    page.wait_for_selector(".cond-list")  # the first screen: conditions, evidence, next step
-    page.click("summary[data-fold=scores]")  # the score and condition reviews are in a folded section
+    page.wait_for_selector(".side-col .conds")  # the six conditions, on the right of the reply
+    page.click("summary[data-fold=scores]")  # the reviews by hand are in a folded section
     page.click("[data-open='score:A']")
     page.select_option("form[data-act=reviewForm] select[name=value]", "4")
     page.fill("form[data-act=reviewForm] textarea[name=reason]", "The CFO approves spend and joins the next call.")
@@ -164,10 +166,10 @@ def test_whole_workflow_in_the_browser(server, page):
     # Step 8: another person approves
     act_as(page, base, "Sarah Patel")
     go(page, base, "qualification?tab=approval&id=meridian")
-    page.wait_for_selector(".approval-card:has-text('Alex Morgan asks for your approval')")
-    page.click("form[data-act=quickDecide] button[value=approve]")
+    page.wait_for_selector("#detail-h:has-text('Meridian Industries')")
+    page.click(".side-col form[data-act=quickDecide] button[value=approve]")
     page.wait_for_selector(".toast:has-text('Qualified')")
-    go(page, base, "qualification?tab=qualification&team=1")  # the owner is Alex: show the whole team
-    page.wait_for_selector(".lead-row:has-text('Meridian Industries')")
+    go(page, base, "qualification?tab=qualified&team=1")  # the owner is Alex: show the whole team
+    page.wait_for_selector("table.rows-table .nm:has-text('Meridian Industries')")
 
     assert PAGE_ERRORS == [], PAGE_ERRORS

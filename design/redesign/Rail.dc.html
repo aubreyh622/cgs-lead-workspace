@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Side navigation</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<nav aria-label="Main" style="width: {{w}}; min-height: 1012px; height: 100%; padding: 20px 14px 16px; display: flex; flex-direction: column; gap: 20px; background: #fff; border-right: 1px solid #E6E8EE; font-family: Geist, 'Segoe UI', system-ui, sans-serif; font-size: 13.5px; color: #101828; transition: width .24s cubic-bezier(.2,.8,.2,1)">
+  <div style="display: flex; align-items: center; gap: 10px; flex-direction: {{headDir}}; padding: 0 2px">
+    <span role="img" aria-label="CGS" style="width: 32px; height: 32px; flex: none; border-radius: 9px; background: #101828; display: grid; place-items: center">
+      <span aria-hidden="true" style="width: 15px; height: 15px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; transform: rotate(-7deg)"><span style="background: #DCD6FB; border-radius: 1.5px"></span><span style="background: #DCD6FB; border-radius: 1.5px"></span><span style="background: #DCD6FB; border-radius: 1.5px"></span><span style="background: #F2A07B; border-radius: 1.5px"></span></span>
+    </span>
+    <sc-if value="{{open}}" hint-placeholder-val="{{ true }}"><span style="flex: 1; display: flex; flex-direction: column; line-height: 1.2; white-space: nowrap"><b style="font-size: 16px; font-weight: 700; letter-spacing: -0.03em">CGS</b><span style="font-size: 12px; color: #667085">Lead Workspace</span></span></sc-if>
+    <button type="button" class="b bg bi" onClick="{{toggle}}" aria-label="{{toggleLabel}}" title="{{toggleLabel}}" style="width: 28px; height: 28px"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="{{toggleIcon}}"></path></svg></button>
+  </div>
+
+  <button type="button" class="nv" onClick="{{openSearch}}" aria-label="Search companies, people and pages" title="Search" style="display: flex; align-items: center; gap: 10px; height: 36px; padding: {{searchPad}}; justify-content: {{searchJustify}}; border: 1px solid #E1E4EA; border-radius: 9px; background: #F7F8FA; color: #667085; text-align: left">
+    <svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 11a7 7 0 1014 0 7 7 0 10-14 0M20 20l-3.5-3.5"></path></svg>
+    <sc-if value="{{open}}" hint-placeholder-val="{{ true }}"><span style="flex: 1">Search</span><span class="keys">Ctrl K</span></sc-if>
+  </button>
+
+  <sc-for list="{{groups}}" as="g" hint-placeholder-count="2">
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <sc-if value="{{g.showLabel}}" hint-placeholder-val="{{ true }}"><span style="padding: 0 10px 6px; font-size: 12px; color: #667085">{{g.label}}</span></sc-if>
+      <sc-for list="{{g.items}}" as="item" hint-placeholder-count="4">
+        <a class="nv" href="{{item.href}}" title="{{item.label}}" aria-current="{{item.current}}" style="position: relative; display: flex; align-items: center; gap: 10px; height: 34px; border-radius: 9px; text-decoration: none; {{item.extra}}">
+          <svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="{{item.d}}"></path></svg>
+          <sc-if value="{{item.open}}" hint-placeholder-val="{{ true }}"><span style="flex: 1; white-space: nowrap">{{item.label}}</span></sc-if>
+          <sc-if value="{{item.badge}}" hint-placeholder-val="{{ false }}"><span class="badge" aria-label="{{item.badgeLabel}}">{{item.count}}</span></sc-if>
+          <sc-if value="{{item.pip}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="position: absolute; top: 6px; right: 7px; width: 7px; height: 7px; border-radius: 50%; background: #D9622B; box-shadow: 0 0 0 2px #fff"></span></sc-if>
+        </a>
+      </sc-for>
+    </div>
+  </sc-for>
+
+  <div style="margin-top: auto; display: flex; flex-direction: column; gap: 2px">
+    <sc-if value="{{open}}" hint-placeholder-val="{{ true }}"><span class="chip" title="Every company, person and email here is invented for the demo" style="align-self: flex-start; margin: 0 6px 10px">Synthetic data</span></sc-if>
+    <sc-for list="{{foot}}" as="item" hint-placeholder-count="2">
+      <a class="nv" href="{{item.href}}" title="{{item.label}}" aria-current="{{item.current}}" style="display: flex; align-items: center; gap: 10px; height: 34px; border-radius: 9px; text-decoration: none; {{item.extra}}">
+        <svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="{{item.d}}"></path></svg>
+        <sc-if value="{{item.open}}" hint-placeholder-val="{{ true }}"><span style="flex: 1; white-space: nowrap">{{item.label}}</span></sc-if>
+      </a>
+    </sc-for>
+    <a class="nv" href="Settings.dc.html" title="Quinn Harper" style="margin-top: 10px; display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-radius: 10px; text-decoration: none; color: #101828; justify-content: {{userJustify}}">
+      <span class="av r k" aria-hidden="true">QH</span>
+      <sc-if value="{{open}}" hint-placeholder-val="{{ true }}"><span style="display: flex; flex-direction: column; line-height: 1.25; white-space: nowrap"><span style="font-weight: 600">Quinn Harper</span><span style="font-size: 12px; color: #667085">Partner, admin</span></span></sc-if>
+    </a>
+  </div>
+
+  <sc-if value="{{searching}}" hint-placeholder-val="{{ false }}">
+    <button type="button" class="pal-scrim" aria-label="Close search" onClick="{{closeSearch}}"></button>
+    <div class="pal" role="dialog" aria-label="Search" onKeyDown="{{palKey}}">
+      <div style="position: relative">
+        <svg class="i" aria-hidden="true" viewBox="0 0 24 24" style="position: absolute; left: 18px; top: 18px; color: #667085"><path d="M4 11a7 7 0 1014 0 7 7 0 10-14 0M20 20l-3.5-3.5"></path></svg>
+        <input type="search" ref="{{inputRef}}" placeholder="Search companies, people and pages" aria-label="Search" value="{{q}}" onChange="{{onQ}}">
+      </div>
+      <div style="max-height: 380px; overflow: auto; padding: 6px 0 8px">
+        <sc-for list="{{groupsFound}}" as="rg" hint-placeholder-count="2">
+          <div style="padding: 8px 16px 4px; font-size: 12px; color: #667085">{{rg.label}}</div>
+          <sc-for list="{{rg.items}}" as="r" hint-placeholder-count="3">
+            <a href="{{r.href}}" onClick="{{r.go}}"><span class="{{r.avCls}}" aria-hidden="true" style="width: 28px; height: 28px; font-size: 10.5px">{{r.mono}}</span><span class="grow" style="display: flex; flex-direction: column; line-height: 1.3"><span class="md">{{r.name}}</span><span class="dim sm">{{r.sub}}</span></span><span class="{{r.chip}}">{{r.stage}}</span></a>
+          </sc-for>
+        </sc-for>
+        <sc-if value="{{noHits}}" hint-placeholder-val="{{ false }}"><p class="mut" style="padding: 14px 16px">Nothing matches. Try a company, a person or a page name.</p></sc-if>
+      </div>
+      <div class="fx sm dim" style="padding: 10px 16px; border-top: 1px solid #EEF0F3; gap: 6px"><span class="keys">Esc</span>to close</div>
+    </div>
+  </sc-if>
+</nav>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"active":{"editor":"enum","options":["overview","inbox","find","companies","outreach","qualification","agents","library","connectors","settings"],"default":"overview"},"$preview":{"width":244,"height":1012}}'>
+class Component extends DCLogic {
+collapsed() {
+  if (this.state && this.state.collapsed != null) return this.state.collapsed;
+  try { return window.localStorage.getItem('cgs-rail-collapsed') === '1'; } catch (e) { return false; }
+}
+renderVals() {
+  const st = this.state || {};
+  const open = !this.collapsed();
+  const active = this.props.active ?? 'overview';
+  const mk = (id, label, href, d, count, alert) => ({
+    label, href, d, open,
+    current: id === active ? 'page' : 'false',
+    count: count == null ? '' : String(count),
+    badge: open && !!alert,
+    badgeLabel: count + ' need you',
+    pip: !open && !!alert,
+    extra: (id === active ? 'background:#F1F2F6;color:#101828;font-weight:600;' : 'color:#475467;font-weight:500;') + (open ? 'padding:0 10px' : 'padding:0;justify-content:center')
+  });
+  const groups = [
+    { label: 'Work', items: [
+      mk('overview', 'Overview', 'Main.dc.html', 'M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z'),
+      mk('inbox', 'Inbox', 'Inbox.dc.html', 'M3 13l3-8h12l3 8v6H3zM3 13h5l1 3h6l1-3h5', 9, true),
+      mk('find', 'Find', 'Find.dc.html', 'M4 11a7 7 0 1014 0 7 7 0 10-14 0M20 20l-3.5-3.5'),
+      mk('companies', 'Companies', 'Companies.dc.html', 'M5 21V4h9v17M14 9h5v12M3 21h18M8 8h3M8 12h3M8 16h3'),
+      mk('outreach', 'Outreach', 'OutreachList.dc.html', 'M21 3L10 14M21 3l-7 18-4-7-7-4z'),
+      mk('qualification', 'Qualification', 'Qualification.dc.html', 'M3 12a9 9 0 1018 0 9 9 0 10-18 0M8 12l3 3 5-6')
+    ] },
+    { label: 'Agents', items: [
+      mk('agents', 'Agent hub', 'Agents.dc.html', 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16v4M17 18h4'),
+      mk('library', 'Library', 'Library.dc.html', 'M4 19V5a2 2 0 012-2h13v14H6a2 2 0 00-2 2zm0 0a2 2 0 002 2h13M9 7h6'),
+      mk('connectors', 'Connectors', 'Connectors.dc.html', 'M9 3v5M15 3v5M6 8h12v3a6 6 0 01-12 0zM12 17v4')
+    ] }
+  ].map((g) => ({ ...g, showLabel: open }));
+
+  const go = (stage, company) => () => {
+    try { window.localStorage.setItem('cgs-go', JSON.stringify({ stage, company: company || null })); } catch (e) {}
+    this.setState({ searching: false, q: '' });
+  };
+  const close = () => this.setState({ searching: false, q: '' });
+  const P = 'Companies.dc.html';
+  const PAGE = { found: 'Companies-found.dc.html', research: 'Companies-research.dc.html', decision: 'Companies.dc.html', outreach: 'OutreachList.dc.html', conv: 'Qualification-conv.dc.html', qual: 'Qualification.dc.html', won: 'Qualification-won.dc.html' };
+  const tone = { you: 'chip org', agent: 'chip blue', done: 'chip grn', none: 'chip' };
+  const companies = [
+    ['NH', 'Northstar Health', 'James Walker, COO', 'Qualification', 'you', 'Record-northstar.dc.html', null, null],
+    ['OM', 'Ostrander Metalworks', 'Tom Becker, Head of Transformation', 'Your decision', 'you', P, 'decision', null],
+    ['PP', 'Pellham Packaging', 'No contact yet', 'Your decision', 'you', P, 'decision', 'pellham'],
+    ['KI', 'Kessler Industrial', 'Dana Whitfield, VP Operations', 'Outreach', 'agent', 'Outreach.dc.html', null, null],
+    ['HP', 'Halvorsen Plastics', 'Mia Larsen, COO', 'Outreach', 'agent', P, 'outreach', 'halvorsen'],
+    ['AL', 'Ardent Logistics', 'Priya Nair, VP Supply Chain', 'In conversation', 'you', 'Record-ardent.dc.html', null, null],
+    ['GT', 'Granite Tooling', 'Hannah Brooks, Head of Operations', 'In conversation', 'agent', P, 'conv', 'granite'],
+    ['WP', 'Westbrook Paper & Board', 'Contact being checked', 'Researching', 'agent', P, 'research', 'westbrook'],
+    ['KR', 'Kestrel Robotics', 'Marcus Lee, CEO', 'Qualified', 'done', P, 'won', 'kestrel'],
+    ['AF', 'Ashby Forge', 'Found today', 'Found', 'you', P, 'found', 'ashby']
+  ].map(([mono, name, sub, stage, who, href, s, c]) => ({ mono, name, sub, stage, href: s ? PAGE[s] : href, chip: tone[who], avCls: 'av', go: close }));
+  const pages = [
+    ['Overview', 'Main.dc.html'], ['Inbox', 'Inbox.dc.html'], ['Find', 'Find.dc.html'], ['Companies', P], ['Outreach', 'OutreachList.dc.html'], ['Qualification', 'Qualification.dc.html'], ['Agent hub', 'Agents.dc.html'],
+    ['Library', 'Library.dc.html'], ['Connectors', 'Connectors.dc.html'], ['Settings', 'Settings.dc.html']
+  ].map(([name, href]) => ({ mono: name.slice(0, 1), name, sub: 'Page', stage: '', chip: '', href, avCls: 'av ag', go: close }));
+  const q = (st.q || '').trim().toLowerCase();
+  const hit = (x) => !q || (x.name + ' ' + x.sub).toLowerCase().indexOf(q) >= 0;
+  const cHits = companies.filter(hit).slice(0, q ? 8 : 5);
+  const pHits = pages.filter(hit).slice(0, q ? 7 : 3);
+  const groupsFound = [];
+  if (cHits.length) groupsFound.push({ label: q ? 'Companies and people' : 'Recent companies', items: cHits });
+  if (pHits.length) groupsFound.push({ label: 'Pages', items: pHits });
+
+  return {
+    open, groups,
+    foot: [
+      mk('help', 'Help', '#', 'M3 12a9 9 0 1018 0 9 9 0 10-18 0M9.5 9.5a2.5 2.5 0 114 2c-.9.6-1.5 1.1-1.5 2M12 17v.5'),
+      mk('settings', 'Settings', 'Settings.dc.html', 'M4 6h8M16 6h4M4 12h2M10 12h10M4 18h10M18 18h2M12 6a2 2 0 104 0 2 2 0 10-4 0M6 12a2 2 0 104 0 2 2 0 10-4 0M14 18a2 2 0 104 0 2 2 0 10-4 0')
+    ],
+    w: open ? '244px' : '64px',
+    headDir: open ? 'row' : 'column',
+    userJustify: open ? 'flex-start' : 'center',
+    searchPad: open ? '0 8px 0 10px' : '0',
+    searchJustify: open ? 'flex-start' : 'center',
+    toggleLabel: open ? 'Collapse navigation' : 'Expand navigation',
+    toggleIcon: open ? 'M11 6l-6 6 6 6M18 6l-6 6 6 6' : 'M6 6l6 6-6 6M13 6l6 6-6 6',
+    toggle: () => {
+      try { window.localStorage.setItem('cgs-rail-collapsed', open ? '1' : '0'); } catch (e) {}
+      this.setState({ collapsed: open });
+    },
+    searching: !!st.searching,
+    q: st.q || '',
+    onQ: (e) => this.setState({ q: e.target.value }),
+    inputRef: (el) => { if (el && document.activeElement !== el) setTimeout(() => { try { el.focus(); } catch (err) {} }, 0); },
+    openSearch: () => this.setState({ searching: true, q: '' }),
+    closeSearch: close,
+    palKey: (e) => { if (e.key === 'Escape') close(); },
+    groupsFound,
+    noHits: groupsFound.length === 0
+  };
+}
+}
+</script>
+</body>
+</html>

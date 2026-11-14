@@ -61,6 +61,38 @@ def test_colours_only_come_from_tokens():
         assert not re.findall(r"#[0-9a-fA-F]{6}\b", js.read_text(encoding="utf-8")), js.name
 
 
+def test_every_rail_link_has_a_page_and_old_routes_still_open(tmp_path):
+    """The redesign's side rail: each link opens a page main.js knows; #/home and #/sources open their new pages."""
+    main = (APP / "main.js").read_text(encoding="utf-8")
+    pages = set(re.findall(r"^\s+(\w+)(?::\s*\w+)?,$", re.search(r"const PAGES = \{(.*?)\};", main, re.S).group(1), re.M))
+    out = run_module_script(tmp_path, """
+globalThis.window = { innerWidth: 1440 };
+globalThis.location = { hash: "#/home?x=1", href: "http://127.0.0.1:8800/" };
+const { NAV } = await import("./shell.js");
+const { readRoute } = await import("./lib.js");
+const { STAGE_LABELS } = await import("./options.js");
+const r = readRoute();
+location.hash = "#/sources";
+console.log(JSON.stringify({ nav: NAV.flatMap((g) => g.items.map((i) => i[0])), home: r.page, x: r.params.x, sources: readRoute().page,
+  nurture: STAGE_LABELS.nurture, review: STAGE_LABELS.review }));
+""")
+    import json
+    got = json.loads(out)
+    assert set(got["nav"]) | {"settings"} <= pages
+    assert (got["home"], got["x"], got["sources"]) == ("overview", "1", "find")
+    assert (got["nurture"], got["review"]) == ("Parked", "Your decision")
+
+
+def test_companies_shows_no_value_band_and_keeps_old_tab_links():
+    """R2: no revenue tier or amount on the brief review (rule 6); old tab names in links still open a stage."""
+    js = (APP / "pages" / "companies.js").read_text(encoding="utf-8")
+    assert "Revenue tier" not in js and "p.tier" not in js
+    aliases = re.search(r"const TAB_ALIAS = \{(.*?)\};", js).group(1)
+    assert all(f"{old}:" in aliases for old in ("new", "review", "accepted"))
+    stages = re.findall(r'^\s+\["(\w+)", "[^"]+", "\w+", "[^"]+"\],$', re.search(r"const STAGES = \[(.*?)\];", js, re.S).group(1), re.M)
+    assert stages == ["found", "research", "decision", "identified", "aside"]
+
+
 def test_api_data_is_escaped_before_it_reaches_the_page():
     """Pages build HTML only through the html`` template, which escapes every value."""
     lib = (APP / "lib.js").read_text(encoding="utf-8")
@@ -138,6 +170,30 @@ console.log(approveItems(opps, inbox).map((x) => x.key).join(","), waitingFor(op
     assert out == "item-1,item-2,opp-b 4"
 
 
+def test_outreach_puts_each_lead_where_the_next_move_is(tmp_path):
+    """R3: one item per lead. A reply comes first, then a second approval (the approver's move), then a draft; a plan
+    step due later is the agent's; a sent lead with nothing to do waits on the client; a parked one is Parked."""
+    out = run_module_script(tmp_path, """
+import { leadItems } from "./pages/outreach.js";
+const T = "2026-11-13";
+const opps = ["r", "s", "d", "p", "w", "n", "f", "c"].map((id) => ({ id, owner: "Ann",
+  stage: { w: "contacted", r: "contacted", p: "contacted", c: "contacted", n: "nurture" }[id] || "identified" }));
+const inbox = [
+  { id: "1", opportunityId: "r", kind: "reply", status: "new", data: {} },
+  { id: "2", opportunityId: "r", kind: "draft", status: "new", data: { purpose: "followup" } },
+  { id: "3", opportunityId: "d", kind: "draft", status: "new", data: { purpose: "first" } },
+];
+const step = (due) => ({ status: "approved", running: true, current: 2, plan: { steps: [{ n: 1, day: 0, status: "done" }, { n: 2, day: 7, status: "pending", due }] } });
+const details = {
+  s: { outreach: { waiting: { status: "approval", by: "Ann", approver: "Bo" } } },
+  p: { outreach: { plan: step("2026-11-20") } },
+  w: { outreach: { plan: step("2026-11-10") } },
+};
+console.log(leadItems(opps, inbox, details, T).map((x) => `${x.key}:${x.kind}:${x.who}`).join(","));
+""")
+    assert out == "r:reply:Ann,s:approve2:Bo,d:draft:Ann,p:agentstep:agent,w:step:Ann,n:parked:Ann,f:first:Ann,c:wait:client"
+
+
 def test_html_template_escapes_values(tmp_path):
     out = run_module_script(tmp_path, """
 import { html, safeUrl } from "./lib.js";
@@ -174,6 +230,181 @@ const opps = [
 console.log(waitingFor("Alex", opps).map((o) => o.id).join(","));
 """)
     assert out == "1,3"
+
+
+def test_qualification_says_what_is_missing_in_words(tmp_path):
+    """R4, decision D3: what stands between a lead and Ready is said in words, never as a number. At six of six but
+    not Ready (only the strength of the evidence is short) one sentence names the weakest dimensions."""
+    out = run_module_script(tmp_path, """
+import { readiness } from "./pages/qualification.js";
+const R = { conditions: { problem: "Specific client problem", fit: "CGS service fit" }, floors: { B: 2, A: 2 },
+  labels: { B: "Budget", A: "Authority", N: "Need", T: "Timeline", H: "History", E: "Engagement" },
+  weights: { B: 25, A: 20, N: 20, T: 15, H: 5, E: 15 } };
+const all = { problem: true, fit: true };
+const one = readiness({ conditions: { problem: true, fit: null }, scores: { B: 1 }, assessment: { readiness: "More evidence needed",
+  gaps: [{ key: "B", label: "Budget: below minimum" }, { key: "A", label: "Authority: pending confirmation" }, { key: "condition:fit", label: "x" }] } }, R);
+const weak = readiness({ conditions: all, scores: { B: 3, A: 3, N: 2, T: 4, H: 5, E: 4 }, assessment: { readiness: "More evidence needed", gaps: [{ key: "Q", label: "Confirmed Q is below 70" }] } }, R);
+const ready = readiness({ conditions: all, scores: {}, assessment: { readiness: "Ready", gaps: [] } }, R);
+console.log(JSON.stringify([one.head, one.dims.map((x) => x.text), one.excLabel, weak.head, weak.weakText, weak.excLabel, ready.head, ready.count]));
+""")
+    import json
+    one_head, dims, exc, weak_head, weak_text, weak_exc, ready_head, ready_count = json.loads(out)
+    assert one_head == "1 of 2 conditions met. Missing: cgs service fit."
+    assert dims == ["Budget: not strong enough yet", "Authority: not confirmed yet"]
+    assert exc == "Ask for approval with 3 things missing"
+    assert weak_head == "2 of 2 conditions met. The evidence is not strong enough yet for approval."
+    assert weak_text == "The evidence is not strong enough yet for approval. Confirm more about need, budget or authority."
+    assert weak_exc == "Ask for approval with 1 thing missing"
+    assert (ready_head, ready_count) == ("2 of 2 conditions met. Ready for approval.", 0)
+    assert not re.search(r"\d", weak_text + "".join(dims))
+
+
+def test_inbox_tabs_and_quick_actions_follow_the_todo_rows(tmp_path):
+    """R5: the Inbox tabs filter GET /api/todo's rows (All is every row, so the rail badge equals it), and a quick
+    action finds its record from the row key that api/todo.py builds."""
+    todo = (ROOT / "api" / "todo.py").read_text(encoding="utf-8")
+    for key in ('key=f"approve:{e.id}"', 'key=f"proposal:{p.id}"', 'key=f"lesson:{l.id}"'):
+        assert key in todo, f"api/todo.py no longer builds {key}; the Inbox reads record ids from it"
+    out = run_module_script(tmp_path, """
+import { typeOf, recordOf } from "./pages/inbox.js";
+const rows = [
+  { key: "approve:41", label: "Approve email", group: "waiting" },
+  { key: "approve:acme", label: "Approve or return", group: "waiting" },
+  { key: "review:acme", label: "Accept or reject", group: "decide" },
+  { key: "proposal:p2", label: "Direction change", group: "steer" },
+  { key: "lesson:7", label: "Lesson to review", group: "steer" },
+  { key: "inbox:i9", label: "New facts", group: "check", ref: { type: "inbox", id: "i9", hash: "h" } },
+  { key: "email:3", label: "Email not sent", group: "problem", ref: { type: "email", id: 3 } },
+  { key: "overdue:acme", label: "Overdue", group: "waiting" },
+];
+console.log(rows.map((r) => `${typeOf(r)}/${(recordOf(r) || {}).type || "-"}`).join(","));
+""")
+    assert out == ("approval/outbound,approval/-,decision/-,proposal/direction,proposal/lesson,proposal/inbox,problem/email,other/-")
+
+
+def test_overview_pipeline_counts_the_lists_it_links_to(tmp_path):
+    """R5: each pipeline row counts the stage list its link opens, for the whole team."""
+    out = run_module_script(tmp_path, """
+import { pipeline } from "./pages/home.js";
+const opps = ["researching", "review", "identified", "contacted", "active", "active", "approval", "qualification", "nurture", "rejected"].map((stage, i) => ({ id: String(i), stage }));
+console.log(JSON.stringify(pipeline(opps, [{ id: "c" }]).map(([label, n, , link]) => [label, n, link])));
+""")
+    import json
+    rows = json.loads(out)
+    assert [r[1] for r in rows] == [1, 1, 1, 2, 2, 1, 1, 1]
+    assert rows[3][2] == "#/companies?tab=identified" and rows[4][2] == "#/qualification?tab=active&team=1"
+
+
+def test_agent_hub_stage_metric_counts_what_the_scorecard_says(tmp_path):
+    """R6: each stage card counts the scorecard's results people used (or, for the Evidence agent, the proposals they
+    confirmed); the old Agents tabs that moved to Connectors still open there."""
+    out = run_module_script(tmp_path, """
+import { stageMetric } from "./pages/team.js";
+const sc = { work: [{ agent: "Discovery agent", used: 2, judged: 5 }, { agent: "Direction agent", used: 1, judged: 1 }, { agent: "Research agent", used: 3, judged: 4 }],
+  evidence: { totals: { decided: 6, accepted: 4 } } };
+console.log(JSON.stringify([stageMetric(["discovery", "direction"], sc), stageMetric(["evidence"], sc), stageMetric(["research"], { error: "x" })]));
+""")
+    import json
+    find, evidence, broken = json.loads(out)
+    assert (find["n"], find["of"]) == (3, 6) and (evidence["n"], evidence["of"]) == (4, 6) and broken is None
+    agents = (APP / "pages" / "agents.js").read_text(encoding="utf-8")
+    assert 'params.tab === "permissions"' in agents and 'ctx.go("connectors"' in agents
+
+
+def test_qualification_never_shows_a_score_out_of_100_or_a_revenue_amount():
+    """R4, decisions D3 and D5: no 0-100 qualification score and no revenue amount on the page. The revenue form
+    starts empty, so a saved amount is not shown again."""
+    js = (APP / "pages" / "qualification.js").read_text(encoding="utf-8")
+    assert "of 100" not in js and "toLocaleString" not in js and "revenueText" not in js
+    assert "o.revenue.low" not in js and "o.revenue.high" not in js
+    form = re.search(r'name="low"[^>]*>', js).group(0)
+    assert "value=" not in form
+
+
+def test_company_record_decides_nothing_and_shows_no_amount(tmp_path):
+    """R7, decision D4: the record reads one opportunity and makes no decisions (no writes, only tab actions); it never
+    shows the revenue amount; it opens on the tab for the stage; search opens it for companies already in the workflow."""
+    js = (APP / "pages" / "record.js").read_text(encoding="utf-8")
+    assert not re.search(r"api\.(post|put|patch|delete)\(", js)
+    assert set(re.findall(r"^  (\w+)\(t, e, ctx\)", js, re.M)) == {"tab", "tabkeys"}
+    assert 'href("record", { id: o.id })' in (APP / "search.js").read_text(encoding="utf-8")
+    out = run_module_script(tmp_path, """
+globalThis.window = { innerWidth: 1440 };
+globalThis.location = { hash: "#/record?id=x", href: "http://127.0.0.1:8800/" };
+const record = await import("./pages/record.js");
+const o = { id: "x", stage: "approval", owner: "Sam Reyes", rating: 3, title: "T", company: { name: "Acme", industry: "", hq: "", domain: "" },
+  contact: { name: "", title: "" }, next: { action: "", due: null }, decisions: [], activity: [{ actor: "h", on: "2026-10-01", text: "Revenue set to $500,000 to $700,000" }],
+  notes: [], evidence: [], packs: [], proposals: [], brief: null, outreach: null, revenue: { low: 500000, high: 700000 }, crm: null };
+const tabs = {};
+const replace = (page, p) => { tabs.went = p.tab; };
+for (const stage of ["review", "identified", "active", "nurture"]) {
+  await record.load({ api: { get: async (u) => (u === "/rules" ? null : { ...o, stage }) }, replace }, { id: "x" });
+  tabs[stage] = tabs.went;
+}
+const page = String(record.view({ o, tab: "activity" }, { me: "Sam Reyes", today: "2026-11-14" }));
+console.log(JSON.stringify({ tabs, amount: /500,000|700,000|500000/.test(page), masked: page.includes("[amount]") }));
+""")
+    import json
+    got = json.loads(out)
+    assert got["tabs"]["review"] == "brief" and got["tabs"]["identified"] == "outreach"
+    assert got["tabs"]["active"] == "qual" and got["tabs"]["nurture"] == "activity"
+    assert not got["amount"] and got["masked"]
+
+
+def test_problem_banners_show_on_the_pages_whose_work_stops(tmp_path):
+    """R8: the AI limit, Gmail signed out and stopped research each show on the pages they stop, from GET /api/todo;
+    a paused research is not a failure; only the AI-limit banner can be put off, for the day it was put off."""
+    out = run_module_script(tmp_path, """
+globalThis.window = { innerWidth: 1440 };
+const { problems } = await import("./shell.js");
+const health = [{ key: "budget" }, { key: "gmail" }];
+const rows = [
+  { label: "Research stopped", sub: "The website would not load.", opportunity: { id: "a1", company: "Acme" } },
+  { label: "Research stopped", sub: "Paused: it reached its budget.", opportunity: { id: "b2", company: "Bolt" } },
+];
+const heads = (page, extra = {}) => [...String(problems({ page, health, rows, ai: { used: 60, budget: 60 }, today: "2026-11-14", ...extra }))
+  .matchAll(/<h2 id="problem-([a-z]+)"[^>]*>([^<]*)</g)].map((m) => `${m[1]}: ${m[2].replace(/&#39;/g, "'")}`);
+console.log(JSON.stringify({
+  companies: heads("companies"), outreach: heads("outreach"), overview: heads("overview"),
+  later: heads("companies", { dismissed: { budget: "2026-11-14" } }), yesterday: heads("companies", { dismissed: { budget: "2026-11-13" } }),
+  healthy: String(problems({ page: "companies" })),
+  gmailLater: String(problems({ page: "outreach", health, rows })).includes('data-key="gmail"'),
+}));
+""")
+    import json
+    got = json.loads(out)
+    assert got["companies"] == ["budget: Today's AI requests are used up: 60 of 60", "research: Research stopped on 1 company"]
+    assert got["outreach"] == ["budget: Today's AI requests are used up: 60 of 60", "gmail: Gmail is disconnected"]
+    assert got["overview"] == [] and got["healthy"] == "" and not got["gmailLater"]
+    assert got["later"] == ["research: Research stopped on 1 company"] and len(got["yesterday"]) == 2
+
+
+def test_gmail_off_flags_outreach_rows_and_amounts_stay_hidden(tmp_path):
+    """R8: with Gmail signed out a row whose next move is an email says it cannot go out, a sent one that replies are
+    not read; activity lines never show a revenue amount in either form the backend writes (D5)."""
+    js = (APP / "pages" / "outreach.js").read_text(encoding="utf-8")
+    assert "Can't send, Gmail off" in js and "Replies not read" in js and "statusTag(x, ctx, d.mail)" in js
+    out = run_module_script(tmp_path, """
+const { moneyless } = await import("./pages/qualification.js");
+console.log(JSON.stringify([
+  moneyless("CGS revenue reviewed by Alex Morgan: $600K → $500K–$700K"),
+  moneyless("CGS revenue {'low': 500000, 'high': 700000} → {'low': 550000, 'high': 800000}"),
+  moneyless("CGS revenue to estimate → {'low': 500000, 'high': 700000}"),
+]));
+""")
+    import json
+    for line in json.loads(out):
+        assert not re.search(r"\d{3}", line), line
+
+
+def test_stage_pages_share_the_stage_cards_and_show_no_dimension_numbers():
+    """Companies, Outreach and Qualification all open with the design's stage cards (Companies.dc.html isFunnel), and a
+    dimension's value reads as the rules' words, never as a number (redesign rule 4, G26)."""
+    for name in ("companies", "outreach", "qualification"):
+        js = (APP / "pages" / f"{name}.js").read_text(encoding="utf-8")
+        assert '<div class="stages" role="tablist"' in js and 'class="stg"' in js, name
+    q = (APP / "pages" / "qualification.js").read_text(encoding="utf-8")
+    assert "${v}: ${rules.anchors" not in q and "Dimensions (BANTHE)" not in q and "first-time neutral" not in q
 
 
 def test_agents_page_shows_inbox_items_no_other_page_handles(tmp_path):

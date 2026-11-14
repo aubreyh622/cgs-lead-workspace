@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Inbox, CGS Lead Workspace</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="app">
+<div style="flex: none"><dc-import name="Rail" active="inbox" hint-size="232px,1040px"></dc-import></div>
+
+<main class="main">
+  <header class="top"><div class="col" style="gap: 4px"><h1 class="h1">Inbox</h1><span class="mut">Every decision that needs a person, from agents and teammates.</span></div><span class="grow"></span><span class="fx sm dim" style="gap: 6px"><span class="keys">J</span><span class="keys">K</span>to move<span class="keys" style="margin-left: 8px">E</span>for the main action</span></header>
+
+  <div role="tablist" class="tabs">
+    <sc-for list="{{tabs}}" as="t" hint-placeholder-count="5">
+      <button type="button" role="tab" class="tab" aria-selected="{{t.selected}}" onClick="{{t.pick}}">{{t.label}}<span class="cnt">{{t.count}}</span></button>
+    </sc-for>
+  </div>
+
+  <sc-if value="{{showQueue}}" hint-placeholder-val="{{ true }}">
+    <div class="row" style="align-items: flex-start" onKeyDown="{{onKey}}">
+      <section class="card flat" aria-label="Items" style="flex: 4 1 340px">
+        <div class="list">
+          <sc-for list="{{items}}" as="it" hint-placeholder-count="5">
+            <button type="button" class="li" onClick="{{it.pick}}" aria-pressed="{{it.pressed}}" style="border: 0; border-top: 1px solid #F0F1F3; box-shadow: {{it.mark}}; background-color: {{it.bg}}; text-align: left; width: 100%">
+              <sc-if value="{{it.agent}}" hint-placeholder-val="{{ false }}"><span class="av ag" aria-hidden="true"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg></span></sc-if>
+              <sc-if value="{{it.company}}" hint-placeholder-val="{{ true }}"><span class="av" aria-hidden="true">{{it.mono}}</span></sc-if>
+              <span class="grow" style="display: flex; flex-direction: column; gap: 2px"><span class="sbd">{{it.title}}</span><span class="mut" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{it.what}}</span></span>
+              <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px"><span class="{{it.tagCls}}">{{it.tag}}</span><span class="dim sm tn">{{it.age}}</span></span>
+            </button>
+          </sc-for>
+        </div>
+      </section>
+
+      <section class="card" aria-label="Selected item" style="flex: 6 1 440px; gap: 18px">
+        <div class="sb" style="align-items: flex-start"><div class="col" style="gap: 6px"><span class="{{sel.tagCls}}" style="align-self: flex-start">{{sel.kind}}</span><h2 class="t2">{{sel.head}}</h2></div><span class="dim sm" style="white-space: nowrap">{{sel.from}}</span></div>
+        <p class="mut" style="max-width: 62ch">{{sel.body}}</p>
+        <dl class="kv" style="padding: 14px 0; border-top: 1px solid #F0F1F3; border-bottom: 1px solid #F0F1F3">
+          <sc-for list="{{sel.facts}}" as="f" hint-placeholder-count="3"><dt>{{f.k}}</dt><dd>{{f.v}}</dd></sc-for>
+        </dl>
+        <div class="fx" style="flex-wrap: wrap">
+          <sc-if value="{{sel.isLink}}" hint-placeholder-val="{{ false }}"><a class="b bp" href="{{sel.linkHref}}" onClick="{{sel.goLink}}">{{sel.primary}}</a></sc-if>
+          <sc-if value="{{sel.isButton}}" hint-placeholder-val="{{ true }}"><button type="button" class="b bp" onClick="{{sel.doPrimary}}">{{sel.primary}}</button></sc-if>
+          <button type="button" class="b bs" onClick="{{sel.doSecondary}}">{{sel.secondary}}</button>
+          <sc-if value="{{sel.hasTertiary}}" hint-placeholder-val="{{ false }}"><button type="button" class="b bg" onClick="{{sel.doTertiary}}">{{sel.tertiary}}</button></sc-if>
+          <span class="grow"></span>
+          <a class="b bg" href="{{sel.href}}" onClick="{{sel.goMore}}">{{sel.more}}</a>
+        </div>
+      </section>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{showEmpty}}" hint-placeholder-val="{{ false }}">
+    <section class="card" style="align-items: flex-start; padding: 40px; gap: 10px">
+      <svg class="i c-grn" aria-hidden="true" viewBox="0 0 24 24" style="width: 28px; height: 28px"><path d="M3 12a9 9 0 1018 0 9 9 0 10-18 0M8 12l3 3 5-6"></path></svg>
+      <h2 class="t2">{{emptyHead}}</h2>
+      <p class="mut" style="max-width: 56ch">New items land here when an agent or a teammate needs a decision. Everything you settle stays under Done.</p>
+      <a class="b bs" href="Main.dc.html">Back to Overview</a>
+    </section>
+  </sc-if>
+
+  <sc-if value="{{showDone}}" hint-placeholder-val="{{ false }}">
+    <section class="card flat" style="max-width: 820px">
+      <div class="list">
+        <sc-for list="{{doneItems}}" as="d" hint-placeholder-count="2">
+          <div class="li" style="padding: 12px 20px"><svg class="i c-grn" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"></path></svg><span class="grow" style="display: flex; flex-direction: column"><span class="sbd">{{d.title}}</span><span class="mut">{{d.outcome}}</span></span><button type="button" class="b bs xs" onClick="{{d.undo}}">Undo</button></div>
+        </sc-for>
+        <div class="li dim" style="padding: 12px 20px">31 earlier items, settled before today</div>
+      </div>
+    </section>
+  </sc-if>
+</main>
+
+<sc-if value="{{hasToast}}" hint-placeholder-val="{{ false }}">
+  <div class="toast" role="status"><svg class="i" aria-hidden="true" viewBox="0 0 24 24" style="color: #8FE0B5"><path d="M5 12l5 5 9-10"></path></svg><span><span class="sbd">{{toast.label}}</span><span style="color: #B6BECC">, {{toast.title}}</span></span><button type="button" class="b bw" onClick="{{undoToast}}">Undo</button></div>
+</sc-if>
+
+<div class="act"><dc-import name="Activity" start-open="{{ false }}" hint-size="130px,40px"></dc-import></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1040}}'>
+class Component extends DCLogic {
+renderVals() {
+  const st = this.state || {};
+  const done = st.done || {};
+  const tab = st.tab || 'all';
+  const setGo = (g) => { if (!g) return; try { window.localStorage.setItem('cgs-go', JSON.stringify({ stage: g[0], company: g[1] || null })); } catch (e) {} };
+  const data = [
+    { id: 'nh', mono: 'NH', title: 'Northstar Health', what: 'Pack is one change behind', age: '3 days', type: 'approval',
+      kind: 'Approval', head: 'Northstar Health’s pack is one change behind', from: 'From Alex Morgan, 23 Oct',
+      body: 'Alex confirmed all six conditions and sent the pack for your approval. The revenue estimate changed a day later, so the pack no longer matches the record. Ask Alex to resubmit, or approve it with the estimate as it now stands in Insightly.',
+      facts: [{ k: 'Conditions', v: '6 of 6 met, nothing missing' }, { k: 'Changed', v: 'Revenue estimate, 24 Oct. The amount stays in Insightly' }, { k: 'Insightly stage', v: 'Qualification, becomes an opportunity on approval' }],
+      primary: ['Ask Alex to resubmit', 'Asked Alex to resubmit'], secondary: ['Approve with the changed estimate', 'Approved'],
+      more: 'Open the pack', href: 'Qualification.dc.html' },
+    { id: 'vm', mono: 'VM', title: 'Vesta Medical Devices', what: 'Alex’s follow-up email needs your approval', age: 'Today', type: 'approval',
+      kind: 'Approval', head: 'Approve Alex’s follow-up email to Vesta Medical Devices', from: 'From Alex Morgan, today 09:05',
+      body: 'Alex edited the Outreach agent’s draft and approved it. You are the second approver. It goes out from his Gmail the moment you approve.',
+      facts: [{ k: 'To', v: 'Noah Brennan, VP Supply Chain' }, { k: 'Step', v: 'Follow-up email, day 9 of 12' }, { k: 'Email standard', v: '4.6 of 5' }],
+      primary: ['Approve and send', 'Approved and sent'], secondary: ['Return to Alex', 'Returned to Alex'],
+      more: 'Open the email', href: 'Outreach-approve.dc.html' },
+    { id: 'te', mono: 'TE', title: 'Talbot Electrical', what: 'Sam’s first email needs your approval', age: 'Today', type: 'approval',
+      kind: 'Approval', head: 'Approve Sam’s first email to Talbot Electrical', from: 'From Sam Reyes, today 08:50',
+      body: 'Sam edited the Outreach agent’s draft after Ben Carter’s introduction and approved it. You are the second approver.',
+      facts: [{ k: 'To', v: 'Ruth Abara, Director of Operations' }, { k: 'Step', v: 'First email, day 3 of 10, warm route' }, { k: 'Email standard', v: '4.2 of 5' }],
+      primary: ['Approve and send', 'Approved and sent'], secondary: ['Return to Sam', 'Returned to Sam'],
+      more: 'Open the email', href: 'Outreach-talbot.dc.html' },
+    { id: 'om', mono: 'OM', title: 'Ostrander Metalworks', what: 'Agent suggests another look', age: '1 day', type: 'decision',
+      kind: 'Company decision', head: 'Accept, send back or reject Ostrander Metalworks', from: 'From the Research agent, 25 Oct',
+      body: 'The brief is ready. The agent suggests sending it back: the named contact may have left the company in August.',
+      facts: [{ k: 'Why now', v: 'Plant automation program launched in July' }, { k: 'Contact', v: 'Tom Becker, may have left' }, { k: 'Sources', v: '3, one in conflict' }],
+      primary: ['Send back as suggested', 'Sent back to the Research agent'], secondary: ['Accept and plan contact', 'Accepted'], tertiary: ['Reject', 'Rejected'],
+      more: 'Read the full brief', href: 'Companies.dc.html' },
+    { id: 'pp', mono: 'PP', title: 'Pellham Packaging', what: 'Agent suggests setting aside', age: '1 day', type: 'decision',
+      kind: 'Company decision', head: 'Accept, set aside or reject Pellham Packaging', from: 'From the Research agent, 25 Oct',
+      body: 'The brief is ready. The agent suggests setting this one aside for now: the warehouse project has no named owner yet.',
+      facts: [{ k: 'Why now', v: 'Warehouse system replacement announced' }, { k: 'Contact', v: 'None confirmed' }, { k: 'Sources', v: '2' }],
+      primary: ['Set aside as suggested', 'Set aside'], secondary: ['Accept and plan contact', 'Accepted'], tertiary: ['Reject', 'Rejected'],
+      more: 'Read the full brief', href: 'Companies-pellham.dc.html' },
+    { id: 'cand', agent: true, title: '10 new candidates', what: 'Pick which ones get a brief', age: 'Today', type: 'proposal',
+      kind: 'Agent proposal', head: 'Pick from 10 new candidates', from: 'From the Discovery agent, today 11:15',
+      body: 'Round 4 of the main search found 10 companies that match what CGS looks for. Each one you pick gets a research brief.',
+      facts: [{ k: 'Search', v: 'What we look for, main search' }, { k: 'Already in Insightly', v: '0 of 10' }, { k: 'Strongest signal', v: 'New operations leadership' }],
+      link: ['Pick companies', 'Companies-found.dc.html'], linkGo: ['found'], secondary: ['Skip this round', 'Skipped round 4'],
+      more: 'Open Agent hub', href: 'Agents.dc.html' },
+    { id: 'buyer', agent: true, title: 'Buyer list change', what: 'Drop Manager-level roles', age: 'Today', type: 'proposal',
+      kind: 'Agent proposal', head: 'Drop Manager-level roles from the buyer list', from: 'From the Direction agent, today',
+      body: 'Four of the last five contacts at Manager level were rejected at the decision step. The agent proposes searching for Director level and above.',
+      facts: [{ k: 'Affects', v: 'Discovery and Research agents' }, { k: 'Evidence', v: '4 of 5 rejected' }, { k: 'Reversible', v: 'Yes, from Agent hub' }],
+      primary: ['Apply', 'Applied'], secondary: ['Dismiss', 'Dismissed'],
+      more: 'Open Agent hub', href: 'Agents.dc.html' },
+    { id: 'l-out', agent: true, title: 'Lesson for Outreach', what: 'Open with the client’s own news', age: 'Today', type: 'proposal',
+      kind: 'Agent proposal', head: 'Open with the client’s own announcement before mentioning CGS', from: 'From the weekly lessons review, today',
+      body: 'You rewrote 4 drafts this way in the last two weeks. Approving adds this to the Outreach agent’s lessons. It applies to new drafts only.',
+      facts: [{ k: 'Evidence', v: '4 drafts you edited' }, { k: 'Affects', v: 'Outreach agent' }, { k: 'Reversible', v: 'Yes, from Agent hub' }],
+      primary: ['Approve lesson', 'Lesson approved'], secondary: ['Reject', 'Lesson rejected'],
+      more: 'Open Agent hub', href: 'Agents.dc.html' },
+    { id: 'l-ev', agent: true, title: 'Lesson for Evidence', what: 'A job title alone is not authority', age: 'Today', type: 'proposal',
+      kind: 'Agent proposal', head: 'A job title alone does not prove the person can decide', from: 'From the weekly lessons review, today',
+      body: 'The Evidence agent’s proposals were lowered by hand 3 times because the contact’s title was the only proof they could decide. Approving makes it look for a stated budget or sign-off.',
+      facts: [{ k: 'Evidence', v: '3 proposals lowered by hand' }, { k: 'Affects', v: 'Evidence agent' }, { k: 'Reversible', v: 'Yes, from Agent hub' }],
+      primary: ['Approve lesson', 'Lesson approved'], secondary: ['Reject', 'Lesson rejected'],
+      more: 'Open Agent hub', href: 'Agents.dc.html' }
+  ];
+  const tagFor = { approval: ['Approval', 'chip org'], decision: ['Decision', 'chip org'], proposal: ['Proposal', 'chip blue'] };
+  const open = data.filter((x) => !done[x.id]);
+  const inTab = (x) => tab === 'all' || x.type === tab;
+  const list = open.filter(inTab);
+  const curId = list.some((x) => x.id === st.cur) ? st.cur : (list[0] && list[0].id);
+  const idx = list.findIndex((x) => x.id === curId);
+
+  const settle = (x, label) => {
+    const pos = list.findIndex((y) => y.id === x.id);
+    const rest = list.filter((y) => y.id !== x.id);
+    const next = rest[Math.min(pos, rest.length - 1)];
+    this.setState({ done: { ...done, [x.id]: label }, cur: next ? next.id : null, toast: { id: x.id, label, title: x.title } });
+    clearTimeout(this._t);
+    this._t = setTimeout(() => {
+      const s = this.state || {};
+      if (s.toast && s.toast.id === x.id) this.setState({ toast: null });
+    }, 6000);
+  };
+  const undo = (id) => {
+    const nd = { ...done };
+    delete nd[id];
+    this.setState({ done: nd, cur: id, toast: null, tab: tab === 'done' ? 'done' : tab });
+  };
+
+  const x = list[idx] || data[0];
+  const sel = {
+    kind: x.kind, head: x.head, from: x.from, body: x.body, facts: x.facts, more: x.more, href: x.href,
+    tagCls: tagFor[x.type][1],
+    goMore: () => setGo(x.go), goLink: () => setGo(x.linkGo),
+    isLink: !!x.link, isButton: !x.link,
+    primary: x.link ? x.link[0] : x.primary[0],
+    linkHref: x.link ? x.link[1] : '#',
+    doPrimary: () => { if (x.primary) settle(x, x.primary[1]); },
+    secondary: x.secondary[0], doSecondary: () => settle(x, x.secondary[1]),
+    hasTertiary: !!x.tertiary, tertiary: x.tertiary ? x.tertiary[0] : '',
+    doTertiary: () => { if (x.tertiary) settle(x, x.tertiary[1]); }
+  };
+
+  const count = (t) => open.filter((y) => t === 'all' || y.type === t).length;
+  const doneList = data.filter((y) => done[y.id]);
+  const tabs = [['all', 'All'], ['approval', 'Approvals'], ['decision', 'Company decisions'], ['proposal', 'Agent proposals'], ['done', 'Done']].map(([id, label]) => ({
+    label, count: String(id === 'done' ? 31 + doneList.length : count(id)),
+    selected: id === tab ? 'true' : 'false', pick: () => this.setState({ tab: id })
+  }));
+
+  return {
+    tabs,
+    showQueue: tab !== 'done' && list.length > 0,
+    showEmpty: tab !== 'done' && list.length === 0,
+    emptyHead: tab === 'all' ? 'Nothing needs you right now' : 'Nothing left in this view',
+    showDone: tab === 'done',
+    sel,
+    items: list.map((y) => ({
+      title: y.title, what: y.what, age: y.age, mono: y.mono || '',
+      agent: !!y.agent, company: !y.agent,
+      tag: tagFor[y.type][0], tagCls: tagFor[y.type][1],
+      bg: y.id === curId ? '#F5F4FE' : 'transparent',
+      mark: y.id === curId ? 'inset 3px 0 0 #5B4FE0' : 'none',
+      pressed: y.id === curId ? 'true' : 'false',
+      pick: () => this.setState({ cur: y.id })
+    })),
+    onKey: (e) => {
+      const k = (e.key || '').toLowerCase();
+      if (k === 'j' || k === 'arrowdown') { e.preventDefault(); const n = list[Math.min(idx + 1, list.length - 1)]; if (n) this.setState({ cur: n.id }); }
+      else if (k === 'k' || k === 'arrowup') { e.preventDefault(); const n = list[Math.max(idx - 1, 0)]; if (n) this.setState({ cur: n.id }); }
+      else if (k === 'e' && x.primary) { e.preventDefault(); settle(x, x.primary[1]); }
+    },
+    doneItems: doneList.map((y) => ({ title: y.title, outcome: done[y.id], undo: () => undo(y.id) })),
+    hasToast: !!st.toast,
+    toast: st.toast || { label: '', title: '' },
+    undoToast: () => { if (st.toast) undo(st.toast.id); }
+  };
+}
+}
+</script>
+</body>
+</html>

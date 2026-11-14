@@ -1,0 +1,1390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Companies, CGS Lead Workspace</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap">
+<style>
+body{margin:0}
+.fold{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:12px 20px;border:0;border-radius:12px;background:none;font:inherit;color:#101828;text-align:left;cursor:pointer}
+.fold:hover{background:#F9FAFB}
+.fold:focus-visible{outline:2px solid #5B4FE0;outline-offset:-2px}
+.fold .chev{flex:none;color:#667085;transition:transform .14s ease-out}
+.fold[aria-expanded="true"] .chev{transform:rotate(90deg)}
+</style>
+</helmet>
+<div class="app">
+<div style="flex: none; display: flex"><dc-import name="Rail" active="{{view}}" hint-size="244px,1012px"></dc-import></div>
+
+<main class="main">
+  <header class="top" style="align-items: flex-end">
+    <div class="col" style="gap: 4px"><h1 class="h1">{{title}}</h1><span class="mut">{{subtitle}}</span></div>
+    <span class="grow"></span>
+    <span class="fx sm mut" style="gap: 14px"><span class="fx" style="gap: 6px"><span class="dot c-org" aria-hidden="true"></span>Waiting on you</span><span class="fx" style="gap: 6px"><span class="dot c-blue" aria-hidden="true"></span>An agent works on it</span><span class="fx" style="gap: 6px"><span class="dot c-grn" aria-hidden="true"></span>Done</span></span>
+    <sc-if value="{{headWho}}" hint-placeholder-val="{{ false }}"><div class="seg" role="group" aria-label="Whose companies"><sc-for list="{{whose}}" as="w" hint-placeholder-count="2"><button type="button" aria-pressed="{{w.pressed}}" onClick="{{w.pick}}">{{w.label}}</button></sc-for></div></sc-if>
+    <sc-if value="{{isCompanies}}" hint-placeholder-val="{{ true }}"><a class="b bs" href="Find.dc.html"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 11a7 7 0 1014 0 7 7 0 10-14 0M20 20l-3.5-3.5"></path></svg>Find companies</a></sc-if>
+  </header>
+
+  <sc-if value="{{hasIssue}}" hint-placeholder-val="{{ false }}">
+    <section class="{{issue.cls}}" role="status" style="flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 12px">
+      <svg class="i" aria-hidden="true" viewBox="0 0 24 24" style="color: {{issue.color}}; margin-top: 2px"><path d="{{issue.icon}}"></path></svg>
+      <div class="grow col" style="gap: 2px; flex-basis: 320px"><span class="sbd">{{issue.head}}</span><span class="mut" style="max-width: 80ch">{{issue.body}}</span></div>
+      <div class="fx" style="flex-wrap: wrap">
+        <sc-if value="{{issue.isLink}}" hint-placeholder-val="{{ true }}"><a class="b bp" href="{{issue.href}}">{{issue.primary}}</a></sc-if>
+        <sc-if value="{{issue.isBtn}}" hint-placeholder-val="{{ false }}"><button type="button" class="b bp" onClick="{{issue.doPrimary}}">{{issue.primary}}</button></sc-if>
+        <sc-if value="{{issue.hasSecondary}}" hint-placeholder-val="{{ false }}"><button type="button" class="b bs" onClick="{{issue.doSecondary}}">{{issue.secondary}}</button></sc-if>
+      </div>
+    </section>
+  </sc-if>
+
+  <sc-if value="{{isFunnel}}" hint-placeholder-val="{{ true }}">
+    <div class="stages" role="tablist" aria-label="Stages">
+      <sc-for list="{{stageBar}}" as="s" hint-placeholder-count="5">
+        <button type="button" role="tab" class="stg" aria-selected="{{s.selected}}" onClick="{{s.pick}}">
+          <span class="who" aria-hidden="true" style="background: {{s.color}}"></span>
+          <span class="num">{{s.count}}</span>
+          <span class="{{s.labelCls}}">{{s.label}}</span>
+          <span class="crm">{{s.crm}}</span>
+        </button>
+      </sc-for>
+    </div>
+  </sc-if>
+  <sc-if value="{{isTabs}}" hint-placeholder-val="{{ false }}">
+    <div role="tablist" class="tabs" aria-label="Outreach views">
+      <sc-for list="{{stageBar}}" as="s" hint-placeholder-count="6">
+        <button type="button" role="tab" class="tab" aria-selected="{{s.selected}}" onClick="{{s.pick}}">{{s.label}}<span class="{{s.cntCls}}">{{s.count}}</span></button>
+      </sc-for>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isTable}}" hint-placeholder-val="{{ false }}">
+    <section class="card flat">
+      <div class="fx" style="flex-wrap: wrap; gap: 10px 12px; padding: 16px 20px; border-bottom: 1px solid #EEF0F3">
+        <div class="grow col" style="gap: 2px; flex-basis: 320px"><h2 class="t">{{cur.label}} <span class="cnt" style="font-size: 13px">{{cur.shown}}</span></h2><span class="mut sm">{{cur.note}}</span></div>
+        <sc-if value="{{cur.segInTable}}" hint-placeholder-val="{{ false }}">
+          <div class="seg" role="group" aria-label="Whose companies"><sc-for list="{{whose}}" as="w" hint-placeholder-count="2"><button type="button" aria-pressed="{{w.pressed}}" onClick="{{w.pick}}">{{w.label}}</button></sc-for></div>
+        </sc-if>
+        <sc-if value="{{bulkOn}}" hint-placeholder-val="{{ false }}">
+          <span class="sm md">{{nChecked}} selected</span>
+          <button type="button" class="b bg" onClick="{{clearChecks}}">Clear</button>
+          <button type="button" class="b bs" onClick="{{bulkAside}}">Set aside</button>
+          <button type="button" class="b bp" onClick="{{bulkBrief}}">Request briefs</button>
+        </sc-if>
+      </div>
+
+      <div class="scroll">
+        <div style="min-width: {{minW}}">
+          <div class="phead" style="grid-template-columns: {{cols}}">
+            <sc-for list="{{heads}}" as="h" hint-placeholder-count="5"><span>{{h}}</span></sc-for>
+          </div>
+          <sc-for list="{{rows}}" as="r" hint-placeholder-count="8">
+            <sc-if value="{{r.isBtn}}" hint-placeholder-val="{{ true }}">
+            <div class="{{r.cls}}" style="grid-template-columns: {{cols}}" onClick="{{r.open}}">
+              <sc-if value="{{hasCheck}}" hint-placeholder-val="{{ false }}"><input type="checkbox" class="ck" checked="{{r.checked}}" onClick="{{r.toggle}}" onChange="{{noop}}" aria-label="{{r.checkLabel}}"></sc-if>
+              <sc-for list="{{r.cells}}" as="c" hint-placeholder-count="5">
+                <span class="cell">
+                  <sc-if value="{{c.isCo}}" hint-placeholder-val="{{ true }}"><span class="fx" style="gap: 12px; min-width: 0"><span class="av" aria-hidden="true">{{c.mono}}</span><span class="col" style="gap: 1px; min-width: 0"><button type="button" class="nm tr" onClick="{{c.open}}">{{c.text}}</button><span class="dim sm tr">{{c.sub}}</span></span></span></sc-if>
+                  <sc-if value="{{c.isCoLink}}" hint-placeholder-val="{{ false }}"><span class="fx" style="gap: 12px; min-width: 0"><span class="av" aria-hidden="true">{{c.mono}}</span><span class="col" style="gap: 1px; min-width: 0"><span class="nm tr">{{c.text}}</span><span class="dim sm tr">{{c.sub}}</span></span></span></sc-if>
+                  <sc-if value="{{c.isText}}" hint-placeholder-val="{{ false }}"><span class="tr {{c.tcls}}">{{c.text}}</span><sc-if value="{{c.hasSub}}" hint-placeholder-val="{{ false }}"><span class="dim sm tr">{{c.sub}}</span></sc-if></sc-if>
+                  <sc-if value="{{c.isChip}}" hint-placeholder-val="{{ false }}"><span class="{{c.chip}}" style="align-self: flex-start">{{c.text}}</span></sc-if>
+                  <sc-if value="{{c.isDots}}" hint-placeholder-val="{{ false }}"><span class="fx" style="gap: 10px"><span class="fx" aria-hidden="true" style="gap: 5px; flex: none"><sc-for list="{{c.dots}}" as="pd" hint-placeholder-count="4"><span class="{{pd.cls}}"></span></sc-for></span><span class="tn dim sm tr">{{c.text}}</span></span></sc-if>
+                  <sc-if value="{{c.isBar}}" hint-placeholder-val="{{ false }}"><span class="fx" style="gap: 10px"><span class="bar {{c.barCls}}" aria-hidden="true" style="width: 64px; flex: none"><span style="width: {{c.pct}}"></span></span><span class="tn dim sm tr">{{c.text}}</span></span></sc-if>
+                </span>
+              </sc-for>
+            </div>
+            </sc-if>
+            <sc-if value="{{r.isLink}}" hint-placeholder-val="{{ false }}">
+            <a class="{{r.cls}}" href="{{r.href}}" style="grid-template-columns: {{cols}}">
+              <sc-for list="{{r.cells}}" as="c" hint-placeholder-count="5">
+                <span class="cell">
+                  <sc-if value="{{c.isCo}}" hint-placeholder-val="{{ true }}"><span class="fx" style="gap: 12px; min-width: 0"><span class="av" aria-hidden="true">{{c.mono}}</span><span class="col" style="gap: 1px; min-width: 0"><button type="button" class="nm tr" onClick="{{c.open}}">{{c.text}}</button><span class="dim sm tr">{{c.sub}}</span></span></span></sc-if>
+                  <sc-if value="{{c.isCoLink}}" hint-placeholder-val="{{ false }}"><span class="fx" style="gap: 12px; min-width: 0"><span class="av" aria-hidden="true">{{c.mono}}</span><span class="col" style="gap: 1px; min-width: 0"><span class="nm tr">{{c.text}}</span><span class="dim sm tr">{{c.sub}}</span></span></span></sc-if>
+                  <sc-if value="{{c.isText}}" hint-placeholder-val="{{ false }}"><span class="tr {{c.tcls}}">{{c.text}}</span><sc-if value="{{c.hasSub}}" hint-placeholder-val="{{ false }}"><span class="dim sm tr">{{c.sub}}</span></sc-if></sc-if>
+                  <sc-if value="{{c.isChip}}" hint-placeholder-val="{{ false }}"><span class="{{c.chip}}" style="align-self: flex-start">{{c.text}}</span></sc-if>
+                  <sc-if value="{{c.isDots}}" hint-placeholder-val="{{ false }}"><span class="fx" style="gap: 10px"><span class="fx" aria-hidden="true" style="gap: 5px; flex: none"><sc-for list="{{c.dots}}" as="pd" hint-placeholder-count="4"><span class="{{pd.cls}}"></span></sc-for></span><span class="tn dim sm tr">{{c.text}}</span></span></sc-if>
+                  <sc-if value="{{c.isBar}}" hint-placeholder-val="{{ false }}"><span class="fx" style="gap: 10px"><span class="bar {{c.barCls}}" aria-hidden="true" style="width: 64px; flex: none"><span style="width: {{c.pct}}"></span></span><span class="tn dim sm tr">{{c.text}}</span></span></sc-if>
+                </span>
+              </sc-for>
+            </a>
+            </sc-if>
+          </sc-for>
+          <sc-if value="{{empty}}" hint-placeholder-val="{{ false }}"><p class="mut" style="padding: 18px 20px; border-top: 1px solid #EEF0F3">{{emptyText}}</p></sc-if>
+        </div>
+      </div>
+    </section>
+  </sc-if>
+
+  <sc-if value="{{isQueue}}" hint-placeholder-val="{{ false }}">
+    <div class="row" style="align-items: flex-start" onKeyDown="{{dq.key}}">
+      <section class="card flat" aria-label="Needs you" style="flex: 0 0 248px">
+        <div style="padding: 12px 16px 8px" class="lbl">Needs you</div>
+        <div class="list">
+          <sc-for list="{{dq.list}}" as="q" hint-placeholder-count="4">
+            <button type="button" class="li" onClick="{{q.pick}}" aria-pressed="{{q.pressed}}" style="border: 0; border-top: 1px solid #EEF0F3; padding: 12px 16px; text-align: left; width: 100%; background-color: {{q.bg}}; box-shadow: {{q.mark}}"><span class="av" aria-hidden="true">{{q.mono}}</span><span class="grow" style="display: flex; flex-direction: column"><span class="sbd">{{q.name}}</span><span class="{{q.subCls}}">{{q.sub}}</span></span></button>
+          </sc-for>
+        </div>
+        <div class="fx sm dim" style="padding: 12px 16px; border-top: 1px solid #EEF0F3; gap: 6px; flex-wrap: wrap"><span class="keys">J</span><span class="keys">K</span>to move<span class="keys" style="margin-left: 6px">E</span>main action</div>
+      </section>
+
+      <div class="col" style="flex: 999 1 480px">
+        <section class="card" style="gap: 16px">
+          <div class="fx" style="gap: 14px; flex-wrap: wrap">
+            <span class="av lg k" aria-hidden="true">{{dq.mono}}</span>
+            <div class="grow col" style="gap: 2px; flex-basis: 240px"><h2 class="t2" style="font-size: 20px">{{dq.name}}</h2><span class="mut">{{dq.sub}}</span></div>
+            <span class="{{dq.routeChip}}">{{dq.route}}</span>
+          </div>
+          <div class="col" style="gap: 3px; padding: 12px 14px; border-radius: 10px; background: #F7F8FA"><span class="lbl">Why this company, from the brief</span><span style="max-width: 78ch">{{dq.why}}</span></div>
+
+          <sc-if value="{{dq.hasThread}}" hint-placeholder-val="{{ true }}">
+            <div class="col" style="gap: 0">
+              <button type="button" class="b bg xs" onClick="{{dq.toggleThread}}" aria-expanded="{{dq.threadExpanded}}" style="align-self: flex-start; margin-left: -8px"><svg class="i s" aria-hidden="true" viewBox="0 0 24 24"><path d="{{dq.threadIcon}}"></path></svg>{{dq.threadLabel}}</button>
+              <sc-if value="{{dq.threadOpen}}" hint-placeholder-val="{{ false }}">
+                <div class="list" style="margin-top: 6px">
+                  <sc-for list="{{dq.thread}}" as="m" hint-placeholder-count="3">
+                    <div class="li" style="align-items: flex-start; padding: 9px 0"><span class="av r" aria-hidden="true" style="width: 26px; height: 26px; font-size: 10px">{{m.mono}}</span><span class="grow col" style="gap: 1px"><span class="md">{{m.title}}</span><span class="mut sm">{{m.line}}</span></span><span class="dim sm" style="white-space: nowrap">{{m.date}}</span></div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{dq.hasDraft}}" hint-placeholder-val="{{ true }}">
+            <div class="sb" style="flex-wrap: wrap; padding-top: 14px; border-top: 1px solid #EEF0F3"><h3 class="t">{{dq.kind}}</h3><span class="fx" style="gap: 6px; flex-wrap: wrap">
+              <sc-if value="{{dq.edited}}" hint-placeholder-val="{{ false }}"><span class="chip">Edited by you</span><button type="button" class="b bg xs" onClick="{{dq.restore}}">Restore the agent's draft</button></sc-if>
+              <span class="chip blue">{{dq.writer}}</span></span></div>
+            <dl class="kv" style="padding-bottom: 14px; border-bottom: 1px solid #EEF0F3">
+              <sc-for list="{{dq.head}}" as="f" hint-placeholder-count="3"><dt>{{f.k}}</dt><dd class="{{f.cls}}">{{f.v}}</dd></sc-for>
+            </dl>
+            <sc-if value="{{dq.reading}}" hint-placeholder-val="{{ true }}">
+              <div class="{{dq.bodyCls}}" onClick="{{dq.startEdit}}" title="{{dq.bodyTitle}}">
+                <sc-for list="{{dq.paras}}" as="pa" hint-placeholder-count="4"><p class="{{pa.cls}}" style="white-space: pre-line"><sc-for list="{{pa.segs}}" as="sg" hint-placeholder-count="1"><span class="{{sg.cls}}" title="{{sg.src}}">{{sg.t}}</span></sc-for></p></sc-for>
+              </div>
+              <sc-if value="{{dq.canEdit}}" hint-placeholder-val="{{ true }}"><div class="fx sm dim" style="flex-wrap: wrap"><button type="button" class="b bs xs" onClick="{{dq.startEdit}}">Edit</button>or click the text. Highlighted words come from a source; hover to see it.</div></sc-if>
+            </sc-if>
+            <sc-if value="{{dq.editing}}" hint-placeholder-val="{{ false }}">
+              <label class="fld">Text<textarea class="inp" rows="11" value="{{dq.text}}" onChange="{{dq.setText}}" style="font-size: 15px; line-height: 1.7"></textarea></label>
+              <div class="fx" style="flex-wrap: wrap"><button type="button" class="b bp" onClick="{{dq.save}}">Done editing</button><button type="button" class="b bg" onClick="{{dq.cancelEdit}}">Cancel</button><span class="grow"></span><span class="{{dq.textWordsCls}}">{{dq.textWords}}</span></div>
+            </sc-if>
+          </sc-if>
+
+          <sc-if value="{{dq.isEnded}}" hint-placeholder-val="{{ false }}">
+            <div class="col" style="gap: 4px; padding-top: 14px; border-top: 1px solid #EEF0F3"><h3 class="t">What happened</h3><p class="mut" style="max-width: 72ch">{{dq.endedText}}</p></div>
+          </sc-if>
+        </section>
+      </div>
+
+      <aside class="card side" aria-label="Check and decide" style="flex: 0 0 320px; gap: 14px">
+        <sc-if value="{{dq.hasDraft}}" hint-placeholder-val="{{ true }}">
+          <div class="sb"><h3 class="t">CGS email standard</h3><span class="fx" style="align-items: baseline; gap: 5px"><span class="num n3">{{dq.score}}</span><span class="dim sm">of 5</span></span></div>
+          <div class="list">
+            <sc-for list="{{dq.checks}}" as="ck" hint-placeholder-count="5">
+              <div class="li" style="padding: 6px 0"><span class="grow">{{ck.k}}</span><span class="{{ck.cls}}">{{ck.v}}</span></div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <div class="col rule" style="gap: 10px">
+          <div class="sb"><h3 class="t">Where this sits in the plan</h3><span class="dim sm">{{dq.planNote}}</span></div>
+          <ol class="rl">
+            <sc-for list="{{dq.steps}}" as="s" hint-placeholder-count="4">
+              <li class="{{s.li}}" style="padding-bottom: 12px"><span class="{{s.d}}" aria-hidden="true"></span><div><span class="{{s.subCls}}">{{s.sub}}</span><br><span class="{{s.tCls}}">{{s.t}}</span></div></li>
+            </sc-for>
+          </ol>
+          <span class="mut sm">{{dq.ifNoReply}}</span>
+        </div>
+
+        <sc-if value="{{dq.isIdle}}" hint-placeholder-val="{{ true }}">
+          <div class="col rule" style="gap: 8px">
+            <span class="mut sm">{{dq.approver}}</span>
+            <sc-for list="{{dq.actions}}" as="a" hint-placeholder-count="2"><button type="button" class="{{a.cls}}" onClick="{{a.go}}">{{a.label}}</button></sc-for>
+            <sc-if value="{{dq.hasMinor}}" hint-placeholder-val="{{ true }}"><div class="fx" style="justify-content: center; flex-wrap: wrap"><sc-for list="{{dq.minor}}" as="a" hint-placeholder-count="2"><button type="button" class="b bg xs" onClick="{{a.go}}">{{a.label}}</button></sc-for></div></sc-if>
+          </div>
+        </sc-if>
+        <sc-if value="{{dq.isForm}}" hint-placeholder-val="{{ false }}">
+          <div class="col rule" style="gap: 12px">
+            <sc-if value="{{dq.isRevise}}" hint-placeholder-val="{{ false }}">
+              <span class="lbl">Ask the agent for</span>
+              <div class="fx" style="flex-wrap: wrap"><sc-for list="{{dq.quick}}" as="a" hint-placeholder-count="3"><button type="button" class="b bs xs" onClick="{{a.go}}">{{a.label}}</button></sc-for></div>
+            </sc-if>
+            <label class="fld">{{dq.formLabel}}<textarea class="inp" rows="3" placeholder="{{dq.formHint}}" value="{{dq.note}}" onChange="{{dq.setNote}}"></textarea></label>
+            <div class="fx"><button type="button" class="b bp grow" onClick="{{dq.submit}}">{{dq.formGo}}</button><button type="button" class="b bg" onClick="{{dq.cancel}}">Cancel</button></div>
+          </div>
+        </sc-if>
+        <sc-if value="{{dq.settled}}" hint-placeholder-val="{{ false }}">
+          <div class="ok" role="status" style="flex-direction: column; align-items: flex-start"><span class="fx"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"></path></svg><span class="sbd">{{dq.doneLabel}}</span></span><span>{{dq.doneBody}}</span></div>
+          <button type="button" class="b bs" onClick="{{dq.undo}}">Undo</button>
+        </sc-if>
+      </aside>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isConvRev}}" hint-placeholder-val="{{ false }}">
+    <div class="row" style="align-items: flex-start" onKeyDown="{{cq.key}}">
+      <section class="card flat" aria-label="Conversations" style="flex: 0 0 248px">
+        <div style="padding: 12px 16px 8px" class="lbl">Conversations</div>
+        <div class="list">
+          <sc-for list="{{cq.list}}" as="q" hint-placeholder-count="3">
+            <button type="button" class="li" onClick="{{q.pick}}" aria-pressed="{{q.pressed}}" style="border: 0; border-top: 1px solid #EEF0F3; padding: 12px 16px; text-align: left; width: 100%; background-color: {{q.bg}}; box-shadow: {{q.mark}}"><span class="av" aria-hidden="true">{{q.mono}}</span><span class="grow" style="display: flex; flex-direction: column"><span class="sbd">{{q.name}}</span><span class="{{q.subCls}}">{{q.sub}}</span></span></button>
+          </sc-for>
+        </div>
+        <div class="fx sm dim" style="padding: 12px 16px; border-top: 1px solid #EEF0F3; gap: 6px; flex-wrap: wrap"><span class="keys">J</span><span class="keys">K</span>next conversation</div>
+      </section>
+
+      <div class="col" style="flex: 999 1 440px">
+        <section class="card" style="gap: 16px">
+          <div class="fx" style="gap: 14px; flex-wrap: wrap">
+            <span class="av lg k" aria-hidden="true">{{cq.mono}}</span>
+            <div class="grow col" style="gap: 2px; flex-basis: 240px"><h2 class="t2" style="font-size: 20px">{{cq.name}}</h2><span class="mut">{{cq.sub}}</span><span class="sm md" style="color: #101828; padding-top: 4px">{{cq.scoreLine}}</span></div>
+            <sc-if value="{{cq.hasRecord}}" hint-placeholder-val="{{ false }}"><a class="b bs xs" href="{{cq.recordHref}}">Open full record</a></sc-if>
+          </div>
+          <div class="col" style="gap: 8px; padding-top: 14px; border-top: 1px solid #EEF0F3">
+            <div class="sb" style="flex-wrap: wrap"><span class="lbl">{{cq.replyLabel}}</span><span class="dim sm">{{cq.replyWhen}}</span></div>
+            <div class="quote" style="font-size: 16px; line-height: 1.65; background: #FAFAFC"><sc-for list="{{cq.replySegs}}" as="sg" hint-placeholder-count="1"><span class="{{sg.cls}}">{{sg.t}}</span></sc-for></div>
+          </div>
+          <sc-if value="{{cq.idleNote}}" hint-placeholder-val="{{ true }}">
+            <div class="fx" style="flex-wrap: wrap"><span class="grow dim sm" style="flex-basis: 240px">Emails arrive from Gmail on their own. Calls and meetings need notes.</span><button type="button" class="b bs" onClick="{{cq.openNote}}"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>Add call notes</button></div>
+          </sc-if>
+          <sc-if value="{{cq.noting}}" hint-placeholder-val="{{ false }}">
+            <div class="col" style="gap: 10px; padding: 14px; border: 1px solid #E1E4EA; border-radius: 10px">
+              <label class="fld">Call notes. Use their own words where you can.<textarea class="inp" rows="3" placeholder="For example: “Let’s do a working session with our CFO on 12 November.”" value="{{cq.note}}" onChange="{{cq.setNote}}"></textarea></label>
+              <div class="fx" style="flex-wrap: wrap"><button type="button" class="b bp" onClick="{{cq.saveNote}}">Save notes</button><button type="button" class="b bg" onClick="{{cq.cancelNote}}">Cancel</button><span class="grow"></span><span class="dim sm">The Evidence agent reads them and proposes evidence on the right.</span></div>
+            </div>
+          </sc-if>
+          <div class="col" style="gap: 0">
+            <span class="lbl" style="padding-bottom: 4px">Earlier in this conversation</span>
+            <div class="list">
+              <sc-for list="{{cq.thread}}" as="m" hint-placeholder-count="3">
+                <div class="li" style="align-items: flex-start; padding: 10px 0"><span class="{{m.av}}" aria-hidden="true" style="width: 26px; height: 26px; font-size: 10px">{{m.mono}}</span><span class="grow col" style="gap: 1px"><span class="md">{{m.title}}</span><span class="mut sm">{{m.line}}</span></span><span class="dim sm" style="white-space: nowrap">{{m.date}}</span></div>
+              </sc-for>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <aside class="card side" aria-label="Handle the reply" style="flex: 0 0 372px; gap: 0; padding: 0">
+        <div class="col" style="gap: 8px; padding: 16px 18px">
+          <div class="sb"><h3 class="t">1. What the reply means</h3><span class="chip blue">Agent's reading</span></div>
+          <select class="inp" aria-label="What the reply means" value="{{cq.means}}" onChange="{{cq.setMeans}}"><option value="Wants to meet">Wants to meet</option><option value="Wants material">Wants material</option><option value="Asked a question">Asked a question</option><option value="Not now">Not now</option><option value="Not interested">Not interested</option></select>
+          <sc-if value="{{cq.isNotNow}}" hint-placeholder-val="{{ false }}">
+            <label class="fld">Check back on<input class="inp" type="text" value="{{cq.back}}" onChange="{{cq.setBack}}"></label>
+            <button type="button" class="b bp" onClick="{{cq.park}}">Park until then</button>
+          </sc-if>
+          <sc-if value="{{cq.isNo}}" hint-placeholder-val="{{ false }}">
+            <span class="mut sm">The contact plan stays stopped and the lead closes in Insightly.</span>
+            <button type="button" class="b bp" onClick="{{cq.aside}}">Set aside</button>
+          </sc-if>
+        </div>
+
+        <div class="col" style="gap: 4px; padding: 16px 18px; border-top: 1px solid #EEF0F3">
+          <div class="sb" style="padding-bottom: 4px"><h3 class="t">2. The six conditions</h3><span class="{{cq.metCls}}">{{cq.met}}</span></div>
+          <div class="list">
+            <sc-for list="{{cq.conds}}" as="cd" hint-placeholder-count="6">
+              <div class="li" onMouseEnter="{{cd.hov}}" onMouseLeave="{{cd.unhov}}" style="align-items: flex-start; flex-wrap: wrap; gap: 4px 10px; padding: 9px 0">
+                <span class="grow md" style="flex-basis: 180px">{{cd.name}}</span>
+                <span class="{{cd.chip}}">{{cd.label}}</span>
+                <sc-if value="{{cd.hasProof}}" hint-placeholder-val="{{ false }}"><span class="mut sm" style="flex-basis: 100%">{{cd.proof}}</span></sc-if>
+                <sc-if value="{{cd.canDecide}}" hint-placeholder-val="{{ false }}"><span class="fx" style="flex-basis: 100%"><button type="button" class="b bp xs" onClick="{{cd.ok}}">Confirm</button><button type="button" class="b bs xs" onClick="{{cd.no}}">Not quite</button></span></sc-if>
+                <sc-if value="{{cd.showWhy}}" hint-placeholder-val="{{ false }}"><span class="fx sm dim" style="flex-basis: 100%; flex-wrap: wrap">Why not?<sc-for list="{{cd.reasons}}" as="rs" hint-placeholder-count="3"><button type="button" class="b bs xs" onClick="{{rs.pick}}">{{rs.label}}</button></sc-for></span></sc-if>
+                <sc-if value="{{cd.canAsk}}" hint-placeholder-val="{{ false }}"><button type="button" class="tick" aria-pressed="{{cd.askPressed}}" onClick="{{cd.toggleAsk}}" style="padding: 6px 10px"><span class="bx" aria-hidden="true"><svg class="i" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"></path></svg></span><span class="sm">Ask about this in the reply</span></button></sc-if>
+                <sc-if value="{{cd.canUndo}}" hint-placeholder-val="{{ false }}"><button type="button" class="b bg xs" onClick="{{cd.undo}}">Undo</button></sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div class="col" style="gap: 10px; padding: 16px 18px; border-top: 1px solid #EEF0F3">
+          <sc-if value="{{cq.canReply}}" hint-placeholder-val="{{ true }}">
+            <div class="sb"><h3 class="t">3. Your reply</h3><span class="chip blue">Drafted by the Outreach agent</span></div>
+            <textarea class="inp" rows="9" aria-label="Your reply" value="{{cq.text}}" onChange="{{cq.setText}}" style="line-height: 1.6"></textarea>
+            <span class="dim sm">Goes from your Gmail as soon as you send. Replies in a live conversation need no second approval.</span>
+            <div class="fx" style="flex-wrap: wrap"><button type="button" class="b bp grow" onClick="{{cq.send}}">Send reply</button><button type="button" class="b bg" onClick="{{cq.redraft}}">Redraft</button></div>
+            <sc-if value="{{cq.ready}}" hint-placeholder-val="{{ false }}"><button type="button" class="b bs" onClick="{{cq.sendPack}}">All six confirmed. Send the pack for approval</button></sc-if>
+            <sc-if value="{{cq.canExc}}" hint-placeholder-val="{{ false }}"><button type="button" class="b bg" onClick="{{cq.openExc}}">{{cq.excLabel}}</button></sc-if>
+            <sc-if value="{{cq.excOpen}}" hint-placeholder-val="{{ false }}">
+              <div class="col" style="gap: 10px; padding: 12px 14px; border-radius: 10px; background: #FFFAF6; border: 1px solid #F1CDB8">
+                <span class="sbd">{{cq.excLabel}}</span>
+                <span class="mut sm">{{cq.excBody}}</span>
+                <label class="fld">Reason, one line (required)<input class="inp" type="text" maxlength="140" placeholder="Why this should go ahead now" value="{{cq.excWhy}}" onChange="{{cq.setExcWhy}}"></label>
+                <div class="fx" style="flex-wrap: wrap">
+                  <sc-if value="{{cq.excOk}}" hint-placeholder-val="{{ false }}"><button type="button" class="b bp" onClick="{{cq.sendExc}}">Send to Alex</button></sc-if>
+                  <sc-if value="{{cq.excNo}}" hint-placeholder-val="{{ true }}"><button type="button" class="b bp" disabled style="opacity: .45; cursor: not-allowed">Send to Alex</button></sc-if>
+                  <button type="button" class="b bg" onClick="{{cq.closeExc}}">Cancel</button>
+                </div>
+              </div>
+            </sc-if>
+          </sc-if>
+          <sc-if value="{{cq.notMine}}" hint-placeholder-val="{{ false }}">
+            <h3 class="t">3. The reply</h3>
+            <span class="mut">{{cq.notMineText}}</span>
+          </sc-if>
+          <sc-if value="{{cq.settled}}" hint-placeholder-val="{{ false }}">
+            <div class="ok" role="status" style="flex-direction: column; align-items: flex-start"><span class="fx"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"></path></svg><span class="sbd">{{cq.doneLabel}}</span></span><span>{{cq.doneBody}}</span></div>
+            <button type="button" class="b bs" onClick="{{cq.undo}}">Undo</button>
+          </sc-if>
+        </div>
+      </aside>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isPack}}" hint-placeholder-val="{{ false }}">
+    <div class="row" style="align-items: flex-start">
+      <section class="card flat" aria-label="Packs to approve" style="flex: 0 0 248px">
+        <div style="padding: 12px 16px 8px" class="lbl">Packs to approve</div>
+        <div class="list">
+          <button type="button" class="li" aria-pressed="true" style="border: 0; border-top: 1px solid #EEF0F3; padding: 12px 16px; text-align: left; width: 100%; background-color: #F5F4FE; box-shadow: inset 3px 0 0 #5B4FE0"><span class="av" aria-hidden="true">NH</span><span class="grow" style="display: flex; flex-direction: column"><span class="sbd">Northstar Health</span><span class="{{pk.subCls}}">{{pk.sub}}</span></span></button>
+        </div>
+        <p class="dim sm" style="padding: 12px 16px; border-top: 1px solid #EEF0F3">One pack is waiting. New ones appear here when an owner confirms all six conditions.</p>
+      </section>
+
+      <div class="col" style="flex: 999 1 460px">
+        <section class="card" style="gap: 16px">
+          <div class="fx" style="gap: 14px; flex-wrap: wrap">
+            <span class="av lg k" aria-hidden="true">NH</span>
+            <div class="grow col" style="gap: 2px; flex-basis: 240px"><h2 class="t2" style="font-size: 20px">Northstar Health</h2><span class="mut">Healthcare, Cincinnati, Ohio. Sent for approval by Alex Morgan on 23 Oct.</span></div>
+            <a class="b bs xs" href="Record-northstar.dc.html">Open full record</a>
+          </div>
+          <div class="vs">
+            <div><span class="lbl">Conditions</span><span class="sbd">6 of 6 met</span><span class="dim sm">Nothing missing</span></div>
+            <div><span class="lbl">Service</span><span class="sbd">Operating model redesign</span><span class="dim sm">CGS service list</span></div>
+            <div><span class="lbl">Revenue estimate</span><span class="sbd c-org">Changed 24 Oct</span><span class="dim sm">The amount stays in Insightly</span></div>
+            <div><span class="lbl">Next step</span><span class="sbd">Working session, 3 Nov</span><span class="dim sm">COO and CFO</span></div>
+          </div>
+        </section>
+        <section class="card warn" style="gap: 6px">
+          <div class="fx" style="align-items: flex-start; gap: 12px; flex-wrap: wrap"><svg class="i c-org" aria-hidden="true" viewBox="0 0 24 24" style="margin-top: 2px"><path d="M12 8v5M12 16.5v.5M10.3 3.9L2.6 17.5A2 2 0 004.3 20.5h15.4a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"></path></svg>
+            <div class="grow col" style="gap: 2px; flex-basis: 260px"><span class="sbd">Changed since Alex sent it: 1 thing</span><span class="mut">Alex changed the revenue estimate in Insightly on 24 Oct at 10:15, a day after sending. The amount is not shown here. Nothing else changed.</span></div><a class="b bs xs" href="#">See the estimate in Insightly</a></div>
+        </section>
+        <section class="card" style="gap: 6px">
+          <div class="sb" style="padding-bottom: 6px; flex-wrap: wrap"><h3 class="t">The six conditions</h3><span class="c-grn md">6 of 6 confirmed</span></div>
+          <div class="list">
+            <sc-for list="{{pk.conds}}" as="cd" hint-placeholder-count="6">
+              <div class="li" style="flex-wrap: wrap; align-items: flex-start; gap: 4px 20px">
+                <span class="sbd" style="flex: 1 1 190px">{{cd.name}}</span>
+                <span class="col" style="flex: 2 1 300px; gap: 2px; min-width: 0"><span class="mut">{{cd.proof}}</span><span class="dim sm">{{cd.src}}</span></span>
+                <span class="chip grn">{{cd.by}}</span>
+              </div>
+            </sc-for>
+          </div>
+          <span class="dim sm rule">Every piece of evidence links to an email, a call note or a document. Agents propose; a person confirms.</span>
+        </section>
+      </div>
+
+      <aside class="card side" aria-label="Your decision" style="flex: 0 0 320px; gap: 14px">
+        <h3 class="t">Your decision</h3>
+        <span class="mut sm">Approving creates the opportunity in Insightly with the figures as they stand there now, including the changed revenue estimate.</span>
+        <sc-if value="{{pk.isIdle}}" hint-placeholder-val="{{ true }}">
+          <div class="col" style="gap: 8px">
+            <button type="button" class="b bp" onClick="{{pk.approve}}">Approve with the new estimate</button>
+            <button type="button" class="b bs" onClick="{{pk.resubmit}}">Ask Alex to resubmit</button>
+            <button type="button" class="b bs" onClick="{{pk.toComment}}">Return with a comment</button>
+          </div>
+        </sc-if>
+        <sc-if value="{{pk.isForm}}" hint-placeholder-val="{{ false }}">
+          <div class="col" style="gap: 12px">
+            <label class="fld">Comment for Alex Morgan<textarea class="inp" rows="3" placeholder="What needs to change before you can approve" value="{{pk.comment}}" onChange="{{pk.setComment}}"></textarea></label>
+            <div class="fx"><button type="button" class="b bp grow" onClick="{{pk.send}}">Return to Alex</button><button type="button" class="b bg" onClick="{{pk.cancel}}">Cancel</button></div>
+          </div>
+        </sc-if>
+        <sc-if value="{{pk.settled}}" hint-placeholder-val="{{ false }}">
+          <div class="ok" role="status" style="flex-direction: column; align-items: flex-start"><span class="fx"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"></path></svg><span class="sbd">{{pk.doneLabel}}</span></span><span>{{pk.doneBody}}</span></div>
+          <button type="button" class="b bs" onClick="{{pk.undo}}">Undo</button>
+        </sc-if>
+      </aside>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isReview}}" hint-placeholder-val="{{ true }}">
+    <div class="row" style="align-items: flex-start" onKeyDown="{{rv.key}}">
+      <section class="card flat" aria-label="Briefs to decide" style="flex: 0 0 236px">
+        <div style="padding: 12px 16px 8px" class="lbl">Ready to decide</div>
+        <div class="list">
+          <sc-for list="{{queue}}" as="q" hint-placeholder-count="2">
+            <button type="button" class="li" onClick="{{q.pick}}" aria-pressed="{{q.pressed}}" style="border: 0; border-top: 1px solid #EEF0F3; padding: 12px 16px; text-align: left; width: 100%; background-color: {{q.bg}}; box-shadow: {{q.mark}}"><span class="av" aria-hidden="true">{{q.mono}}</span><span class="grow" style="display: flex; flex-direction: column"><span class="sbd">{{q.name}}</span><span class="{{q.subCls}}">{{q.sub}}</span></span></button>
+          </sc-for>
+        </div>
+        <div class="fx sm dim" style="padding: 12px 16px; border-top: 1px solid #EEF0F3; gap: 6px; flex-wrap: wrap"><span class="keys">J</span><span class="keys">K</span>next brief</div>
+      </section>
+
+      <div class="col" style="flex: 999 1 560px">
+        <div class="fx sm" style="gap: 8px; align-items: flex-start"><svg class="i s" aria-hidden="true" viewBox="0 0 24 24" style="flex: none; margin-top: 2px; color: #667085"><path d="M12 7v5l3 2M3 12a9 9 0 1018 0 9 9 0 10-18 0"></path></svg><span class="mut"><span class="sbd" style="color: #101828">What changed since last time.</span> {{rv.changed}}</span></div>
+
+        <section class="card" aria-label="Your decision" style="gap: 16px">
+          <div class="fx" style="gap: 14px; flex-wrap: wrap">
+            <span class="av lg k" aria-hidden="true">{{rv.mono}}</span>
+            <div class="grow col" style="gap: 2px; flex-basis: 240px"><h2 class="t2" style="font-size: 20px">{{rv.name}}</h2><span class="mut">{{rv.sub}}</span></div>
+            <a class="b bg xs" href="#">{{rv.domain}}</a>
+          </div>
+
+          <div class="fx" style="flex-wrap: wrap; align-items: flex-start; gap: 16px 28px; padding: 16px 18px; border-radius: 10px; background: #FBFAFF; border: 1px solid #D5CEFA">
+            <div class="grow col" style="gap: 6px; flex-basis: 340px">
+              <span class="lbl" style="color: #4338B0">Research agent suggests</span>
+              <span class="sbd" style="font-size: 17px; line-height: 1.3">{{rv.recTitle}}</span>
+              <span class="mut" style="max-width: 64ch">{{rv.recBody}}</span>
+              <div class="fx" style="flex-wrap: wrap; gap: 6px; padding-top: 6px"><span class="chip">Confidence: {{rv.conf}}</span><span class="chip">{{rv.metText}}</span><span class="chip org">{{rv.issues}}</span></div>
+              <span class="dim sm">Missing: {{rv.missing}}</span>
+            </div>
+
+            <sc-if value="{{rv.isIdle}}" hint-placeholder-val="{{ true }}">
+              <div class="col" style="gap: 8px; flex: 0 1 264px">
+                <button type="button" class="{{rv.acceptCls}}" onClick="{{rv.toAccept}}" style="justify-content: space-between">Accept and plan contact<span class="keys">A</span></button>
+                <button type="button" class="{{rv.backCls}}" onClick="{{rv.toBack}}" style="justify-content: space-between">{{rv.backLabel}}<span class="keys">S</span></button>
+                <button type="button" class="{{rv.rejectCls}}" onClick="{{rv.toReject}}" style="justify-content: space-between">Reject<span class="keys">R</span></button>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{rv.isAccept}}" hint-placeholder-val="{{ false }}">
+              <div class="col" style="flex: 1 1 100%; gap: 12px; padding-top: 14px; border-top: 1px solid #E4DFFB">
+                <div class="fx" style="flex-wrap: wrap; align-items: flex-end; gap: 12px">
+                  <label class="fld" style="flex: 1 1 180px">Owner<select class="inp" value="{{rv.owner}}" onChange="{{rv.setOwner}}"><option value="Quinn Harper">Quinn Harper (you)</option><option value="Alex Morgan">Alex Morgan</option><option value="Sam Reyes">Sam Reyes</option></select></label>
+                  <label class="fld" style="flex: 0 1 140px">Rating<select class="inp" value="{{rv.rating}}" onChange="{{rv.setRating}}"><option value="High">High</option><option value="Medium">Medium</option><option value="Low">Low</option></select></label>
+                  <label class="fld" style="flex: 3 1 280px">Next step<input class="inp" type="text" value="{{rv.next}}" onChange="{{rv.setNext}}"></label>
+                </div>
+                <button type="button" class="tick" aria-pressed="{{rv.dupPressed}}" onClick="{{rv.toggleDup}}"><span class="bx" aria-hidden="true"><svg class="i" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"></path></svg></span><span class="sm">I know of no CGS relationship with this company that the checks could miss</span></button>
+                <div class="fx" style="flex-wrap: wrap"><button type="button" class="b bp" onClick="{{rv.confirmAccept}}">Accept</button><button type="button" class="b bg" onClick="{{rv.cancel}}">Cancel</button><span class="dim sm grow" style="flex-basis: 260px">Creates the lead in Insightly as Identified. The Outreach agent drafts the first email for the owner to approve.</span></div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{rv.isBack}}" hint-placeholder-val="{{ false }}">
+              <div class="col" style="flex: 1 1 100%; gap: 12px; padding-top: 14px; border-top: 1px solid #E4DFFB">
+                <span class="md">{{rv.backSummary}}</span>
+                <label class="fld" style="max-width: 640px">Anything else to look into<textarea class="inp" rows="2" placeholder="Optional" value="{{rv.note}}" onChange="{{rv.setNote}}"></textarea></label>
+                <div class="fx" style="flex-wrap: wrap"><button type="button" class="b bp" onClick="{{rv.confirmBack}}">Send back</button><button type="button" class="b bg" onClick="{{rv.cancel}}">Cancel</button><span class="dim sm grow" style="flex-basis: 260px">The Research agent updates the brief, usually within a day, and it returns here.</span></div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{rv.isReject}}" hint-placeholder-val="{{ false }}">
+              <div class="col" style="flex: 1 1 100%; gap: 12px; padding-top: 14px; border-top: 1px solid #E4DFFB">
+                <label class="fld" style="max-width: 360px">Reason<select class="inp" value="{{rv.reason}}" onChange="{{rv.setReason}}"><option value="Not a fit for CGS services">Not a fit for CGS services</option><option value="Evidence is too thin">Evidence is too thin</option><option value="Wrong timing">Wrong timing</option><option value="Someone at CGS already owns it">Someone at CGS already owns it</option><option value="Duplicate">Duplicate</option><option value="Other">Other</option></select></label>
+                <span class="lbl">This applies to</span>
+                <div class="fx" style="flex-wrap: wrap; align-items: stretch; gap: 8px">
+                  <button type="button" class="tick" aria-pressed="{{rv.scopeOne}}" onClick="{{rv.setScopeOne}}" style="flex: 1 1 260px"><span class="bx" aria-hidden="true" style="border-radius: 50%"><svg class="i" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"></path></svg></span><span class="col" style="gap: 1px"><span class="md">Just this company</span><span class="dim sm">It moves to Set aside.</span></span></button>
+                  <button type="button" class="tick" aria-pressed="{{rv.scopeKind}}" onClick="{{rv.setScopeKind}}" style="flex: 1 1 260px"><span class="bx" aria-hidden="true" style="border-radius: 50%"><svg class="i" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"></path></svg></span><span class="col" style="gap: 1px"><span class="md">Companies like this</span><span class="dim sm">The Direction agent proposes a change to the search for you to approve.</span></span></button>
+                </div>
+                <div class="fx"><button type="button" class="b bp" onClick="{{rv.confirmReject}}">Reject</button><button type="button" class="b bg" onClick="{{rv.cancel}}">Cancel</button></div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{rv.settled}}" hint-placeholder-val="{{ false }}">
+              <div class="col" style="flex: 1 1 100%; gap: 10px; padding-top: 14px; border-top: 1px solid #E4DFFB">
+                <div class="ok" role="status" style="flex-direction: column; align-items: flex-start"><span class="fx"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"></path></svg><span class="sbd">{{rv.doneLabel}}</span></span><span>{{rv.doneBody}}</span></div>
+                <div class="fx"><button type="button" class="b bp" onClick="{{rv.nextBrief}}">Next brief</button><button type="button" class="b bs" onClick="{{rv.undo}}">Undo</button></div>
+              </div>
+            </sc-if>
+          </div>
+        </section>
+
+        <div class="sb" style="flex-wrap: wrap; padding: 4px 2px 0"><span class="lbl">The evidence behind it</span><button type="button" class="b bg xs" onClick="{{rv.toggleAll}}">{{rv.allLabel}}</button></div>
+
+        <section class="card flat">
+          <button type="button" class="fold" aria-expanded="{{rv.f.unknowns.exp}}" onClick="{{rv.f.unknowns.toggle}}"><svg class="i s chev" aria-hidden="true" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></svg><span class="t">What we don't know</span><span class="grow"></span><span class="{{rv.f.unknowns.sumCls}}">{{rv.f.unknowns.sum}}</span></button>
+          <sc-if value="{{rv.f.unknowns.open}}" hint-placeholder-val="{{ false }}">
+            <div class="col" style="gap: 14px; padding: 2px 20px 18px">
+              <span class="dim sm">Tick the ones you want answered. They go with Send back.</span>
+              <div class="col" style="gap: 8px">
+                <sc-for list="{{rv.unknowns}}" as="u" hint-placeholder-count="3">
+                  <button type="button" class="tick" aria-pressed="{{u.pressed}}" onClick="{{u.toggle}}"><span class="bx" aria-hidden="true"><svg class="i" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"></path></svg></span><span>{{u.q}}</span></button>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+        </section>
+        <section class="card flat">
+          <button type="button" class="fold" aria-expanded="{{rv.f.case.exp}}" onClick="{{rv.f.case.toggle}}"><svg class="i s chev" aria-hidden="true" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></svg><span class="t">The case</span><span class="grow"></span><span class="{{rv.f.case.sumCls}}">{{rv.f.case.sum}}</span></button>
+          <sc-if value="{{rv.f.case.open}}" hint-placeholder-val="{{ false }}">
+            <div class="col" style="gap: 14px; padding: 2px 20px 18px">
+              <div class="col" style="gap: 4px"><span class="lbl">The problem they may have</span><p style="max-width: 72ch">{{rv.problem}}</p></div>
+              <div class="col" style="gap: 4px"><span class="lbl">Why CGS</span><p style="max-width: 72ch">{{rv.why}}</p></div>
+              <div class="col" style="gap: 4px; padding: 12px 14px; border-radius: 10px; background: #FFFAF6; border: 1px solid #F1CDB8"><span class="lbl" style="color: #A8390F">Why this may be nothing</span><p style="max-width: 72ch">{{rv.alt}}</p></div>
+            </div>
+          </sc-if>
+        </section>
+        <section class="card flat">
+          <button type="button" class="fold" aria-expanded="{{rv.f.ev.exp}}" onClick="{{rv.f.ev.toggle}}"><svg class="i s chev" aria-hidden="true" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></svg><span class="t">Sources and quotes</span><span class="grow"></span><span class="{{rv.f.ev.sumCls}}">{{rv.f.ev.sum}}</span></button>
+          <sc-if value="{{rv.f.ev.open}}" hint-placeholder-val="{{ false }}">
+            <div class="col" style="gap: 14px; padding: 2px 20px 18px">
+              <div class="col" style="gap: 4px">
+                <sc-for list="{{rv.groups}}" as="g" hint-placeholder-count="3">
+                  <span class="lbl" style="padding-top: 6px">{{g.cat}}</span>
+                  <sc-for list="{{g.items}}" as="e" hint-placeholder-count="2">
+                    <div class="ev">
+                      <div class="fx" style="align-items: flex-start; gap: 12px"><span class="grow md">{{e.fact}}</span><sc-if value="{{e.hasFlag}}" hint-placeholder-val="{{ false }}"><span class="chip org">{{e.flag}}</span></sc-if></div>
+                      <div class="quote">{{e.quote}}</div>
+                      <span class="dim sm">{{e.src}}, {{e.date}}</span>
+                    </div>
+                  </sc-for>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+        </section>
+        <section class="card flat">
+          <button type="button" class="fold" aria-expanded="{{rv.f.people.exp}}" onClick="{{rv.f.people.toggle}}"><svg class="i s chev" aria-hidden="true" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></svg><span class="t">Who to contact, and checks</span><span class="grow"></span><span class="{{rv.f.people.sumCls}}">{{rv.f.people.sum}}</span></button>
+          <sc-if value="{{rv.f.people.open}}" hint-placeholder-val="{{ false }}">
+            <div class="col" style="gap: 14px; padding: 2px 20px 18px">
+              <div class="row" style="align-items: flex-start">
+                <div class="col" style="flex: 1 1 300px; gap: 6px">
+                  <span class="lbl">Who to contact</span>
+                  <div class="list">
+                    <sc-for list="{{rv.people}}" as="pp" hint-placeholder-count="1">
+                      <div class="li" style="align-items: flex-start"><span class="av r" aria-hidden="true">{{pp.mono}}</span><span class="grow col" style="gap: 2px"><span class="sbd">{{pp.name}}</span><span class="mut">{{pp.role}}</span><span class="dim sm">{{pp.asOf}}</span></span><span class="{{pp.chip}}">{{pp.flag}}</span></div>
+                    </sc-for>
+                  </div>
+                  <span class="dim sm">{{rv.peopleNote}}</span>
+                </div>
+                <div class="col" style="flex: 1 1 300px; gap: 6px">
+                  <span class="lbl">Checks</span>
+                  <div class="list">
+                    <sc-for list="{{rv.checks}}" as="ck" hint-placeholder-count="3">
+                      <div class="li" style="align-items: flex-start"><span class="grow col" style="gap: 2px"><span class="md">{{ck.k}}</span><span class="dim sm">{{ck.v}}</span></span><span class="{{ck.chip}}">{{ck.right}}</span></div>
+                    </sc-for>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+        </section>
+        <section class="card flat">
+          <button type="button" class="fold" aria-expanded="{{rv.f.prio.exp}}" onClick="{{rv.f.prio.toggle}}"><svg class="i s chev" aria-hidden="true" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></svg><span class="t">Priority conditions</span><span class="grow"></span><span class="{{rv.f.prio.sumCls}}">{{rv.f.prio.sum}}</span></button>
+          <sc-if value="{{rv.f.prio.open}}" hint-placeholder-val="{{ false }}">
+            <div class="col" style="gap: 14px; padding: 2px 20px 18px">
+              <div class="list">
+                <sc-for list="{{rv.comps}}" as="cp" hint-placeholder-count="6">
+                  <div class="li" style="flex-wrap: wrap; gap: 4px 16px"><span class="md" style="flex: 0 0 170px">{{cp.k}}</span><span class="mut grow" style="flex-basis: 240px">{{cp.reason}}</span><span class="{{cp.chip}}">{{cp.v}}</span></div>
+                </sc-for>
+              </div>
+              <span class="dim sm">Set by rules. No AI sets it, and there is no single number: a condition is met or it is missing.</span>
+            </div>
+          </sc-if>
+        </section>
+      </div>
+    </div>
+  </sc-if>
+</main>
+
+<sc-if value="{{panelOpen}}" hint-placeholder-val="{{ false }}">
+  <button type="button" class="scrim" onClick="{{close}}" aria-label="Close panel"></button>
+  <sc-if value="{{isSide}}" hint-placeholder-val="{{ true }}">
+    <aside class="drawer narrow" aria-label="{{p.name}}" onKeyDown="{{panelKey}}">
+      <header class="ph">
+        <div class="fx" style="gap: 12px">
+          <button type="button" class="b bs bi" onClick="{{close}}" aria-label="Close panel" title="Close"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+          <span class="av" aria-hidden="true">{{p.mono}}</span>
+          <div class="grow col" style="gap: 1px"><h2 class="t2">{{p.name}}</h2><span class="mut sm">{{p.sub}}</span></div>
+          <button type="button" class="b bg bi" onClick="{{prev}}" aria-label="Previous company" title="Previous (K)"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"></path></svg></button>
+          <button type="button" class="b bg bi" onClick="{{next}}" aria-label="Next company" title="Next (J)"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"></path></svg></button>
+        </div>
+        <div class="fx" style="gap: 10px; flex-wrap: wrap"><span class="{{p.stageChip}}">{{p.stageLabel}}</span><span class="dim sm">{{p.owner}}</span><span class="grow"></span><span class="dim sm tn">{{p.pos}}</span><sc-if value="{{p.hasRecord}}" hint-placeholder-val="{{ false }}"><a class="b bs xs" href="{{p.recordHref}}">Open full record</a></sc-if></div>
+      </header>
+      <div class="pb">
+        <sc-for list="{{p.blocks}}" as="bk" hint-placeholder-count="2">
+          <section class="{{bk.cardCls}}" style="gap: 12px">
+            <div class="sb" style="flex-wrap: wrap"><h3 class="t">{{bk.title}}</h3><span class="{{bk.asideCls}}">{{bk.aside}}</span></div>
+            <sc-if value="{{bk.isText}}" hint-placeholder-val="{{ false }}"><p class="mut" style="max-width: 62ch">{{bk.text}}</p></sc-if>
+            <sc-if value="{{bk.isQuote}}" hint-placeholder-val="{{ false }}"><div class="quote">{{bk.text}}</div><span class="dim sm">{{bk.sub}}</span></sc-if>
+            <sc-if value="{{bk.isKv}}" hint-placeholder-val="{{ false }}"><dl class="kv"><sc-for list="{{bk.items}}" as="f" hint-placeholder-count="3"><dt>{{f.k}}</dt><dd>{{f.v}}</dd></sc-for></dl></sc-if>
+            <sc-if value="{{bk.isList}}" hint-placeholder-val="{{ true }}"><div class="list"><sc-for list="{{bk.items}}" as="it" hint-placeholder-count="3"><div class="li" style="align-items: flex-start"><span class="grow col" style="gap: 2px"><span class="md">{{it.t}}</span><span class="dim sm">{{it.sub}}</span></span><span class="{{it.chip}}">{{it.right}}</span></div></sc-for></div></sc-if>
+            <sc-if value="{{bk.isConds}}" hint-placeholder-val="{{ false }}"><div class="list"><sc-for list="{{bk.items}}" as="cd" hint-placeholder-count="6">
+              <div class="li" style="align-items: flex-start; flex-wrap: wrap; gap: 6px 12px">
+                <span class="grow col" style="gap: 3px; flex-basis: 280px"><span class="md">{{cd.name}}</span><span class="{{cd.proofCls}}">{{cd.proof}}</span><span class="dim sm">{{cd.src}}</span></span>
+                <span class="{{cd.chip}}">{{cd.label}}</span>
+                <sc-if value="{{cd.canDecide}}" hint-placeholder-val="{{ false }}"><span class="fx" style="flex-basis: 100%"><button type="button" class="b bp xs" onClick="{{cd.ok}}">Confirm</button><button type="button" class="b bs xs" onClick="{{cd.no}}">Not quite</button></span></sc-if>
+                <sc-if value="{{cd.canUndo}}" hint-placeholder-val="{{ false }}"><span class="fx" style="flex-basis: 100%"><button type="button" class="b bg xs" onClick="{{cd.undo}}">Undo</button></span></sc-if>
+              </div>
+            </sc-for></div></sc-if>
+            <sc-if value="{{bk.isSteps}}" hint-placeholder-val="{{ false }}"><ol class="rl"><sc-for list="{{bk.items}}" as="s" hint-placeholder-count="4"><li class="{{s.li}}"><span class="{{s.d}}" aria-hidden="true"></span><div><span class="{{s.subCls}}">{{s.sub}}</span><br><span class="{{s.tCls}}">{{s.t}}</span></div></li></sc-for></ol></sc-if>
+          </section>
+        </sc-for>
+      </div>
+      <footer class="pf">
+        <sc-if value="{{p.pending}}" hint-placeholder-val="{{ true }}">
+          <div class="fx" style="flex-wrap: wrap">
+            <sc-if value="{{p.hasPrimary}}" hint-placeholder-val="{{ true }}"><button type="button" class="b bp" onClick="{{p.doPrimary}}">{{p.primary}}</button></sc-if>
+            <sc-if value="{{p.hasSecondary}}" hint-placeholder-val="{{ true }}"><button type="button" class="b bs" onClick="{{p.doSecondary}}">{{p.secondary}}</button></sc-if>
+            <sc-if value="{{p.hasTertiary}}" hint-placeholder-val="{{ false }}"><button type="button" class="b bg" onClick="{{p.doTertiary}}">{{p.tertiary}}</button></sc-if>
+            <span class="grow"></span>
+            <span class="dim sm">{{p.hint}}</span>
+          </div>
+        </sc-if>
+        <sc-if value="{{p.settled}}" hint-placeholder-val="{{ false }}">
+          <div class="ok" role="status" style="padding: 8px 8px 8px 12px"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"></path></svg><span class="grow" style="flex-basis: 260px"><span class="sbd">{{p.doneLabel}}.</span> {{p.doneBody}}</span><button type="button" class="b bs" onClick="{{p.undo}}">Undo</button></div>
+        </sc-if>
+      </footer>
+    </aside>
+  </sc-if>
+</sc-if>
+
+<sc-if value="{{hasToast}}" hint-placeholder-val="{{ false }}">
+  <div class="toast" role="status"><svg class="i" aria-hidden="true" viewBox="0 0 24 24" style="color: #8FE0B5"><path d="M5 12l5 5 9-10"></path></svg><span><span class="sbd">{{toast.label}}</span><span style="color: #B6BECC">, {{toast.title}}</span></span><button type="button" class="b bw" onClick="{{undoToast}}">Undo</button></div>
+</sc-if>
+
+<div class="act"><dc-import name="Activity" start-open="{{ false }}" hint-size="130px,40px"></dc-import></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"view":{"editor":"enum","options":["companies","outreach","qualification"],"default":"companies"},"stage":{"editor":null},"issue":{"editor":"enum","options":["none","budget","gmail","research"],"default":"none"},"open":{"editor":null},"$preview":{"width":1440,"height":1040}}'>
+class Component extends DCLogic {
+renderVals() {
+  const st = this.state || {};
+  const self = this;
+  const view = this.props.view || 'companies';
+  const VIEWS = {
+    companies: { title: 'Companies', sub: 'Pick candidates, watch the research, and decide on each brief.', stages: ['found', 'research', 'decision', 'accepted', 'aside'], def: 'decision' },
+    outreach: { title: 'Outreach', sub: 'Contact plans before the first reply. Plan emails need two approvals. In Insightly a lead is Identified until its first email goes out, then Contacted.', stages: ['o-you', 'o-mate', 'o-agent', 'o-wait'], def: 'o-you' },
+    qualification: { title: 'Qualification', sub: 'Client replies, evidence for the six conditions, and the pack a partner approves.', stages: ['conv', 'qual', 'won', 'parked'], def: 'qual' }
+  };
+  const V = VIEWS[view];
+  const wanted = st.stage || this.props.stage;
+  const stage = V.stages.indexOf(wanted) >= 0 ? wanted : V.def;
+  const issue = ['budget', 'gmail', 'research'].indexOf(this.props.issue) >= 0 ? this.props.issue : 'none';
+  const acted = st.acted || {};
+  const checked = st.checked || {};
+  const who = st.who || (view === 'outreach' && issue !== 'gmail' ? 'mine' : 'team');
+  const evAll = st.ev || {};
+  const ME = 'QH';
+  const people = { QH: 'Quinn Harper', AM: 'Alex Morgan', SR: 'Sam Reyes' };
+  const toastFor = (label, title, ids) => {
+    self.setState({ toast: { label, title, ids } });
+    clearTimeout(self._t);
+    self._t = setTimeout(() => { if ((self.state || {}).toast) self.setState({ toast: null }); }, 6000);
+  };
+
+  const COLORS = { you: '#D9622B', agent: '#5B4FE0', done: '#17663F', none: '#C8CDD6' };
+  const S = {
+    found: { label: 'Found', crm: 'Not in Insightly', who: 'you', note: 'The Discovery agent found these. Tick the ones worth a research brief.' },
+    research: { label: 'Researching', crm: 'Not in Insightly', who: 'agent', note: 'The Research agent is writing briefs. Each one moves to Your decision when it is ready.' },
+    decision: { label: 'Your decision', crm: 'Lead created on Accept', who: 'you', note: '' },
+    accepted: { label: 'Identified', crm: 'Accepted, lead in Insightly', who: 'done', note: 'Accepted leads and where each one is now.', scoped: true },
+    aside: { label: 'Set aside', crm: 'Not in Insightly', who: 'none', note: 'Companies set aside by you or an agent, with the reason. You can bring any of them back.' },
+    'o-you': { label: 'Needs you', who: 'you', crm: 'Review, approve or decide', note: '' },
+    'o-mate': { label: 'With a teammate', who: 'none', crm: 'A colleague has the next move', note: 'Waiting on a colleague: the owner still has to review the draft, or the second approver has it.', scoped: true },
+    'o-agent': { label: 'Agent drafting', who: 'agent', crm: 'Drafted the day before it is due', note: 'Nothing to do yet. The Outreach agent drafts each step the day before it is due, then it comes to Needs you.', scoped: true },
+    'o-wait': { label: 'Waiting for a reply', who: 'none', crm: 'The client has the next move', note: 'Sent and waiting. A plan stops the moment the client replies, and the company moves to Qualification.', scoped: true },
+    parked: { label: 'Parked', who: 'none', crm: 'Stays Active in Insightly', note: 'The client said not now. Each one returns to Active on its date, with a reminder to the owner.', scoped: true },
+    conv: { label: 'Active', crm: 'In conversation with the client', who: 'you', note: 'The client replied. The Evidence agent reads each reply and proposes evidence. Nothing counts until a person confirms it.', scoped: true },
+    qual: { label: 'Awaiting approval', crm: 'Insightly: Qualification', who: 'you', note: 'All six conditions are confirmed. Open a company to approve its pack. Approving creates the opportunity in Insightly.', scoped: true },
+    won: { label: 'Qualified', crm: 'Insightly: Opportunity', who: 'done', note: 'Opportunities created in Insightly this quarter. They are managed there from here on.', scoped: true }
+  };
+
+  const CONDS = ['A specific client problem', 'Fits a CGS service', 'Open to outside help', 'An agreed next step', 'Funding and a path to the decision', 'No open conflicts'];
+  const outreach = [
+    ['kessler', 'KI', 'Kessler Industrial', 'Industrial equipment, Dayton, Ohio', 'Dana Whitfield, VP Operations', 'Email Dana Whitfield', 'Today', 3, 12, 'Waiting on Alex', 'other', 'QH', ['Remind Alex', 'Reminder sent to Alex', 'He gets a nudge in his Inbox.'], null, 'Outreach.dc.html', ''],
+    ['halvorsen', 'HP', 'Halvorsen Plastics', 'Plastics, Fort Wayne, Indiana', 'Mia Larsen, COO', 'Review the first email', 'Today', 0, 10, 'Draft ready for you', 'you', 'QH', ['Send to Alex for approval', 'Sent to Alex for approval', 'It goes out from your Gmail once he approves.'], ['Ask the agent to revise', 'Sent back to the Outreach agent', 'A new draft comes to your Inbox.'], null, 'Hi Mia, I read that Halvorsen is adding a third molding line in the spring. Teams growing that quickly often find planning decisions stuck between sites. Would a short call next week be useful?'],
+    ['redfern', 'RC', 'Redfern Cold Storage', 'Cold storage, Indianapolis, Indiana', 'Luis Ortega, VP Operations', 'LinkedIn connection note', '2 days late', 7, 12, 'Overdue, with Sam', 'you', 'SR', ['Mark as sent', 'Marked as sent', 'Day 12 is next: share the white paper.'], ['Copy the note', 'Note copied', 'Paste it into LinkedIn, then mark it as sent.'], null, 'Luis, we met briefly at the Midwest Cold Chain forum. I would be glad to stay in touch as the Indianapolis consolidation moves ahead.'],
+    ['corbel', 'CA', 'Corbel Aerospace Parts', 'Aerospace parts, Wichita, Kansas', 'Grace Okafor, Head of Planning', 'Share the white paper', 'Wed', 12, 14, 'Agent drafts Tue', 'plan', 'AM', ['Draft it now', 'Drafting now', 'The draft comes to Alex’s Inbox in a few minutes.'], null, null, ''],
+    ['lindqvist', 'LQ', 'Lindqvist Pumps', 'Pumps, Rockford, Illinois', 'Erik Lindqvist, CEO', 'Follow-up email', 'Thu', 5, 12, 'Agent drafts Wed', 'plan', 'QH', ['Draft it now', 'Drafting now', 'The draft comes to your Inbox in a few minutes.'], null, null, ''],
+    ['talbot', 'TE', 'Talbot Electrical', 'Electrical, Lexington, Kentucky', 'Ruth Abara, Director of Operations', 'First email after the introduction', 'Today', 3, 10, 'Needs your approval', 'you', 'SR', ['Approve and send', 'Approved and sent', 'It goes out from Sam’s Gmail now.'], ['Return to Sam', 'Returned to Sam', 'He sees your comment in his Inbox.'], null, ''],
+    ['vesta', 'VM', 'Vesta Medical Devices', 'Medical devices, Minneapolis, Minnesota', 'Noah Brennan, VP Supply Chain', 'White paper email', 'Today', 12, 12, 'Needs your approval', 'you', 'AM', ['Approve and send', 'Approved and sent', 'It goes out from Alex’s Gmail now.'], ['Return to Alex', 'Returned to Alex', 'He sees your comment in his Inbox.'], null, ''],
+    ['brightwater', 'BF', 'Brightwater Foods', 'Food, Toledo, Ohio', 'Hana Sato, COO', 'Waiting for a reply', 'Sent 21 Oct', 4, 12, 'Stops when she replies', 'wait', 'QH', ['Pause plan', 'Plan paused', 'No steps run until you resume it.'], ['Log a reply by hand', 'Moved to Active', 'The Evidence agent will read what you logged.'], null, ''],
+    ['unionmill', 'UT', 'Union Mill Textiles', 'Textiles, Spartanburg, South Carolina', 'Owen Price, Plant Director', 'Waiting for a reply', 'Sent 22 Oct', 6, 12, 'Stops when he replies', 'wait', 'AM', ['Pause plan', 'Plan paused', 'No steps run until Alex resumes it.'], ['Log a reply by hand', 'Moved to Active', 'The Evidence agent will read what was logged.'], null, ''],
+    ['whitcombe', 'WG', 'Whitcombe Glass', 'Glass, Corning, New York', 'Ava Morris, VP Operations', 'Plan finished', 'Ended 23 Oct', 10, 10, 'No reply after 4 steps', 'end', 'QH', ['Try another contact', 'Looking for another contact', 'The Research agent looks for a second buyer at Whitcombe. The result comes to your Inbox.'], ['Try again in 3 months', 'Set to try again on 26 Jan', 'The plan restarts then with a new first email.'], null, '']
+  ].map(([id, mono, name, sub, contact, next, when, day, of, status, kind, owner, primary, secondary, record, draft]) => ({ id, mono, name, sub, contact, next, when, day, of, status, kind, owner, primary, secondary, record, draft, late: when.indexOf('late') >= 0, route: { kessler: 'Warm', talbot: 'Warm', redfern: 'Warm' }[id] || 'Cold',
+    tertiary: kind === 'end' ? ['Set aside', 'Set aside', 'It moves to Set aside with the reason: no reply.'] : null,
+    bucket: kind === 'end' || status === 'Needs your approval' || (kind === 'you' && owner === 'QH') ? 'you' : kind === 'other' || kind === 'you' ? 'mate' : kind === 'wait' ? 'wait' : 'agent' }));
+
+  const data = {
+    found: [
+      ['ashby', 'AF', 'Ashby Forge', 'Forgings, Akron, Ohio', 'New COO started in September', 'Press release', 'Strong', 'Today', true],
+      ['calder', 'CV', 'Calder Valve Works', 'Industrial valves, Houston, Texas', 'Second plant opening in 2027', 'Local news', 'Strong', 'Today', true],
+      ['dunmore', 'DC', 'Dunmore Coatings', 'Specialty coatings, Pittsburgh, Pennsylvania', 'ERP replacement announced', 'Trade press', 'Good', 'Today', true],
+      ['easton', 'EB', 'Easton Brake Systems', 'Auto parts, Toledo, Ohio', 'Hiring a Head of Operations', 'Job posting', 'Good', 'Today', true],
+      ['fairlight', 'FP', 'Fairlight Packaging', 'Packaging, Grand Rapids, Michigan', 'Merging three warehouses into one', 'Company website', 'Strong', 'Today', true],
+      ['garrow', 'GI', 'Garrow Instruments', 'Lab instruments, Rochester, New York', 'Bought a smaller rival in August', 'Press release', 'Good', 'Today', true],
+      ['hollis', 'HR', 'Hollis Rubber', 'Rubber products, Dayton, Ohio', 'New operations leadership team', 'Company website', 'Strong', 'Today', true],
+      ['inverness', 'IC', 'Inverness Cabinetry', 'Cabinets, Charlotte, North Carolina', 'State grant for plant automation', 'State records', 'Partial', 'Today', true],
+      ['juniper', 'JB', 'Juniper Bakeries', 'Food, Columbus, Ohio', 'Network redesign named on an earnings call', 'Earnings call', 'Good', 'Today', true],
+      ['keswick', 'KW', 'Keswick Wire', 'Wire and cable, Erie, Pennsylvania', 'Union contract renewal due in 2027', 'Local news', 'Partial', 'Today', true],
+      ['lockhart', 'LP', 'Lockhart Polymers', 'Plastics, Louisville, Kentucky', 'New CFO in August', 'Press release', 'Good', '19 Oct', false],
+      ['marston', 'MP', 'Marston Pumps', 'Pumps, Milwaukee, Wisconsin', 'New plant manager at the main site', 'Company website', 'Partial', '19 Oct', false],
+      ['newbury', 'NT', 'Newbury Textiles', 'Textiles, Greenville, South Carolina', 'Adding a second shift', 'Local news', 'Good', '19 Oct', false],
+      ['oakridge', 'OC', 'Oakridge Castings', 'Foundry, Birmingham, Alabama', 'Product recall in July', 'Regulator notice', 'Partial', '19 Oct', false],
+      ['prescott', 'PL', 'Prescott Labels', 'Labels, Minneapolis, Minnesota', 'Bought by a private equity firm', 'Press release', 'Strong', '19 Oct', false],
+      ['quarry', 'QS', 'Quarry Hill Stone', 'Building materials, Harrisburg, Pennsylvania', 'Opening a second site', 'Trade press', 'Good', '12 Oct', false],
+      ['rowan', 'RM', 'Rowan Medical Supply', 'Medical supplies, Nashville, Tennessee', 'Moving its distribution center', 'Local news', 'Good', '12 Oct', false],
+      ['sable', 'SB', 'Sable Fasteners', 'Fasteners, Cleveland, Ohio', 'ERP goes live in January', 'Job posting', 'Partial', '12 Oct', false],
+      ['tidewater', 'TS', 'Tidewater Seafood', 'Food processing, Norfolk, Virginia', 'New COO in October', 'Press release', 'Strong', '12 Oct', false],
+      ['upland', 'UM', 'Upland Mills', 'Flour milling, Wichita, Kansas', 'Automation program announced', 'Trade press', 'Good', '12 Oct', false]
+    ].map(([id, mono, name, sub, signal, src, fit, when, isNew]) => ({ id, mono, name, sub, signal, src, fit, when, isNew, search: isNew ? 'Main search, round 4' : 'Main search' })),
+    research: [
+      { id: 'westbrook', mono: 'WP', name: 'Westbrook Paper & Board', sub: 'Paper products, Green Bay, Wisconsin', step: 3, now: 'Checking the contact is still there', started: '24 Oct' },
+      { id: 'marlow', mono: 'MF', name: 'Marlow Fastening Systems', sub: 'Fasteners, Rockford, Illinois', step: 1, now: 'Finding the company website', started: 'Today' }
+    ].concat(issue === 'research' ? [{ id: 'fairlight', mono: 'FP', name: 'Fairlight Packaging', sub: 'Packaging, Grand Rapids, Michigan', step: 1, now: 'Stopped: the website would not load', started: 'Today', failed: true }] : [])
+     .map((r) => issue === 'budget' ? { ...r, now: 'Paused at step ' + r.step + '. Resumes at midnight', paused: true } : r),
+    decision: [{ id: 'ostrander' }, { id: 'pellham' }],
+    accepted: outreach,
+    'o-you': outreach.filter((r) => r.bucket === 'you'),
+    'o-mate': outreach.filter((r) => r.bucket === 'mate'),
+    'o-agent': outreach.filter((r) => r.bucket === 'agent'),
+    'o-wait': outreach.filter((r) => r.bucket === 'wait'),
+    parked: [
+      { id: 'northwind', mono: 'NF', name: 'Northwind Foods', sub: 'Food, Madison, Wisconsin', contact: 'Elena Ruiz, CFO', reply: 'Not before the first quarter, but keep me posted.', date: '18 Oct', back: '6 Jan 2027', owner: 'AM', conds: 'cccmmm', score: 48 }
+    ],
+    conv: [
+      { id: 'ardent', mono: 'AL', name: 'Ardent Logistics', sub: 'Logistics, Memphis, Tennessee', contact: 'Priya Nair, VP Supply Chain', reply: 'Interesting timing. Send me something I can share with our CFO.', date: '24 Oct', conds: 'ccpmpc', score: 62, means: ['Wants material', ''], move: 'You: reply to Priya', owner: 'QH', record: 'Record-ardent.dc.html', primary: ['Ask for the missing evidence', 'Follow-up drafted', 'It asks about a next step. It is in your Outreach drafts for review.'],
+        prop: { 2: ['“Interesting timing. Send me something…” She is asking for material, so she is open to hearing from outside.', 'her email of 24 Oct', 'Interesting timing. Send me something'], 4: ['“…share with our CFO.” The agent reads this as the CFO being part of the decision.', 'her email of 24 Oct', 'share with our CFO'] } },
+      { id: 'silverline', mono: 'SL', name: 'Silverline Freight', sub: 'Freight, Kansas City, Missouri', contact: 'Omar Haddad, COO', reply: 'Who else have you worked with in freight?', date: '16 Oct', conds: 'cmcmmm', score: 35, means: ['Asked a question', ''], move: 'Sam: answer his question', owner: 'SR', primary: ['Draft an answer', 'Answer drafted', 'It cites the plant network case study. It is in Sam’s Outreach drafts.'] },
+      { id: 'granite', mono: 'GT', name: 'Granite Tooling', sub: 'Tooling, Fort Wayne, Indiana', contact: 'Hannah Brooks, Head of Operations', reply: 'Happy to talk. Does Tuesday the 29th work for a call?', date: '22 Oct', conds: 'ccccmc', score: 71, means: ['Wants to meet', 'grn'], move: 'Sam: call on 29 Oct', owner: 'SR', primary: ['Add call notes', 'Call notes opened', 'After the call, the Evidence agent reads the notes and proposes evidence.'] }
+    ],
+    qual: [
+      { id: 'northstar', mono: 'NH', name: 'Northstar Health', sub: 'Healthcare, Cincinnati, Ohio', contact: 'James Walker, COO', owner: 'AM', met: 6, score: 80, status: 'Awaiting your approval' }
+    ],
+    won: [
+      { id: 'kestrel', mono: 'KR', name: 'Kestrel Robotics', sub: 'Robotics, Pittsburgh, Pennsylvania', contact: 'Marcus Lee, CEO', owner: 'QH', score: 84, date: '23 Oct', service: 'Plant network redesign' },
+      { id: 'halberd', mono: 'HC', name: 'Halberd Controls', sub: 'Industrial controls, Louisville, Kentucky', contact: 'Dee Ramos, COO', owner: 'AM', score: 78, date: '9 Oct', service: 'Operating model redesign' },
+      { id: 'crestline', mono: 'CF', name: 'Crestline Foods', sub: 'Food, Indianapolis, Indiana', contact: 'Paul Ng, VP Operations', owner: 'SR', score: 74, date: '25 Sep', service: 'Resiliency assessment' },
+      { id: 'ironbridge', mono: 'IR', name: 'Ironbridge Rail Parts', sub: 'Rail components, Altoona, Pennsylvania', contact: 'Mara Olsen, CFO', owner: 'QH', score: 81, date: '11 Sep', service: 'Supply chain planning' }
+    ],
+    aside: [
+      { id: 'ashgrove', mono: 'AG', name: 'Ashgrove Mills', sub: 'Flour milling, Topeka, Kansas', reason: 'No one owns the project yet', by: 'Quinn Harper, on the agent’s advice', when: '12 Oct' },
+      { id: 'bellmont', mono: 'BG', name: 'Bellmont Glass', sub: 'Glass, Toledo, Ohio', reason: 'Already working with another firm', by: 'Alex Morgan', when: '8 Oct' },
+      { id: 'cobalt', mono: 'CB', name: 'Cobalt Freightways', sub: 'Freight, Tulsa, Oklahoma', reason: 'Under 100 staff, below the size rule', by: 'Discovery agent rule', when: '5 Oct' },
+      { id: 'dalton', mono: 'DL', name: 'Dalton Ceramics', sub: 'Ceramics, Zanesville, Ohio', reason: 'The contact left and no one replaced them', by: 'Sam Reyes', when: '1 Oct' },
+      { id: 'elmstead', mono: 'ED', name: 'Elmstead Dairy', sub: 'Dairy, Green Bay, Wisconsin', reason: 'Said no twice this year', by: 'Quinn Harper', when: '28 Sep' }
+    ]
+  };
+  const kind = stage === 'accepted' || stage.indexOf('o-') === 0 ? 'outreach' : stage;
+
+  const C = (o) => Object.assign({ isDots: false, dots: [], isCo: false, isCoLink: false, isText: false, isChip: false, isBar: false, mono: '', text: '', sub: '', hasSub: false, tcls: '', chip: '', pct: '0%', barCls: 'blue', open: null }, o);
+  const openRow = (id) => () => self.setState({ sel: id });
+  const co = (r) => C({ isCo: true, mono: r.mono, text: r.name, sub: r.sub, open: openRow(r.id) });
+  const tx = (text, sub, tcls) => C({ isText: true, text: String(text), sub: sub || '', hasSub: !!sub, tcls: tcls || '' });
+  const ch = (text, tone) => C({ isChip: true, text, chip: 'chip' + (tone ? ' ' + tone : '') });
+  const planOf = (x) => { const intro = { kessler: 'Introduction from Sarah Patel', talbot: 'Introduction from Ben Carter' }[x.id]; return [[0, intro || 'First email'], [3, intro ? 'First email' : 'Follow-up email'], [7, 'LinkedIn note'], [x.of, 'White paper email']]; };
+  const planState = (x) => { let cur = false; return planOf(x).map(([d, t]) => { const done = d < x.day || ((x.kind === 'wait' || x.kind === 'end') && d <= x.day); const now = !done && !cur; if (now) cur = true; return { d, t, done, now }; }); };
+  const dots = (x) => C({ isDots: true, text: 'Day ' + x.day + ' of ' + x.of, dots: planState(x).map((p0) => ({ cls: 'pd' + (p0.done ? ' done' : p0.now ? ' now' : '') })) });
+  const br = (text, pct, cls) => C({ isBar: true, text, pct, barCls: cls || 'blue' });
+  const fitTone = { Strong: 'grn', Good: 'blue', Partial: '' };
+  const pct = (a, b) => Math.round((a / b) * 100) + '%';
+  const statusTone = { you: 'org', other: '', plan: 'blue', wait: '', end: 'org' };
+  /* Evidence: c = confirmed, p = proposed by the agent, m = missing. A person's answer overrides p. */
+  const cqAll = st.cq || {};
+  const notesOf = (r) => (cqAll[r.id] || {}).notes || [];
+  const baseConds = (r) => { const a = r.conds.split(''); const m = a.indexOf('m'); if (notesOf(r).length && m >= 0) a[m] = 'p'; return a; };
+  const noteIdx = (r) => (notesOf(r).length ? r.conds.indexOf('m') : -1);
+  const condState = (r) => baseConds(r).map((ch0, i) => {
+    const d = (evAll[r.id] || {})[i];
+    return ch0 === 'p' ? (d === 'ok' ? 'you' : d === 'no' ? 'no' : 'p') : ch0;
+  });
+  const nConf = (r) => condState(r).filter((x) => x === 'c' || x === 'you').length;
+  const missOf = (r) => { const m = CONDS.filter((n, i) => { const x = condState(r)[i]; return x !== 'c' && x !== 'you'; }); return m.length ? 'Missing: ' + m.join(', ').toLowerCase() : 'Nothing missing'; };
+  const nProp = (r) => condState(r).filter((x) => x === 'p').length;
+  const gmailHit = (r) => issue === 'gmail' && r.owner === 'AM';
+  const OUT = { cols: 'minmax(200px, 2fr) minmax(170px, 1.6fr) minmax(170px, 2fr) 100px 70px 150px 190px', heads: ['Company', 'Contact', 'Next step', 'When', 'Route', 'Plan', 'Status'],
+    cells: (r) => [co(r), tx(r.contact, '', 'mut'), tx(r.next), tx(r.when, '', r.when === 'Today' || r.late ? 'c-org md' : 'mut'), ch(r.route, r.route === 'Warm' ? 'grn' : ''), dots(r), gmailHit(r) ? ch(r.kind === 'wait' ? 'Replies not read' : 'Can’t send, Gmail off', 'red') : ch(r.status, statusTone[r.kind])] };
+  const T = {
+    found: { cols: '20px minmax(220px, 2fr) minmax(240px, 3fr) minmax(150px, 1fr) 100px 110px', heads: ['', 'Company', 'Why it matched', 'From search', 'Fit', 'Found'],
+      cells: (r) => [co(r), tx(r.signal, r.src), tx(r.search, '', 'mut'), ch(r.fit, fitTone[r.fit]), r.isNew ? ch('New today', 'blue') : tx(r.when, '', 'mut')] },
+    research: { cols: 'minmax(220px, 2fr) minmax(220px, 3fr) 180px 110px', heads: ['Company', 'Now', 'Progress', 'Started'],
+      cells: (r) => [co(r), tx(r.now, '', r.failed ? 'c-red md' : r.paused ? 'c-org md' : 'md'), br('Step ' + r.step + ' of 4', pct(r.step, 4), r.failed ? 'red' : r.paused ? 'org' : 'blue'), r.failed ? ch('Needs you', 'red') : tx(r.started, '', 'mut')] },
+    accepted: { cols: 'minmax(220px, 2fr) minmax(200px, 2fr) 160px 200px', heads: ['Company', 'Contact', 'Owner', 'Now'],
+      cells: (r) => [co(r), tx(r.contact, '', 'mut'), tx(people[r.owner], '', 'mut'), ch((r.day > 0 ? 'Contacted' : 'Identified') + ', day ' + r.day + ' of ' + r.of, 'blue')] },
+    'o-you': OUT, 'o-mate': OUT, 'o-agent': OUT, 'o-wait': OUT,
+    parked: { cols: 'minmax(200px, 2fr) minmax(180px, 2fr) minmax(240px, 3fr) 130px 150px', heads: ['Company', 'Contact', 'What they said', 'Check back', 'Owner'],
+      cells: (r) => [co(r), tx(r.contact, '', 'mut'), tx('“' + r.reply + '”', r.date), tx(r.back, '', 'md'), tx(people[r.owner], '', 'mut')] },
+    conv: { cols: 'minmax(190px, 2fr) minmax(170px, 1.6fr) minmax(200px, 2.4fr) 130px 200px minmax(200px, 1.8fr)', heads: ['Company', 'Contact', 'Latest reply', 'Reply means', 'Conditions', 'Next move'],
+      cells: (r) => [co(r), tx(r.contact, '', 'mut'), tx('“' + r.reply + '”', r.date), ch(r.means[0], r.means[1]), br(nConf(r) + ' of 6' + (nProp(r) ? ', ' + nProp(r) + ' to confirm' : ''), pct(nConf(r), 6), 'grn'),
+        nProp(r) ? tx('You: confirm ' + nProp(r) + (nProp(r) === 1 ? ' piece' : ' pieces') + ' of evidence', '', 'c-org md') : tx(r.move, '', r.move.indexOf('You:') === 0 ? 'c-org md' : 'mut')] },
+    qual: { cols: 'minmax(200px, 2fr) minmax(190px, 2fr) 150px 140px 90px 190px', heads: ['Company', 'Contact', 'Owner', 'Conditions', 'Missing', 'Status'],
+      cells: (r) => [co(r), tx(r.contact, '', 'mut'), tx(people[r.owner], '', 'mut'), br(r.met + ' of 6 met', pct(r.met, 6), 'grn'), tx('Nothing', '', 'mut'), ch(r.status, 'org')] },
+    won: { cols: 'minmax(200px, 2fr) minmax(190px, 2fr) minmax(180px, 2fr) 150px 110px 110px', heads: ['Company', 'Contact', 'Service', 'Owner', 'Conditions', 'Qualified'],
+      cells: (r) => [co(r), tx(r.contact, '', 'mut'), tx(r.service), tx(people[r.owner], '', 'mut'), tx('6 of 6 met', '', 'c-grn md'), tx(r.date, '', 'mut')] },
+    aside: { cols: 'minmax(220px, 2fr) minmax(240px, 3fr) minmax(180px, 2fr) 110px', heads: ['Company', 'Reason', 'Set aside by', 'When'],
+      cells: (r) => [co(r), tx(r.reason), tx(r.by, '', 'mut'), tx(r.when, '', 'mut')] }
+  };
+
+  const cfg = S[stage];
+  const isReview = stage === 'decision';
+  const isQueue = stage === 'o-you';
+  const isConvRev = stage === 'conv';
+  const isPack = stage === 'qual';
+  const isFull = isReview || isQueue || isConvRev || isPack;
+  const all = data[stage];
+  const rowsData = isReview ? [] : all.filter((r) => !cfg.scoped || who === 'team' || r.owner === ME);
+  const selWanted = st.sel !== undefined ? st.sel : this.props.open;
+  const sel = !isFull && rowsData.some((r) => r.id === selWanted) ? selWanted : null;
+  const isFound = stage === 'found';
+  const nChecked = isFound ? all.filter((r) => checked[r.id]).length : 0;
+  const tbl = T[stage] || T.found;
+
+  const rows = rowsData.map((r) => {
+    let cells = tbl.cells(r);
+    if (acted[r.id]) cells = cells.slice(0, -1).concat([ch(acted[r.id].label, 'grn')]);
+    const href = stage === 'qual' ? 'Record-northstar.dc.html' : '';
+    if (href) cells = cells.map((c) => c.isCo ? { ...c, isCo: false, isCoLink: true } : c);
+    return {
+      href, isLink: !!href, isBtn: !href,
+      cells, cls: 'prow' + (r.id === sel ? ' on' : ''), open: openRow(r.id),
+      checked: !!checked[r.id], checkLabel: 'Select ' + r.name,
+      toggle: (e) => { if (e && e.stopPropagation) e.stopPropagation(); self.setState({ checked: { ...checked, [r.id]: !checked[r.id] } }); }
+    };
+  });
+
+  /* Side panel for the list stages. */
+  const B = (o) => Object.assign({ title: '', aside: '', asideCls: '', cardCls: 'card', isText: false, isQuote: false, isKv: false, isList: false, isSteps: false, isConds: false, text: '', sub: '', items: [] }, o);
+  const L = (t, sub, right, chip) => ({ t, sub: sub || '', right: right || '', chip: right ? (chip || 'chip') : '' });
+  const r = rowsData.find((x) => x.id === sel) || null;
+  const idx = r ? rowsData.indexOf(r) : -1;
+  const move = (d) => () => { const n = rowsData[idx + d]; if (n) self.setState({ sel: n.id }); };
+  let p = { blocks: [], name: '', sub: '', mono: '', owner: '', stageLabel: '', stageChip: 'chip', hasRecord: false, recordHref: '#', pos: '',
+    pending: true, settled: false, hasPrimary: false, hasSecondary: false, hasTertiary: false, primary: '', secondary: '', tertiary: '', hint: '',
+    doPrimary: () => {}, doSecondary: () => {}, doTertiary: () => {}, doneLabel: '', doneBody: '', undo: () => {} };
+  if (r) {
+    const act = (a) => () => self.setState({ acted: { ...acted, [r.id]: { label: a[1], body: a[2] } } });
+    const tone = { you: 'chip org', agent: 'chip blue', done: 'chip grn', none: 'chip' }[cfg.who];
+    p = { ...p, name: r.name, sub: r.sub, mono: r.mono, stageLabel: kind === 'outreach' ? 'Outreach' : cfg.label, stageChip: kind === 'outreach' ? 'chip blue' : tone,
+      owner: r.owner ? 'Owner: ' + people[r.owner] : 'Not assigned yet', pos: (idx + 1) + ' of ' + rowsData.length,
+      hasRecord: !!r.record, recordHref: r.record || '#' };
+    let pri = null; let sec = null; let ter = null;
+    const condItems = (row) => condState(row).map((x, i) => {
+      const pr = (row.prop || {})[i] || ['', ''];
+      const setEv = (v) => () => { const mine = { ...(evAll[row.id] || {}) }; if (v) mine[i] = v; else delete mine[i]; self.setState({ ev: { ...evAll, [row.id]: mine } }); };
+      const base = { name: CONDS[i], canDecide: false, canUndo: false, ok: setEv('ok'), no: setEv('no'), undo: setEv(null), proofCls: 'mut sm', src: '' };
+      if (x === 'c') return { ...base, proof: 'Confirmed by ' + people[row.owner], label: 'Confirmed', chip: 'chip grn' };
+      if (x === 'you') return { ...base, proof: pr[0], src: pr[1], label: 'Confirmed by you', chip: 'chip grn', canUndo: true };
+      if (x === 'no') return { ...base, proof: 'You said the agent’s proposal does not prove this.', label: 'Not counted', chip: 'chip', canUndo: true };
+      if (x === 'p') return { ...base, proof: pr[0], src: 'Proposed by the Evidence agent from: ' + pr[1], label: 'Your call', chip: 'chip org', canDecide: true };
+      return { ...base, proof: 'Nothing in replies or notes yet', proofCls: 'dim sm', label: 'Missing', chip: 'chip' };
+    });
+    if (kind === 'found') {
+      const fit = { Strong: [['Industry', 'Matches', 'chip grn'], ['Recent trigger', 'Matches', 'chip grn'], ['Company size', 'Matches', 'chip grn'], ['Named buyer', 'Not found yet', 'chip']],
+        Good: [['Industry', 'Matches', 'chip grn'], ['Recent trigger', 'Matches', 'chip grn'], ['Company size', 'Not found', 'chip'], ['Named buyer', 'Not found yet', 'chip']],
+        Partial: [['Industry', 'Matches', 'chip grn'], ['Recent trigger', 'Weak', 'chip org'], ['Company size', 'Matches', 'chip grn'], ['Named buyer', 'Not found yet', 'chip']] }[r.fit];
+      p.blocks = [
+        B({ title: 'Why it matched', aside: r.search, asideCls: 'dim sm', isList: true, items: [L(r.signal, r.src + (r.isNew ? ', found today' : ', found ' + r.when))] }),
+        B({ title: 'Fit with what CGS looks for', aside: r.fit + ' fit', asideCls: 'chip ' + fitTone[r.fit], isList: true, items: fit.map(([k, v, c]) => L(k, '', v, c)) }),
+        B({ title: 'What a brief adds', isText: true, text: 'This is one news item, not research. A brief adds dated, quoted facts, a named contact if a source gives one, and the Insightly duplicate check.' })
+      ];
+      pri = ['Request a brief', 'Brief requested', 'The Research agent starts within the hour.'];
+      sec = ['Set aside', 'Set aside', 'It moves to Set aside. You can bring it back any time.'];
+      p.hint = 'A brief takes about a day';
+    } else if (kind === 'research') {
+      const labels = ['Find the company website', 'Read recent news and filings', 'Check the contact is still there', 'Write the brief'];
+      const liveSub = r.failed ? 'Stopped after 3 tries' : r.paused ? 'Paused, AI limit used up' : 'Working on it now';
+      const liveCls = r.failed ? 'c-red sm md' : r.paused ? 'c-org sm md' : 'c-blue sm md';
+      const liveDot = r.failed ? 'd err' : r.paused ? 'd you' : 'd live';
+      p.blocks = [];
+      if (r.failed) p.blocks.push(B({ title: 'What went wrong', aside: 'Needs you', asideCls: 'chip red', cardCls: 'card err', isText: true, text: 'The Research agent tried fairlightpackaging.example three times between 09:10 and 09:40. Each time the site timed out. It stopped rather than write a brief from news items alone.' }));
+      if (r.paused) p.blocks.push(B({ title: 'Paused', aside: 'AI limit', asideCls: 'chip org', cardCls: 'card warn', isText: true, text: 'Today’s 60 AI requests are used up. This brief picks up at step ' + r.step + ' at midnight. Nothing done so far is lost.' }));
+      p.blocks.push(B({ title: 'Progress', aside: 'Research agent', asideCls: 'chip blue', isSteps: true, items: labels.map((t, i) => {
+          const n = i + 1; const done = n < r.step; const live = n === r.step;
+          return { t, li: done ? 'done' : '', d: done ? 'd done' : live ? liveDot : 'd', sub: done ? 'Done' : live ? liveSub : 'Next', subCls: live ? liveCls : 'dim sm', tCls: live ? 'sbd' : done ? 'md' : '' };
+        }) }));
+      p.blocks.push(B({ title: 'What happens next', isText: true, text: r.failed ? 'Try again if the site was only down for a while. If the agent has the wrong address, stop the research and add the company again from Find with the right one.' : 'When the brief is ready, the company moves to Your decision and appears in your Inbox.' }));
+      if (r.failed) pri = ['Try again', 'Trying again', 'The Research agent starts again from step 1.'];
+      sec = ['Stop research', 'Research stopped', 'It goes back to Found.'];
+      p.hint = r.failed ? 'Failed today at 09:40' : r.paused ? 'Resumes at midnight' : 'Started ' + r.started;
+    } else if (kind === 'outreach') {
+      const plan = [[0, r.id === 'kessler' ? 'Introduction from Sarah Patel' : 'First email'], [3, 'Follow-up email'], [7, 'LinkedIn note'], [r.of, 'Share the white paper']];
+      let curSet = false;
+      const steps = plan.map(([d, t]) => {
+        const done = d < r.day || ((r.kind === 'wait' || r.kind === 'end') && d <= r.day);
+        let live = false;
+        if (!done && !curSet) { live = true; curSet = true; }
+        return { t, li: done ? 'done' : '', d: done ? 'd done' : live ? (r.when === 'Today' ? 'd you' : 'd') : 'd', sub: 'Day ' + d + (done ? ', done' : live ? ', ' + (r.when === 'Today' ? 'due today' : 'next') : ''), subCls: live && r.when === 'Today' ? 'c-org sm md' : 'dim sm', tCls: live ? 'sbd' : '' };
+      });
+      p.blocks = [B({ title: 'Next step', aside: r.status, asideCls: 'chip ' + statusTone[r.kind], isKv: true, items: [{ k: 'Step', v: r.next }, { k: 'When', v: r.when }, { k: 'Contact', v: r.contact }] })];
+      if (gmailHit(r)) p.blocks.unshift(B({ title: 'Gmail is disconnected', aside: 'Since 07:40', asideCls: 'chip red', cardCls: 'card err', isText: true, text: r.kind === 'wait' ? 'Replies to Alex are not being read, so this plan will not stop on its own if the client answers. Reconnecting catches up on anything that arrived meanwhile.' : 'Steps can still be drafted, but nothing can be sent from Alex’s Gmail. Due steps wait and go out once it reconnects and Alex approves.' }));
+      if (r.draft) p.blocks.push(B({ title: 'Draft', aside: 'Written by the Outreach agent', asideCls: 'chip blue', isQuote: true, text: r.draft, sub: 'Checked against the CGS email standard' }));
+      p.blocks.push(B({ title: 'Contact plan', aside: 'Day ' + r.day + ' of ' + r.of, asideCls: 'dim sm', isSteps: true, items: steps }));
+      if (r.kind === 'end') p.blocks.unshift(B({ title: 'The plan finished with no reply', aside: 'Needs a decision', asideCls: 'chip org', cardCls: 'card warn', isText: true, text: 'All ' + plan.length + ' steps went to ' + r.contact.split(',')[0] + ' between 13 and 23 Oct. No reply and no bounce. Cold plans end this way about four times in five.' }));
+      pri = r.primary; sec = r.secondary; ter = r.tertiary;
+      p.hint = r.kind === 'end' ? '' : 'Nothing is sent until two people approve it';
+    } else if (kind === 'conv') {
+      p.blocks = [
+        B({ title: 'Latest reply', aside: r.means[0], asideCls: 'chip ' + r.means[1], isQuote: true, text: '“' + r.reply + '”', sub: r.contact + ', ' + r.date }),
+        B({ title: 'The six conditions', aside: nConf(r) + ' of 6 confirmed' + (nProp(r) ? ', ' + nProp(r) + ' to confirm' : ''), asideCls: nProp(r) ? 'c-org md' : 'dim md', isConds: true, items: condItems(r) })
+      ];
+      pri = r.primary;
+      sec = ['Park until later', 'Parked', 'It moves to Parked. Set the date there.'];
+      ter = ['Not a fit', 'Set aside', 'It moves to Set aside with the reason.'];
+      p.hint = nConf(r) + ' of 6 conditions met. ' + missOf(r) + '.';
+    } else if (kind === 'parked') {
+      p.blocks = [
+        B({ title: 'Why it is parked', isQuote: true, text: '“' + r.reply + '”', sub: r.contact + ', ' + r.date }),
+        B({ title: 'When it comes back', isKv: true, items: [{ k: 'Check back', v: r.back }, { k: 'Reminder goes to', v: people[r.owner] }, { k: 'Evidence so far', v: nConf(r) + ' of 6 conditions confirmed. It is kept.' }] })
+      ];
+      pri = ['Resume now', 'Back in Active', 'It is in the Active list again.'];
+      sec = ['Change the date', 'Date picker opened', 'Pick a new check-back date.'];
+      ter = ['Not a fit', 'Set aside', 'It moves to Set aside with the reason.'];
+    } else if (kind === 'won') {
+      p.blocks = [
+        B({ title: 'Opportunity', aside: 'In Insightly', asideCls: 'chip grn', isKv: true, items: [{ k: 'Service', v: r.service }, { k: 'Revenue estimate', v: 'Kept in Insightly' }, { k: 'Contact', v: r.contact }, { k: 'Conditions', v: '6 of 6 met, nothing missing' }, { k: 'Qualified', v: r.date }] }),
+        B({ title: 'From here', isText: true, text: 'This opportunity is managed in Insightly. Changes there sync back to this workspace each night.' })
+      ];
+      p.hint = 'Read only here';
+    } else if (kind === 'aside') {
+      p.blocks = [B({ title: 'Why it was set aside', isKv: true, items: [{ k: 'Reason', v: r.reason }, { k: 'By', v: r.by }, { k: 'When', v: r.when }] })];
+      pri = ['Bring back to Found', 'Back in Found', 'It is in the Found list again, ready to pick.'];
+    }
+    const a = acted[r.id];
+    p = { ...p, pending: !a, settled: !!a, doneLabel: a ? a.label : '', doneBody: a ? a.body : '',
+      undo: () => { const n = { ...acted }; delete n[r.id]; self.setState({ acted: n }); },
+      hasPrimary: !!pri, primary: pri ? pri[0] : '', doPrimary: pri ? act(pri) : () => {},
+      hasSecondary: !!sec, secondary: sec ? sec[0] : '', doSecondary: sec ? act(sec) : () => {},
+      hasTertiary: !!ter, tertiary: ter ? ter[0] : '', doTertiary: ter ? act(ter) : () => {} };
+  }
+
+  /* Full-page review for Your decision. */
+  const E = (fact, quote, src, date, flag) => ({ fact, quote, src, date, flag: flag || '', hasFlag: !!flag });
+  const briefs = {
+    ostrander: {
+      mono: 'OM', name: 'Ostrander Metalworks', sub: 'Fabricated metals, Erie, Pennsylvania. Found 19 Oct by the main search.', domain: 'ostrandermetal.example',
+      changed: 'This is the first version of this brief, finished 25 Oct. There is nothing earlier to compare it with.',
+      suggest: 'back', sugLabel: 'Send back', conf: 'Medium', score: '64', band: 'Medium, provisional', cover: '4 of 6', coverSub: 'rubric areas have data', issues: '1 conflict, 3 unknowns',
+      recTitle: 'Send this back for another look', recBody: 'The only named buyer may have left in August. Confirm who leads the program before anyone writes to them.',
+      problem: 'A plant automation program launched in July is changing who decides what on the plant floor. Ostrander may not have settled how planning and maintenance decisions are shared between its two plants and the new program team.',
+      why: 'Operating model redesign covers exactly this question. The plant network redesign case study is a close match in sector and size.',
+      alt: 'The program may be a routine equipment upgrade run by the vendor, with no open question about how the organization works. Nothing public says Ostrander wants outside advice.',
+      evNote: '5 facts from 4 sources, each quoted word for word',
+      groups: [
+        { cat: 'The trigger', items: [
+          E('Launched a plant automation program across both Erie plants', '“Ostrander will invest $18 million to automate cutting and welding lines at both Erie facilities.”', 'Fabrication Weekly', '14 Jul 2026'),
+          E('Hiring a program manager to coordinate plants and the vendor', '“…own the rollout schedule and coordinate plant managers and the vendor team.”', 'Company careers page', '2 Sep 2026')] },
+        { cat: 'The buyer', items: [
+          E('Tom Becker is listed as Head of Transformation', '“Tom Becker, Head of Transformation”', 'Company website, leadership page', 'page not dated', 'In doubt'),
+          E('A public profile shows him in a new role elsewhere', '“VP Operations at Lakeshore Castings, Aug 2026 to present”', 'Public profile', 'Aug 2026', 'Conflicts with the line above')] },
+        { cat: 'The company', items: [
+          E('Family-owned fabricator serving rail and energy customers', '“Family-owned fabricator serving rail and energy customers since 1961.”', 'Company website, about page', 'page not dated')] }
+      ],
+      people: [{ mono: 'TB', name: 'Tom Becker', role: 'Head of Transformation', asOf: 'Role as of: page not dated. Last checked 24 Oct.', flag: 'May have left', chip: 'chip org' }],
+      peopleNote: 'No other buyer is named in the sources. The agent never guesses an email address.',
+      checks: [
+        { k: 'Insightly duplicate check', v: 'No lead, contact or organization with this name. Checked today 09:40.', right: 'Clear', chip: 'chip grn' },
+        { k: 'Other CGS work', v: 'None with Ostrander or Tom Becker in this workspace.', right: 'Clear', chip: 'chip grn' },
+        { k: 'Fits the search', v: 'Manufacturer with US operations. Signal is 3 months old.', right: 'Eligible', chip: 'chip grn' }],
+      comps: [
+        ['Fit with CGS services', 'An operating model question tied to a named program', 'Strong', 'chip grn'],
+        ['Timing', 'The trigger is 3 months old and hiring is under way', 'Strong', 'chip grn'],
+        ['Buyer access', 'The only named buyer is in doubt', 'Weak', 'chip org'],
+        ['Relationship', 'No CGS contact at the company', 'None found', 'chip'],
+        ['Company size', 'No headcount or revenue in public sources', 'Not estimated', 'chip'],
+        ['Revenue potential', 'Not scored from public research', 'Not estimated', 'chip']],
+      unknowns: ['Who leads the automation program now?', 'Is the program run in-house or by the equipment vendor?', 'How many people work at the two plants?'],
+      next: 'Find the current program lead, then a first email'
+    },
+    pellham: {
+      mono: 'PP', name: 'Pellham Packaging', sub: 'Packaging, Columbus, Ohio. Found 19 Oct by the main search.', domain: 'pellhampack.example',
+      changed: 'Second version. Since the first on 22 Oct: one new source, a trade press note from 24 Oct, confirms the warehouse system replacement. Still no named owner, so the suggestion is unchanged.',
+      suggest: 'reject', sugLabel: 'Set aside', conf: 'Low', score: '41', band: 'Low, provisional', cover: '3 of 6', coverSub: 'rubric areas have data', issues: '0 conflicts, 3 unknowns',
+      recTitle: 'Set this aside for now', recBody: 'The warehouse project has no named owner and no start date. Reject for just this company and the agent will look again in 60 days.',
+      problem: 'Pellham announced it will replace its warehouse management system in 2027. A system change of that size often exposes unclear ownership of inventory and planning decisions.',
+      why: 'Supply chain planning work could apply, but nothing yet ties the project to a planning or operating model question.',
+      alt: 'This reads as a standard software replacement led by IT and the vendor. There is no sign of a wider review, and no one to talk to.',
+      evNote: '2 facts from 2 sources, each quoted word for word',
+      groups: [
+        { cat: 'The trigger', items: [
+          E('Will replace its warehouse management system in 2027', '“Pellham has selected a new warehouse platform, with rollout planned for 2027.”', 'Company press release', '30 Sep 2026')] },
+        { cat: 'The buyer', items: [
+          E('No owner is named for the project', '“The project team will be announced at a later date.”', 'Company press release', '30 Sep 2026', 'Gap')] }
+      ],
+      people: [],
+      peopleNote: 'No buyer is named in any source. The agent never guesses a contact.',
+      checks: [
+        { k: 'Insightly duplicate check', v: 'No lead, contact or organization with this name. Checked today 09:41.', right: 'Clear', chip: 'chip grn' },
+        { k: 'Other CGS work', v: 'None with Pellham in this workspace.', right: 'Clear', chip: 'chip grn' },
+        { k: 'Fits the search', v: 'Manufacturer with US operations. Signal is 4 weeks old.', right: 'Eligible', chip: 'chip grn' }],
+      comps: [
+        ['Fit with CGS services', 'A software project with no stated planning question', 'Weak', 'chip org'],
+        ['Timing', 'Rollout is planned for 2027, with no start date', 'Early', 'chip'],
+        ['Buyer access', 'No one is named', 'None', 'chip org'],
+        ['Relationship', 'No CGS contact at the company', 'None found', 'chip'],
+        ['Company size', 'No headcount or revenue in public sources', 'Not estimated', 'chip'],
+        ['Revenue potential', 'Not scored from public research', 'Not estimated', 'chip']],
+      unknowns: ['Who owns the warehouse project?', 'Is there a wider supply chain review behind it?', 'When does the project start?'],
+      next: 'First email to the project owner once named'
+    }
+  };
+  const ids = Object.keys(briefs);
+  const rid = briefs[st.rsel] ? st.rsel : briefs[this.props.open] ? this.props.open : ids[0];
+  const R = briefs[rid];
+  const rvAll = st.rv || {};
+  const rs = rvAll[rid] || {};
+  const upd = (patch) => self.setState({ rv: { ...rvAll, [rid]: { ...rs, ...patch } } });
+  const ticks = rs.ticks || {};
+  const nT = R.unknowns.filter((q, i) => ticks[i]).length;
+  const owner = rs.owner || 'Quinn Harper';
+  const scope = rs.scope || 'one';
+  const other = ids[(ids.indexOf(rid) + 1) % ids.length];
+  const mode = rs.done ? null : (rs.mode || null);
+  const val = (k) => (e) => upd({ [k]: e.target.value });
+  const FOLDS = ['unknowns', 'case', 'ev', 'people', 'prio'];
+  const openMap = rs.open || { unknowns: R.suggest === 'back' };
+  const allOpen = FOLDS.every((k) => openMap[k]);
+  const fold = (k, sum, sumCls) => ({ open: !!openMap[k], exp: openMap[k] ? 'true' : 'false', sum, sumCls, toggle: () => upd({ open: { ...openMap, [k]: !openMap[k] } }) });
+  const nMet = R.comps.filter((x) => x[3] === 'chip grn').length;
+  const nFlag = R.people.filter((x) => x.flag).length;
+  const rv = {
+    mono: R.mono, name: R.name, sub: R.sub, domain: R.domain,
+    changed: R.changed, conf: R.conf, issues: R.issues,
+    metText: nMet + ' of ' + R.comps.length + ' priority conditions met',
+    missing: R.comps.filter((x) => x[3] !== 'chip grn').map((x) => x[0] + (x[2] === 'Weak' ? ' (weak)' : '')).join(', ') || 'nothing',
+    f: {
+      unknowns: fold('unknowns', R.unknowns.length + ' open questions' + (nT ? ', ' + nT + ' ticked' : ''), nT ? 'c-org sm md' : 'dim sm'),
+      case: fold('case', 'Problem, why CGS, why it may be nothing', 'dim sm'),
+      ev: fold('ev', R.evNote, 'dim sm'),
+      people: fold('people', R.people.length + (R.people.length === 1 ? ' contact, ' : ' contacts, ') + R.checks.length + ' checks' + (nFlag ? ', ' + nFlag + ' flagged' : ''), nFlag ? 'c-org sm md' : 'dim sm'),
+      prio: fold('prio', nMet + ' of ' + R.comps.length + ' met', 'dim sm')
+    },
+    toggleAll: () => { const v = !allOpen; upd({ open: { unknowns: v, case: v, ev: v, people: v, prio: v } }); },
+    allLabel: allOpen ? 'Fold all' : 'Open all',
+    problem: R.problem, why: R.why, alt: R.alt, evNote: R.evNote, groups: R.groups,
+    people: R.people, peopleNote: R.peopleNote, checks: R.checks,
+    comps: R.comps.map(([k, reason, v, chip]) => ({ k, reason, v, chip })),
+    unknowns: R.unknowns.map((q, i) => ({ q, pressed: ticks[i] ? 'true' : 'false', toggle: () => upd({ ticks: { ...ticks, [i]: !ticks[i] } }) })),
+    recTitle: R.recTitle, recBody: R.recBody,
+    isIdle: !rs.done && !mode, isAccept: mode === 'accept', isBack: mode === 'back', isReject: mode === 'reject',
+    settled: !!rs.done, doneLabel: rs.done ? rs.done.label : '', doneBody: rs.done ? rs.done.body : '',
+    acceptCls: 'b ' + (R.suggest === 'accept' ? 'bp' : 'bs'),
+    backCls: 'b ' + (R.suggest === 'back' ? 'bp' : 'bs'),
+    rejectCls: 'b ' + (R.suggest === 'reject' ? 'bp' : 'bs'),
+    backLabel: nT ? 'Send back with ' + nT + (nT === 1 ? ' question' : ' questions') : 'Send back with questions',
+    backSummary: nT ? nT + (nT === 1 ? ' ticked question goes' : ' ticked questions go') + ' to the Research agent.' : 'No questions ticked yet. Tick them under What we don’t know, or write one below.',
+    toAccept: () => upd({ mode: 'accept' }), toBack: () => upd({ mode: 'back', open: { ...openMap, unknowns: true } }), toReject: () => upd({ mode: 'reject' }),
+    cancel: () => upd({ mode: null }),
+    owner, rating: rs.rating || 'Medium', next: rs.next == null ? R.next : rs.next, note: rs.note || '', reason: rs.reason || 'Evidence is too thin',
+    setOwner: val('owner'), setRating: val('rating'), setNext: val('next'), setNote: val('note'), setReason: val('reason'),
+    dupPressed: rs.dup ? 'true' : 'false', toggleDup: () => upd({ dup: !rs.dup }),
+    scopeOne: scope === 'one' ? 'true' : 'false', scopeKind: scope === 'kind' ? 'true' : 'false',
+    setScopeOne: () => upd({ scope: 'one' }), setScopeKind: () => upd({ scope: 'kind' }),
+    confirmAccept: () => upd({ mode: null, done: { label: 'Accepted', body: 'Owner: ' + owner + '. The lead is created in Insightly as Identified and the Outreach agent drafts the first email for ' + (owner === 'Quinn Harper' ? 'you' : owner) + ' to approve.' } }),
+    confirmBack: () => upd({ mode: null, done: { label: 'Sent back to the Research agent', body: (nT ? nT + (nT === 1 ? ' question' : ' questions') + ' attached. ' : '') + 'The updated brief returns here, usually within a day.' } }),
+    confirmReject: () => upd({ mode: null, done: { label: 'Rejected', body: scope === 'kind' ? 'The Direction agent will propose a change to the search. It comes to your Inbox to approve.' : 'It moves to Set aside with your reason. You can bring it back.' } }),
+    undo: () => upd({ done: null }),
+    nextBrief: () => self.setState({ rsel: other }),
+    key: (e) => {
+      const tag = (e.target && e.target.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const k = (e.key || '').toLowerCase();
+      if (k === 'j' || k === 'k') self.setState({ rsel: other });
+      else if (!rs.done && k === 'a') upd({ mode: 'accept' });
+      else if (!rs.done && k === 's') upd({ mode: 'back' });
+      else if (!rs.done && k === 'r') upd({ mode: 'reject' });
+    }
+  };
+  const queue = ids.map((id) => {
+    const d = (rvAll[id] || {}).done;
+    return { mono: briefs[id].mono, name: briefs[id].name, sub: d ? d.label : 'Agent: ' + briefs[id].sugLabel.toLowerCase(), subCls: d ? 'c-grn sm md' : 'mut sm',
+      pressed: id === rid ? 'true' : 'false', bg: id === rid ? '#F5F4FE' : 'transparent', mark: id === rid ? 'inset 3px 0 0 #5B4FE0' : 'none',
+      pick: () => self.setState({ rsel: id }) };
+  });
+
+  /* ---- Outreach: one queue for everything that needs me ---- */
+  const segsOf = (t, marks, cls) => {
+    let parts = [{ t, cls: '', src: '' }];
+    marks.forEach(([ph, src]) => {
+      parts = parts.reduce((acc, p0) => {
+        const i = p0.cls ? -1 : p0.t.indexOf(ph);
+        if (i < 0) return acc.concat([p0]);
+        return acc.concat([{ t: p0.t.slice(0, i), cls: '', src: '' }, { t: ph, cls, src }, { t: p0.t.slice(i + ph.length), cls: '', src: '' }].filter((x) => x.t));
+      }, []);
+    });
+    return parts;
+  };
+  const DR = {
+    halvorsen: { mode: 'own', kind: 'Email draft', writer: 'Written by the Outreach agent', from: 'Quinn Harper, your Gmail', to: 'Mia Larsen, COO', subject: 'Your third molding line', limit: 120, score: '4.4', approver: 'Alex Morgan approves after you. Nothing is sent before then.',
+      why: 'Halvorsen is adding a third molding line in spring 2027. The brief’s case: when a plant grows this fast, planning decisions get stuck between sites.',
+      body: 'Hi Mia,\n\nI read that Halvorsen is adding a third molding line in the spring. Teams growing that quickly often find planning decisions stuck between sites.\n\nWould a short call next week be useful?\n\nBest,\nQuinn',
+      marks: [['Halvorsen is adding a third molding line in the spring', 'Halvorsen press release, 2 October 2026']], facts: '1', thread: [] },
+    vesta: { mode: 'approve', kind: 'Email for your approval', writer: 'Agent draft, edited by Alex Morgan', from: 'Alex Morgan, his Gmail', to: 'Noah Brennan, VP Supply Chain', subject: 'One more thought on planning at Vesta', limit: 120, score: '4.6', approver: 'Alex approved this at 09:05. You are the second approver.',
+      why: 'On its August earnings call Vesta named supplier lead times as the main risk to its new product line.',
+      body: 'Hi Noah,\n\nOn your August earnings call you said supplier lead times were the main risk to the new product line. We wrote up how another device maker cut planning cycles from monthly to weekly to handle that.\n\nWould it help if I sent it over?\n\nBest,\nAlex',
+      marks: [['supplier lead times were the main risk to the new product line', 'Vesta earnings call, 6 August 2026']], facts: '1',
+      thread: [['AM', '21 Oct', 'LinkedIn note', 'Connection accepted. No message back.'], ['AM', '17 Oct', 'Follow-up email', 'Asked whether lead times were still the main worry. No reply.'], ['AM', '14 Oct', 'First email', 'Opened with the earnings call comment. No reply.']] },
+    talbot: { mode: 'approve', kind: 'Email for your approval', writer: 'Agent draft, edited by Sam Reyes', from: 'Sam Reyes, his Gmail', to: 'Ruth Abara, Director of Operations', subject: 'Ben Carter suggested I write', limit: 120, score: '4.2', approver: 'Sam approved this at 08:50. You are the second approver.',
+      why: 'Talbot announced a second Lexington site for 2027. Ben Carter, a former client, introduced Sam to Ruth Abara on 23 Oct.',
+      body: 'Hi Ruth,\n\nBen Carter mentioned that Talbot is opening a second Lexington site next year and thought we should talk. We have worked with several electrical manufacturers on how to split planning between two sites.\n\nCould we find 20 minutes next week?\n\nBest,\nSam',
+      marks: [['Talbot is opening a second Lexington site next year', 'Talbot site announcement, 22 September 2026']], facts: '2',
+      thread: [['BC', '23 Oct', 'Introduction from Ben Carter', '“Ruth, meet Sam. You two should talk about the second site.”']] },
+    whitcombe: { mode: 'ended', why: 'Whitcombe is rebuilding its Corning furnace line in 2027. The brief’s case was production scheduling during the rebuild.',
+      endedText: 'All 4 steps went to Ava Morris between 13 and 23 Oct. The last email was opened twice, with no reply and no bounce. Cold plans end this way about four times in five, so this says little about the company itself.',
+      thread: [['QH', '23 Oct', 'White paper email', 'Shared the scheduling white paper. Opened twice, no reply.'], ['QH', '20 Oct', 'LinkedIn note', 'Connection request still pending.'], ['QH', '16 Oct', 'Follow-up email', 'No reply.'], ['QH', '13 Oct', 'First email', 'No reply, no bounce.']] }
+  };
+  const dqAll = st.dq || {};
+  const qRows = isQueue ? all.filter((x) => DR[x.id]) : [];
+  const needs = (x) => !(dqAll[x.id] || {}).done;
+  const dWanted = st.dsel !== undefined ? st.dsel : this.props.open;
+  const dId = qRows.some((x) => x.id === dWanted) ? dWanted : ((qRows.find(needs) || qRows[0] || {}).id || null);
+  const dRow = qRows.find((x) => x.id === dId) || null;
+  let dq = { list: [], key: () => {} };
+  if (dRow) {
+    const dd = DR[dId];
+    const ds = dqAll[dId] || {};
+    const dUpd = (patch) => self.setState({ dsel: dId, dq: { ...dqAll, [dId]: { ...ds, ...patch } } });
+    const hasDraft = dd.mode !== 'ended';
+    const body = !hasDraft ? '' : ds.body == null ? dd.body : ds.body;
+    const count = (t) => (t.trim() ? t.trim().split(/\s+/).length : 0);
+    const words = count(body);
+    const first = dRow.contact.split(',')[0].split(' ')[0];
+    const ownerName = people[dRow.owner];
+    const settle = (label, bodyText) => () => {
+      const rest = qRows.filter((x) => x.id !== dId && needs(x));
+      const after = qRows.slice(qRows.indexOf(dRow) + 1).find((x) => needs(x)) || rest[0];
+      self.setState({ dsel: after ? after.id : dId, dq: { ...dqAll, [dId]: { ...ds, mode: null, editing: false, done: { label, body: bodyText } } }, toast: { label, title: dRow.name, ids: [], dq: dId } });
+      clearTimeout(self._t);
+      self._t = setTimeout(() => { if ((self.state || {}).toast) self.setState({ toast: null }); }, 6000);
+    };
+    const stepTo = (d) => { const n = qRows[(qRows.indexOf(dRow) + d + qRows.length) % qRows.length]; if (n) self.setState({ dsel: n.id }); };
+    const canEdit = dd.mode === 'own' && !ds.done;
+    const actions = {
+      own: [{ label: 'Send to Alex for approval', cls: 'b bp', go: settle('Sent to Alex Morgan for approval', 'It goes out from your Gmail once he approves. Until then it sits under With a teammate.') },
+            { label: 'Ask the agent to revise', cls: 'b bs', go: () => dUpd({ mode: 'revise' }) }],
+      approve: [{ label: 'Approve and send', cls: 'b bp', go: settle('Approved and sent', 'It went out from ' + ownerName.split(' ')[0] + '’s Gmail. The plan stops if ' + first + ' replies.') },
+                { label: 'Return with a comment', cls: 'b bs', go: () => dUpd({ mode: 'comment' }) }],
+      ended: [{ label: 'Try another contact', cls: 'b bp', go: settle('Looking for another contact', 'The Research agent looks for a second buyer at ' + dRow.name + '. The result comes to your Inbox.') },
+              { label: 'Try again in 3 months', cls: 'b bs', go: settle('Set to try again on 26 Jan', 'The plan restarts then with a new first email.') },
+              { label: 'Set aside', cls: 'b bg', go: settle('Set aside', 'It moved to Set aside with the reason: no reply.') }]
+    }[dd.mode];
+    const minor = hasDraft ? [{ label: 'Skip this step', go: settle('Step skipped', 'Nothing is sent for this step. The plan moves on to the next one.') }, { label: 'Pause the plan', go: settle('Plan paused', 'No steps run until ' + (dRow.owner === ME ? 'you resume' : ownerName.split(' ')[0] + ' resumes') + ' it.') }] : [];
+    const isRevise = ds.mode === 'revise';
+    const note = ds.note || '';
+    const orig = hasDraft ? dd.body.split(/\n\n+/) : [];
+    const ps = planState(dRow);
+    const nxt = ps[ps.findIndex((x) => x.now) + 1];
+    const thread = dd.thread.map(([mono, date, title, line]) => ({ mono, date, title, line }));
+    const threadOpen = ds.threadOpen == null ? dd.mode === 'ended' : ds.threadOpen;
+    const typeLabel = { own: 'Your draft to review', approve: 'Approve for ' + ownerName.split(' ')[0], ended: 'Plan ended, no reply' };
+    dq = {
+      list: qRows.map((x) => {
+        const done = (dqAll[x.id] || {}).done;
+        return { mono: x.mono, name: x.name, sub: done ? done.label : { own: 'Your draft to review', approve: 'Approve for ' + people[x.owner].split(' ')[0], ended: 'Plan ended, no reply' }[DR[x.id].mode], subCls: done ? 'c-grn sm md' : 'c-org sm md',
+          pressed: x.id === dId ? 'true' : 'false', bg: x.id === dId ? '#F5F4FE' : 'transparent', mark: x.id === dId ? 'inset 3px 0 0 #5B4FE0' : 'none',
+          pick: () => self.setState({ dsel: x.id }) };
+      }),
+      mono: dRow.mono, name: dRow.name, sub: dRow.sub + '. ' + dRow.contact + '. Owner: ' + ownerName,
+      route: dRow.route + ' route', routeChip: dRow.route === 'Warm' ? 'chip grn' : 'chip',
+      why: dd.why,
+      hasThread: thread.length > 0, thread, threadOpen, threadExpanded: threadOpen ? 'true' : 'false',
+      threadLabel: (threadOpen ? 'Hide' : 'Show') + ' the ' + thread.length + (thread.length === 1 ? ' earlier message' : ' earlier messages') + ' to ' + first,
+      threadIcon: threadOpen ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6', toggleThread: () => dUpd({ threadOpen: !threadOpen }),
+      hasDraft, isEnded: !hasDraft, endedText: dd.endedText || '',
+      kind: dd.kind || '', writer: dd.writer || '', edited: ds.body != null, restore: () => dUpd({ body: null, text: null }),
+      head: hasDraft ? [{ k: 'From', v: dd.from, cls: '' }, { k: 'To', v: dd.to, cls: '' }, { k: 'Subject', v: dd.subject, cls: 'sbd' }] : [],
+      reading: !ds.editing, editing: !!ds.editing, canEdit,
+      bodyCls: 'draft' + (canEdit ? ' can' : ''), bodyTitle: canEdit ? 'Click to edit' : '',
+      startEdit: () => { if (canEdit) dUpd({ editing: true, text: body }); },
+      paras: body.split(/\n\n+/).map((t) => ({ cls: ds.body != null && orig.indexOf(t) < 0 ? 'chg' : '', segs: segsOf(t, hasDraft ? dd.marks : [], 'ct') })),
+      text: ds.text == null ? body : ds.text, setText: (e) => dUpd({ text: e.target.value }),
+      textWords: count(ds.text == null ? body : ds.text) + ' of ' + (dd.limit || 0) + ' words',
+      textWordsCls: 'sm tn ' + (count(ds.text == null ? body : ds.text) > (dd.limit || 0) ? 'c-org md' : 'dim'),
+      save: () => { const t = ds.text == null ? body : ds.text; dUpd({ editing: false, body: t === dd.body ? null : t }); }, cancelEdit: () => dUpd({ editing: false, text: null }),
+      score: dd.score || '',
+      checks: hasDraft ? [['Purpose in line one', 'Yes', true], ['One clear ask', 'Yes', true], ['Current facts cited', dd.facts, true],
+        ['Length', words + ' of ' + dd.limit + ' words', words <= dd.limit], ['Prices or promises', 'None', true]].map(([k, v, ok]) => ({ k, v, cls: ok ? 'c-grn md' : 'c-org md' })) : [],
+      planNote: 'Day ' + dRow.day + ' of ' + dRow.of,
+      steps: ps.map((x) => ({ t: x.t, li: x.done ? 'done' : '', d: x.done ? 'd done' : x.now ? 'd you' : 'd', sub: 'Day ' + x.d + (x.done ? ', sent' : x.now ? ', this message' : ''), subCls: x.now ? 'c-org sm md' : 'dim sm', tCls: x.now ? 'sbd' : x.done ? 'md' : '' })),
+      ifNoReply: !hasDraft ? 'Every step is done. The plan cannot continue without a decision.' : nxt ? 'If ' + first + ' does not reply: ' + nxt.t.toLowerCase() + ' on day ' + nxt.d + '.' : 'This is the last step. With no reply, the plan ends and comes back here for a decision.',
+      approver: dd.approver || 'Pick what happens to this company next.',
+      isIdle: !ds.done && !ds.mode && !ds.editing, isForm: !ds.done && !!ds.mode, settled: !!ds.done,
+      actions, minor, hasMinor: minor.length > 0,
+      isRevise,
+      quick: ['Shorter', 'Warmer', 'More direct'].map((label) => ({ label, go: settle('Sent back to the Outreach agent', 'You asked for: ' + label.toLowerCase() + '. A new draft returns here in a few minutes.') })),
+      formLabel: isRevise ? 'Or say it in your own words' : 'Comment for ' + ownerName,
+      formHint: isRevise ? 'For example: open with their announcement' : 'What needs to change before it can go',
+      formGo: isRevise ? 'Send to the agent' : 'Return to ' + ownerName.split(' ')[0],
+      note, setNote: (e) => dUpd({ note: e.target.value }), cancel: () => dUpd({ mode: null }),
+      submit: isRevise
+        ? settle('Sent back to the Outreach agent', (note.trim() ? 'Your note: “' + note.trim() + '”. ' : '') + 'A new draft returns here in a few minutes.')
+        : settle('Returned to ' + ownerName, (note.trim() ? 'Your comment: “' + note.trim() + '”. ' : '') + 'Nothing was sent.'),
+      doneLabel: ds.done ? ds.done.label : '', doneBody: ds.done ? ds.done.body : '',
+      undo: () => dUpd({ done: null }),
+      key: (e) => {
+        const tag = (e.target && e.target.tagName) || '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        const k = (e.key || '').toLowerCase();
+        if (k === 'j') stepTo(1); else if (k === 'k') stepTo(-1);
+        else if (k === 'e' && !ds.done && !ds.mode && !ds.editing) actions[0].go();
+      }
+    };
+  }
+
+  /* ---- Qualification: handle one reply on one screen ---- */
+  const CV = {
+    ardent: { replyWhen: 'Friday 24 Oct, 16:05', first: 'Priya',
+      thread: [['QH', 'av r k', '19 Oct', 'LinkedIn note', 'Connection request, accepted the same day.'], ['QH', 'av r k', '15 Oct', 'Follow-up email', 'Asked whether peak weeks were still the pressure point.'], ['QH', 'av r k', '12 Oct', 'First email', 'Opened with the dock capacity line from the quarterly update.']],
+      main: 'Hi Priya,\n\nGlad the timing works. I’ve attached a two-page case study on planning peak weeks at a hub about your size. It is written so you can pass it straight to your CFO.', sign: 'Best,\nQuinn' },
+    silverline: { replyWhen: 'Friday 16 Oct, 11:20', first: 'Omar', thread: [['SR', 'av r', '13 Oct', 'First email', 'Opened with the Kansas City terminal expansion.']] },
+    granite: { replyWhen: 'Thursday 22 Oct, 09:40', first: 'Hannah', thread: [['SR', 'av r', '22 Oct', 'Calendar invite', 'Sam sent an invite for Tuesday 29 Oct, 10:00.'], ['SR', 'av r', '20 Oct', 'Follow-up email', 'Asked for 20 minutes to compare notes.'], ['SR', 'av r', '17 Oct', 'First email', 'Opened with the second tooling line.']] }
+  };
+  const ASK = ['Could you tell me where this hurts most day to day?', 'Which part of this would you want help with first?', 'Would it help to have someone from outside look at it with you?', 'Would a 30-minute call next week work, so I can walk you and your CFO through it?', 'Is there budget set aside for this, and who else would weigh in on the decision?', 'Is anyone else already helping you with this?'];
+  const cRows = isConvRev ? rowsData : [];
+  const cNeeds = (x) => x.owner === ME && !(cqAll[x.id] || {}).done;
+  const cId = cRows.some((x) => x.id === st.csel) ? st.csel : ((cRows.find(cNeeds) || cRows[0] || {}).id || null);
+  const cRow = cRows.find((x) => x.id === cId) || null;
+  let cq = { list: [], conds: [], thread: [], replySegs: [], key: () => {} };
+  if (cRow) {
+    const cd0 = CV[cId];
+    const cs = cqAll[cId] || {};
+    const cUpd = (patch) => self.setState({ csel: cId, cq: { ...cqAll, [cId]: { ...cs, ...patch } } });
+    const mine = cRow.owner === ME;
+    const ownerFirst = people[cRow.owner].split(' ')[0];
+    const states = condState(cRow);
+    const myEv = evAll[cId] || {};
+    const setEv = (i, v) => () => { const n = { ...myEv }; if (v) n[i] = v; else delete n[i]; const why = { ...(cs.why || {}) }; if (!v) delete why[i]; self.setState({ csel: cId, ev: { ...evAll, [cId]: n }, cq: { ...cqAll, [cId]: { ...cs, why } } }); };
+    const asks = cs.ask || {};
+    const compose = (a) => cd0.main + ASK.filter((q, i) => a[i]).map((q) => '\n\n' + q).join('') + '\n\n' + cd0.sign;
+    const text = !mine ? '' : cs.text == null ? compose(asks) : cs.text;
+    const toggleAsk = (i) => () => {
+      const a = { ...asks, [i]: !asks[i] };
+      let t = cs.text;
+      if (t != null) {
+        if (a[i]) { const at = t.lastIndexOf('\n\n' + cd0.sign); t = at >= 0 ? t.slice(0, at) + '\n\n' + ASK[i] + t.slice(at) : t + '\n\n' + ASK[i]; }
+        else t = t.replace('\n\n' + ASK[i], '');
+      }
+      cUpd({ ask: a, text: t });
+    };
+    const nIdx = noteIdx(cRow);
+    const propOf = (i) => i === nIdx ? ['“' + notesOf(cRow)[0] + '”', 'your call notes, today', ''] : ((cRow.prop || {})[i] || ['', '', '']);
+    const hov = st.hov && st.hov.id === cId ? st.hov.i : -1;
+    const hovPhrase = hov >= 0 && states[hov] === 'p' ? propOf(hov)[2] : '';
+    const nC = states.filter((x) => x === 'c' || x === 'you').length;
+    const nP = states.filter((x) => x === 'p').length;
+    const means = cs.means || cRow.means[0];
+    const settle = (label, bodyText) => () => cUpd({ done: { label, body: bodyText } });
+    const stepTo = (d) => { const n = cRows[(cRows.indexOf(cRow) + d + cRows.length) % cRows.length]; if (n) self.setState({ csel: n.id }); };
+    const earlier = notesOf(cRow).map((t) => ({ mono: 'QH', av: 'av r k', date: 'Today', title: 'Call notes', line: '“' + t + '”' })).concat(cd0.thread.map(([mono, av, date, title, line]) => ({ mono, av, date, title, line })));
+    cq = {
+      list: cRows.map((x) => {
+        const done = (cqAll[x.id] || {}).done; const np = nProp(x);
+        return { mono: x.mono, name: x.name, sub: done ? done.label : x.owner === ME ? 'New reply' + (np ? ', ' + np + ' to confirm' : '') : x.move, subCls: done ? 'c-grn sm md' : x.owner === ME ? 'c-org sm md' : 'mut sm',
+          pressed: x.id === cId ? 'true' : 'false', bg: x.id === cId ? '#F5F4FE' : 'transparent', mark: x.id === cId ? 'inset 3px 0 0 #5B4FE0' : 'none',
+          pick: () => self.setState({ csel: x.id }) };
+      }),
+      mono: cRow.mono, name: cRow.name, sub: cRow.sub + '. ' + cRow.contact + '. Owner: ' + people[cRow.owner] + '.', scoreLine: nC + ' of 6 conditions met. ' + missOf(cRow) + '.',
+      hasRecord: !!cRow.record, recordHref: cRow.record || '#',
+      replyLabel: 'Latest reply from ' + cRow.contact.split(',')[0], replyWhen: cd0.replyWhen,
+      replySegs: segsOf('“' + cRow.reply + '”', hovPhrase ? [[hovPhrase, '']] : [], 'hl'),
+      idleNote: !cs.noting, noting: !!cs.noting, note: cs.note || '', setNote: (e) => cUpd({ note: e.target.value }),
+      openNote: () => cUpd({ noting: true }), cancelNote: () => cUpd({ noting: false }),
+      saveNote: () => { const t = (cs.note || '').trim(); cUpd(t ? { noting: false, note: '', notes: [t].concat(notesOf(cRow)) } : { noting: false }); },
+      thread: earlier,
+      means, setMeans: (e) => cUpd({ means: e.target.value }),
+      isNotNow: means === 'Not now' && !cs.done, isNo: means === 'Not interested' && !cs.done,
+      back: cs.back == null ? '6 Jan 2027' : cs.back, setBack: (e) => cUpd({ back: e.target.value }),
+      park: settle('Parked until ' + (cs.back == null ? '6 Jan 2027' : cs.back), 'It moved to Parked. ' + ownerFirst + ' gets a reminder that day, and the evidence so far is kept.'),
+      aside: settle('Set aside', 'It moved to Set aside with the reason: not interested. The lead closes in Insightly.'),
+      met: nC + ' of 6 confirmed' + (nP ? ', ' + nP + ' your call' : ''), metCls: nP ? 'c-org md sm' : 'dim md sm',
+      conds: states.map((x, i) => {
+        const pr = propOf(i);
+        const why = (cs.why || {})[i];
+        const base = { name: CONDS[i], hasProof: false, proof: '', canDecide: false, canUndo: false, showWhy: false, reasons: [], canAsk: false,
+          askPressed: asks[i] ? 'true' : 'false', toggleAsk: toggleAsk(i), ok: setEv(i, 'ok'), no: setEv(i, 'no'), undo: setEv(i, null),
+          hov: () => { if (hov !== i) self.setState({ hov: { id: cId, i } }); }, unhov: () => { if (hov === i) self.setState({ hov: null }); } };
+        if (x === 'c') return { ...base, label: 'Confirmed', chip: 'chip grn' };
+        if (x === 'you') return { ...base, label: 'Confirmed by you', chip: 'chip grn', hasProof: true, proof: pr[0], canUndo: mine };
+        if (x === 'p') return { ...base, label: 'Your call', chip: 'chip org', hasProof: true, proof: pr[0] + ' From ' + pr[1] + '.', canDecide: mine };
+        if (x === 'no') return { ...base, label: 'Not counted', chip: 'chip', hasProof: !!why, proof: why ? 'Your reason: ' + why.toLowerCase() + '. Saved as a lesson for the Evidence agent.' : '', showWhy: mine && !why, canUndo: mine, canAsk: mine,
+          reasons: ['Too weak', 'Wrong person', 'Out of date'].map((label) => ({ label, pick: () => cUpd({ why: { ...(cs.why || {}), [i]: label } }) })) };
+        return { ...base, label: 'Missing', chip: 'chip', canAsk: mine };
+      }),
+      canReply: mine && !cs.done, notMine: !mine && !cs.done,
+      notMineText: ownerFirst + ' owns this conversation. ' + cRow.move.replace(ownerFirst + ': ', 'Next: ') + '. You can read along, but the reply and the evidence are his to handle.',
+      text, setText: (e) => cUpd({ text: e.target.value }),
+      send: settle('Reply sent from your Gmail', 'It went to ' + cRow.contact.split(',')[0] + ' just now. Her answer shows up here and the Evidence agent reads it.'),
+      redraft: () => cUpd({ text: null }),
+      canExc: nC < 6 && !cs.exc, excOpen: nC < 6 && !!cs.exc,
+      excLabel: 'Ask Alex to approve with ' + (6 - nC) + (6 - nC === 1 ? ' condition' : ' conditions') + ' missing',
+      excBody: missOf(cRow) + '. Alex sees what is missing and your reason before anything else in the pack. Nothing goes to Insightly unless he approves.',
+      excWhy: cs.excWhy || '', setExcWhy: (e) => cUpd({ excWhy: e.target.value }),
+      excOk: !!(cs.excWhy || '').trim(), excNo: !(cs.excWhy || '').trim(),
+      openExc: () => cUpd({ exc: true }), closeExc: () => cUpd({ exc: false }),
+      sendExc: () => cUpd({ exc: false, done: { label: 'Sent to Alex with ' + (6 - nC) + (6 - nC === 1 ? ' condition' : ' conditions') + ' missing', body: 'Your reason: “' + (cs.excWhy || '').trim() + '”. ' + cRow.name + ' moves to Awaiting approval, marked as an exception.' } }),
+      ready: nC === 6, sendPack: settle('Pack sent for approval', 'It is in Alex Morgan’s Inbox. ' + cRow.name + ' moves to Awaiting approval.'),
+      settled: !!cs.done, doneLabel: cs.done ? cs.done.label : '', doneBody: cs.done ? cs.done.body : '', undo: () => cUpd({ done: null }),
+      key: (e) => {
+        const tag = (e.target && e.target.tagName) || '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        const k = (e.key || '').toLowerCase();
+        if (k === 'j') stepTo(1); else if (k === 'k') stepTo(-1);
+      }
+    };
+  }
+
+  /* ---- Qualification: approve one pack ---- */
+  const pks = st.pk || {};
+  const pkSet = (patch) => self.setState({ pk: { ...pks, ...patch } });
+  const pk = {
+    sub: pks.done ? pks.done.label : 'Awaiting your approval', subCls: pks.done ? 'c-grn sm md' : 'c-org sm md',
+    conds: [
+      ['A specific client problem', '“Our regional sites each run scheduling their own way.”', 'Call notes, 21 Oct', 'Alex Morgan'],
+      ['Fits a CGS service', 'Operating model redesign covers scheduling across sites.', 'CGS service list', 'Alex Morgan'],
+      ['Open to outside help', '“We don’t have the capacity to do this ourselves.”', 'Email from James Walker, 20 Oct', 'Agent proposed, Alex confirmed'],
+      ['An agreed next step', 'Working session on 3 Nov with the COO and the CFO.', 'Calendar invite, sent 21 Oct', 'Agent proposed, Alex confirmed'],
+      ['Funding and a path to the decision', '“The board approved transformation funding in September.”', 'Call notes, 21 Oct', 'Alex Morgan'],
+      ['No open conflicts', 'No note or email contradicts the five points above.', 'All 4 emails and 2 call notes', 'Agent proposed, Alex confirmed']
+    ].map(([name, proof, src, by]) => ({ name, proof, src, by })),
+    isIdle: !pks.done && !pks.mode, isForm: !pks.done && pks.mode === 'comment', settled: !!pks.done,
+    approve: () => pkSet({ done: { label: 'Approved', body: 'The opportunity is being created in Insightly with the new estimate. Northstar moves to Qualified.' } }),
+    resubmit: () => pkSet({ done: { label: 'Asked Alex to resubmit', body: 'The updated pack comes back here and to your Inbox.' } }),
+    toComment: () => pkSet({ mode: 'comment' }), cancel: () => pkSet({ mode: null }),
+    comment: pks.comment || '', setComment: (e) => pkSet({ comment: e.target.value }),
+    send: () => pkSet({ mode: null, done: { label: 'Returned to Alex', body: ((pks.comment || '').trim() ? 'Your comment: “' + pks.comment.trim() + '”. ' : '') + 'Nothing went to Insightly.' } }),
+    doneLabel: pks.done ? pks.done.label : '', doneBody: pks.done ? pks.done.body : '', undo: () => pkSet({ done: null })
+  };
+
+  const close = () => self.setState({ sel: null });
+  const ISSUE = {
+    none: { head: '', body: '' },
+    budget: { tone: 'warn', head: 'Today’s AI requests are used up: 60 of 60', body: 'Research and drafting pause until midnight. Nothing is lost: each brief picks up at the step it reached. Decisions, approvals and sending still work.',
+      primary: 'Raise today’s limit', href: 'Connectors.dc.html', secondary: 'Not now', doSecondary: () => self.setState({ issueOff: true }) },
+    gmail: { tone: 'err', head: 'Gmail is disconnected for Alex Morgan', body: 'Since 07:40 today, nothing can be sent from Alex’s Gmail and replies to him are not being read. 3 of his contact plans are affected; their steps wait until it reconnects.',
+      primary: 'Reconnect Gmail', href: 'Connectors.dc.html', secondary: 'Tell Alex', doSecondary: () => { self.setState({ issueOff: true }); toastFor('Alex told', 'he gets a message in his Inbox', []); } },
+    research: { tone: 'err', head: 'Research stopped on 1 company', body: 'Fairlight Packaging: the company website would not load after 3 tries. The agent needs a person to decide what to do.',
+      primary: 'Open Fairlight Packaging', doPrimary: () => self.setState({ stage: 'research', sel: 'fairlight' }) }
+  }[issue];
+  const issueBox = { ...ISSUE, cls: ISSUE.tone === 'err' ? 'card err' : 'card warn', color: ISSUE.tone === 'err' ? '#B42318' : '#B8430F',
+    icon: ISSUE.tone === 'err' ? 'M12 8v5M12 16.5v.5M3 12a9 9 0 1018 0 9 9 0 10-18 0' : 'M12 7v5l3 2M3 12a9 9 0 1018 0 9 9 0 10-18 0',
+    isLink: !!ISSUE.href, isBtn: !ISSUE.href && !!ISSUE.doPrimary, primary: ISSUE.primary || '', href: ISSUE.href || '#', doPrimary: ISSUE.doPrimary || (() => {}),
+    hasSecondary: !!ISSUE.secondary, secondary: ISSUE.secondary || '', doSecondary: ISSUE.doSecondary || (() => {}) };
+  const checkedIds = isFound ? all.filter((x) => checked[x.id]).map((x) => x.id) : [];
+  const bulk = (label, body) => () => {
+    const n = { ...acted };
+    checkedIds.forEach((id) => { n[id] = { label, body }; });
+    self.setState({ acted: n, checked: {} });
+    toastFor(label, checkedIds.length + (checkedIds.length === 1 ? ' company' : ' companies'), checkedIds);
+  };
+
+  return {
+    view, title: V.title, subtitle: V.sub, isCompanies: view === 'companies',
+    hasIssue: issue !== 'none' && !st.issueOff, issue: issueBox,
+    stageBar: V.stages.map((id) => ({
+      label: S[id].label, crm: S[id].crm, count: String(data[id].filter((x) => !S[id].scoped || view === 'companies' || who === 'team' || x.owner === ME).length), color: COLORS[S[id].who],
+      selected: id === stage ? 'true' : 'false', labelCls: id === stage ? 'sbd' : 'mut md',
+      pick: () => self.setState({ stage: id, sel: null })
+    })),
+    isTable: !isFull, isReview, isQueue, dq, isConvRev, cq, isPack, pk,
+    isFunnel: true, isTabs: false, headWho: view !== 'companies',
+    minW: view === 'outreach' ? '1120px' : stage === 'conv' ? '1180px' : '880px',
+    emptyText: 'Nothing of yours here. Switch to Whole team to see everyone’s.',
+    cur: { label: cfg.label, note: cfg.note, scoped: !!cfg.scoped, segInTable: !!cfg.scoped && view === 'companies', shown: String(rowsData.length) },
+    whose: [['mine', 'Mine'], ['team', 'Whole team']].map(([id, label]) => ({ label, pressed: id === who ? 'true' : 'false', pick: () => self.setState({ who: id, sel: null }) })),
+    cols: tbl.cols, heads: tbl.heads, rows, hasCheck: isFound, empty: !isFull && rowsData.length === 0,
+    noop: () => {},
+    bulkOn: isFound && nChecked > 0, nChecked: String(nChecked),
+    clearChecks: () => self.setState({ checked: {} }),
+    bulkBrief: bulk('Briefs requested', 'The Research agent starts within the hour.'),
+    bulkAside: bulk('Set aside', 'You can bring them back from Set aside.'),
+    rv, queue,
+    panelOpen: !!r, isSide: !!r,
+    p, close, prev: move(-1), next: move(1),
+    panelKey: (e) => {
+      const k = (e.key || '').toLowerCase();
+      if (k === 'escape') close();
+      else if (k === 'j') move(1)();
+      else if (k === 'k') move(-1)();
+    },
+    hasToast: !!st.toast, toast: st.toast || { label: '', title: '' },
+    undoToast: () => {
+      const t = st.toast; if (!t) return;
+      if (t.dq) { const one = { ...(dqAll[t.dq] || {}) }; delete one.done; self.setState({ dq: { ...dqAll, [t.dq]: one }, dsel: t.dq, toast: null }); return; }
+      const n = { ...acted }; (t.ids || []).forEach((id) => { delete n[id]; });
+      self.setState({ acted: n, toast: null });
+    }
+  };
+}
+}
+</script>
+</body>
+</html>

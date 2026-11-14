@@ -29,23 +29,18 @@ export const SCOPES = [
   ["opportunity", "Only this company"],
 ];
 
+// Labels only: the backend's stage values stay as they are. Nurture shows as "Parked" (redesign decision D2).
 export const STAGE_LABELS = {
-  researching: "Being researched",
-  review: "Ready to decide",
-  identified: "Accepted, not contacted",
+  researching: "Researching",
+  review: "Your decision",
+  identified: "Identified",
   contacted: "Contacted",
-  active: "In conversation",
+  active: "Active",
   approval: "Awaiting approval",
   qualification: "Qualified",
-  nurture: "Nurture",
+  nurture: "Parked",
   rejected: "Rejected",
   closed: "Closed",
-};
-
-export const RECOMMENDATION_LABELS = {
-  accept: "accept",
-  return: "send back for more research",
-  reject: "reject",
 };
 
 export const CLOSE_REASONS = ["Client declined", "No budget this year", "Problem solved internally", "Went with another advisor", "Other"];

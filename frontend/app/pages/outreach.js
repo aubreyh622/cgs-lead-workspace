@@ -1,33 +1,47 @@
-// Outreach: Step 5 (first email, follow-ups, nurture) and the first reply that makes a lead Active.
-// Agents draft; a person approves the exact email and address before anything is sent.
-import { html, icon, day, addDays, daysBetween, href, plural, initials, sourceLink, linkedinSearch } from "../lib.js";
+// Outreach (design/redesign/Companies.dc.html, view "outreach"): Step 5 (first email, contact plans, follow-ups) up to
+// the first reply. Agents draft; a person approves the exact email and address before anything is sent.
+//
+// Each lead is in one place, by who has the next move: Needs you (the person acting), With a teammate (someone else:
+// the owner, or the second approver), Agent drafting (a plan step the outreach agent prepares when it is due), Waiting
+// for a reply (the client), Parked (the review date). Mine shows the person's own leads; Whole team shows everyone's.
+// Needs you is a review queue in three columns; the other stages are tables with a side panel.
+import { html, icon, day, addDays, daysBetween, href, plural, initials, sourceLink, linkedinSearch, safeUrl } from "../lib.js";
 import { enc } from "../api.js";
-import { STAGE_LABELS, CLOSE_REASONS } from "../options.js";
-import { emptyState, inlineError, crmLinks, crmConflicts, resolveCrm } from "../shell.js";
+import { STAGE_LABELS } from "../options.js";
+import { emptyState, inlineError, crmLinks, crmConflicts, resolveCrm, drawer, panelActions } from "../shell.js";
 import { UNDO_SECONDS, offerUndo, undoEmail, waitingNotice, emailWaits, undoEmailAct, sendNowAct, secondFormAct } from "../undo.js";
 
 export const title = "Outreach";
 
+// The stage cards, as on Companies (design: Companies.dc.html stageBar): who has the move, and its line under the name.
 const TABS = [
-  ["approve", "To approve"],
-  ["waiting", "Waiting for a reply"],
-  ["nurture", "Nurture"],
-  ["talking", "In conversation"],
+  ["you", "Needs you", "you", "Review, approve or decide"],
+  ["mate", "With a teammate", "none", "A colleague has the next move"],
+  ["agent", "Agent drafting", "agent", "Drafted when the step is due"],
+  ["wait", "Waiting for a reply", "none", "The client has the next move"],
 ];
-const STAGES = ["identified", "contacted", "nurture", "active", "approval", "qualification"];
-const PURPOSE = { first: "First email", followup: "Follow-up", reconnect: "Reconnect email" };
+// Tab names before the redesign. "talking" (In conversation) is on Qualification now; its old links open Waiting.
+// Parked (nurture) is on Qualification (D2): load() sends those links there.
+const TAB_ALIAS = { approve: "you", waiting: "wait", talking: "wait" };
+const MOVED = ["nurture", "parked"];
+const STAGES = ["identified", "contacted", "nurture"];
+const PURPOSE = { first: "First email", followup: "Follow-up email", reconnect: "Reconnect email" };
 const CHANNELS = ["Email", "LinkedIn message", "Phone call", "Other"];
 const REVISE_HINTS = ["Make it shorter.", "Use a warmer opening.", "Lead with the most recent news.", "Ask for a 20-minute call next week."];
+const KIND_LABEL = {
+  reply: "Client replied", approve2: (x) => `Approve for ${x.by}`, draft: (x, me) => (x.opp.owner === me ? "Your draft to review" : `${x.opp.owner}'s draft`),
+  first: "First email", plan: "Decide the contact plan", step: "Plan step to do", agentstep: "Agent drafts it", wait: "Waiting for a reply", parked: "Parked",
+};
 
 // What the person has open. Cleared when they pick another item.
-const ui = { mode: null, key: null, error: null, notice: null };
+const ui = { mode: null, key: null, error: null, notice: null, thread: null };
 
 function resetUi(key = null) {
-  ui.mode = null; ui.key = key; ui.error = null; ui.notice = null;
+  ui.mode = null; ui.key = key; ui.error = null; ui.notice = null; ui.thread = null;
 }
 
 // ---------- work items ----------
-// One list of things to approve, built from the agents' inbox and the accepted leads without a draft item.
+// Drafts the agents put in the inbox, and accepted leads without a first-email draft item (tests/v2/test_frontend.py).
 export function approveItems(opps, inbox) {
   const byId = Object.fromEntries(opps.map((o) => [o.id, o]));
   const items = [];
@@ -43,203 +57,374 @@ export function approveItems(opps, inbox) {
   return items;
 }
 
-// A client reply found in the email thread waits on the lead it answers (Waiting for a reply, or Nurture), so the person
-// reads and records it where they were waiting for it. Leads with a reply come first.
-function withReplies(opps, stage, kind, inbox) {
-  const replies = Object.fromEntries(inbox.filter((it) => it.kind === "reply" && it.status === "new").map((it) => [it.opportunityId, it]));
-  const items = opps.filter((o) => o.stage === stage).map((o) => (replies[o.id]
-    ? { key: `item-${replies[o.id].id}`, kind: "reply", item: replies[o.id], opp: o }
-    : { key: `opp-${o.id}`, kind, opp: o }));
-  return [...items.filter((x) => x.kind === "reply"), ...items.filter((x) => x.kind !== "reply")];
-}
-
-// What waits for this person on Outreach (the navigation count): drafts and first emails to approve, and replies to record.
+// Drafts to approve plus client replies to record (the count before the redesign; kept for its test).
 export function waitingFor(opps, inbox) {
-  const replies = ["contacted", "nurture"].flatMap((s) => withReplies(opps, s, "", inbox)).filter((x) => x.kind === "reply");
+  const replies = inbox.filter((it) => it.kind === "reply" && it.status === "new" && opps.some((o) => o.id === it.opportunityId && ["contacted", "nurture"].includes(o.stage)));
   return approveItems(opps, inbox).length + replies.length;
 }
 
+// One item per lead: what it waits for now, and whose move it is. In order of what comes first when several apply.
+export function leadItems(opps, inbox, details, today) {
+  const replies = Object.fromEntries(inbox.filter((it) => it.kind === "reply" && it.status === "new").map((it) => [it.opportunityId, it]));
+  const drafts = approveItems(opps, inbox);
+  const out = [];
+  for (const o of opps) {
+    const det = details[o.id] || {};
+    const r = det.outreach || {};
+    const w = r.waiting;
+    const pl = r.plan;
+    const cur = pl && pl.running ? (pl.plan.steps || []).find((s) => s.n === pl.current) : null;
+    const draft = drafts.find((x) => x.kind === "draft" && x.opp.id === o.id);
+    let x;
+    if (replies[o.id]) x = { kind: "reply", item: replies[o.id], who: o.owner };
+    else if (w && w.status === "approval") x = { kind: "approve2", out: w, by: w.by, who: w.approver };
+    else if (draft) x = { kind: "draft", item: draft.item, who: o.owner };
+    else if (pl && pl.status === "proposed") x = { kind: "plan", who: o.owner };
+    else if (cur && (cur.status === "ready" || (cur.due && cur.due <= today))) x = { kind: "step", step: cur, who: o.owner };
+    else if (o.stage === "identified") x = { kind: "first", who: o.owner };
+    else if (cur) x = { kind: "agentstep", step: cur, who: "agent" };
+    else if (o.stage === "nurture") x = { kind: "parked", who: o.owner };
+    else x = { kind: "wait", who: "client" };
+    out.push({ ...x, key: o.id, opp: o, det });
+  }
+  return out;
+}
+
+function bucket(x, me, team) {
+  const mine = x.opp.owner === me;
+  if (["reply", "approve2", "draft", "plan", "step", "first"].includes(x.kind)) {
+    if (x.who === me) return "you";
+    return team || mine || (x.kind === "approve2" && x.by === me) ? "mate" : null;
+  }
+  if (!team && !mine) return null;
+  return { agentstep: "agent", wait: "wait" }[x.kind] || null;  // parked leads are on Qualification
+}
+
+// ---------- data ----------
+let rubric = null; // the CGS email standard: criteria labels and word ranges (Settings, Email standard)
+let people = null; // who approves whose emails a second time
+
 export async function load(ctx, params) {
+  if (MOVED.includes(params.tab)) {
+    ctx.go("qualification", { tab: "parked", id: params.id, team: params.team });
+    return { moved: true };
+  }
   const team = params.team === "1";
-  const [all, inbox, toolkit] = await Promise.all([
+  const [opps, inbox, toolkit] = await Promise.all([
     ctx.api.get(`/opportunities?${STAGES.map((s) => `stage=${s}`).join("&")}`),
-    ctx.api.get(team ? "/inbox" : `/inbox?owner=${enc(ctx.me)}`),
+    ctx.api.get("/inbox"),
     ctx.api.get("/toolkit").catch(() => ({ mail: { provider: "off", ready: false } })),
   ]);
-  const opps = team ? all : all.filter((o) => o.owner === ctx.me);
-  const lists = {
-    approve: approveItems(opps, inbox),
-    waiting: withReplies(opps, "contacted", "waiting", inbox),
-    nurture: withReplies(opps, "nurture", "nurture", inbox),
-    talking: opps.filter((o) => ["active", "approval", "qualification"].includes(o.stage)),
-  };
-  // A link from Home names an opportunity (id) or an inbox item (item); open the tab that holds it.
-  let tab = TABS.some(([t]) => t === params.tab) ? params.tab : null;
-  const wanted = params.item ? `item-${params.item}` : params.id ? `opp-${params.id}` : null;
-  if (!tab && wanted) tab = ["approve", "waiting", "nurture"].find((t) => lists[t].some((x) => x.key === wanted)) || null;
-  if (!tab && params.id) tab = lists.talking.some((o) => o.id === params.id) ? "talking" : null;
-  const replied = (t) => lists[t].some((x) => x.kind === "reply");
-  tab = tab || (replied("waiting") ? "waiting" : replied("nurture") ? "nurture" : lists.approve.length ? "approve" : lists.waiting.length ? "waiting" : "approve");
-  if (params.tab !== tab) ctx.replace("outreach", { ...params, tab });  // the tab chosen now stays when the page redraws
+  if (!rubric) rubric = await ctx.api.get("/email-rubric").then((x) => x.current).catch(() => null);
+  if (!people) people = await ctx.api.get("/people").then((x) => x.people).catch(() => []);
+  const details = Object.fromEntries((await Promise.all(opps.map((o) => detailOf(ctx, o.id)))).filter(Boolean).map((x) => [x.id, x]));
+  const all = leadItems(opps, inbox, details, ctx.today);
+  const lists = Object.fromEntries(TABS.map(([t]) => [t, []]));
+  for (const x of all) { const b = bucket(x, ctx.me, team); if (b) lists[b].push(x); }
+  lists.you.sort((a, b) => order(a) - order(b));
 
-  const data = { tab, team, lists, inbox, mail: toolkit.mail || { provider: "off", ready: false } };
-  const list = lists[tab];
-  if (tab !== "talking" && list.length) {
-    const cur = list.find((x) => x.key === wanted) || list[0];
+  // A link names a lead (id) or an inbox item (item): open the stage that holds it.
+  const wantedId = params.item ? (inbox.find((it) => it.id === params.item) || {}).opportunityId : params.id;
+  let tab = TAB_ALIAS[params.tab] || params.tab;
+  if (!TABS.some(([t]) => t === tab)) tab = null;
+  if (wantedId && (!tab || !lists[tab].some((x) => x.key === wantedId))) tab = TABS.map(([t]) => t).find((t) => lists[t].some((x) => x.key === wantedId)) || tab;
+  tab = tab || (lists.you.length ? "you" : "wait");
+  let id = wantedId && lists[tab].some((x) => x.key === wantedId) ? wantedId : undefined;
+  if (tab === "you" && !id && lists.you.length) id = lists.you[0].key;
+  if (params.tab !== tab || params.id !== id || params.item) ctx.replace("outreach", { tab, id, team: team ? "1" : undefined });
+
+  const data = { tab, team, lists, inbox, id, mail: toolkit.mail || { provider: "off", ready: false } };
+  const cur = id && lists[tab].find((x) => x.key === id);
+  if (cur) {
     if (ui.key !== cur.key) resetUi(cur.key);
     data.cur = cur;
     Object.assign(data, await itemData(ctx, cur));
   }
   return data;
 }
+const ORDER = ["reply", "approve2", "draft", "step", "plan", "first"];
+const order = (x) => ORDER.indexOf(x.kind);
 
-// One item's details: the opportunity, other CGS work with it, and the email preview when there is a draft.
-// Kept for a minute, so picking an item already fetched shows at once; the full load then checks it again.
-const items = new Map();
-const ITEM_TTL = 60 * 1000;
+// The opportunity in full, kept for a minute so the queue and the panel draw at once; the full load checks again.
+const details = new Map();
+const TTL = 60 * 1000;
+async function detailOf(ctx, id) {
+  try {
+    const x = await ctx.api.get(`/opportunities/${enc(id)}`);
+    details.set(id, { at: Date.now(), value: x });
+    return x;
+  } catch { return null; }
+}
 
+// One item's extras: other CGS work with it, and the email preview when there is a draft.
+const extras = new Map();
 async function itemData(ctx, cur) {
   const id = cur.opp.id;
-  const [detail, related] = await Promise.all([
-    ctx.api.get(`/opportunities/${enc(id)}`),
-    ctx.api.get(`/opportunities/${enc(id)}/related`).catch(() => null),
-  ]);
+  const detail = cur.det && cur.det.id ? cur.det : await ctx.api.get(`/opportunities/${enc(id)}`);
+  const related = await ctx.api.get(`/opportunities/${enc(id)}/related`).catch(() => null);
   const out = { detail, related, preview: undefined };
-  const hasFirstDraft = cur.kind === "first" && detail.outreach.status === "draft";
-  if (cur.kind === "draft" || hasFirstDraft) {
+  const firstDraft = cur.kind === "first" && detail.outreach.status === "draft";
+  if (cur.kind === "draft" || firstDraft) {
     const q = cur.kind === "draft" ? `?itemId=${enc(cur.item.id)}` : "";
     out.preview = await ctx.api.get(`/opportunities/${enc(id)}/outreach/email${q}`).catch((e) => ({ error: e.message }));
   }
-  items.set(cur.key, { at: Date.now(), value: out });
+  extras.set(`${cur.kind}:${cur.key}`, { at: Date.now(), value: out });
   return out;
 }
 
-function wantedKey(params) {
-  return params.item ? `item-${params.item}` : params.id ? `opp-${params.id}` : null;
-}
-
 export function instant(ctx, params, last) {
-  if (!last || params.tab !== last.tab || (params.team === "1") !== last.team || !last.lists[last.tab] || last.tab === "talking") return null;
-  const cur = last.lists[last.tab].find((x) => x.key === wantedKey(params));
-  const hit = cur && items.get(cur.key);
-  if (!hit || Date.now() - hit.at > ITEM_TTL) return null;
+  const tab = TAB_ALIAS[params.tab] || params.tab;
+  if (!last || last.moved || tab !== last.tab || (params.team === "1") !== last.team) return null;
+  if (!params.id) return tab === "you" ? null : { ...last, id: undefined, cur: null };
+  const cur = last.lists[tab].find((x) => x.key === params.id);
+  const hit = cur && extras.get(`${cur.kind}:${cur.key}`);
+  if (!hit || Date.now() - hit.at > TTL) return null;
   if (ui.key !== cur.key) resetUi(cur.key);
-  return { ...last, cur, ...hit.value };
+  return { ...last, id: params.id, cur, ...hit.value };
 }
 
 export function changed(early, d) {
-  const pick = (x) => JSON.stringify([x.tab, x.cur && x.cur.key, x.detail, x.preview, (x.lists[x.tab] || []).map((i) => i.key)]);
+  const pick = (x) => JSON.stringify([x.tab, x.cur && x.cur.key, x.cur && x.cur.kind, x.detail, x.preview, TABS.map(([t]) => ((x.lists || {})[t] || []).map((i) => `${i.key}:${i.kind}`))]);
   return pick(early) !== pick(d);
 }
 
-// After drawing: fetch the other items in this list, so picking one shows it at once.
+// After drawing: the extras of the other items in the queue, so picking one shows it at once.
 export function after(root, ctx, d) {
-  if (d.tab === "talking") return;
+  if (!keysOn) { root.addEventListener("keydown", queueKey); keysOn = true; }
+  if (d.moved) return;
   for (const cur of (d.lists[d.tab] || []).slice(0, 12)) {
-    const hit = items.get(cur.key);
-    if (!hit || Date.now() - hit.at > ITEM_TTL) itemData(ctx, cur).catch(() => null);
+    const hit = extras.get(`${cur.kind}:${cur.key}`);
+    if (!hit || Date.now() - hit.at > TTL) itemData(ctx, cur).catch(() => null);
   }
 }
 
 // ---------- view ----------
 export function view(d, ctx) {
-  const count = { approve: d.lists.approve.length, waiting: d.lists.waiting.length, nurture: d.lists.nurture.length, talking: d.lists.talking.length };
-  const teamLink = href("outreach", { tab: d.tab, team: d.team ? undefined : "1" });
+  if (d.moved) return html`<p class="meta">Parked leads are under Qualification, Parked.</p>`;
+  const link = (tab, extra = {}) => href("outreach", { tab, team: d.team ? "1" : undefined, ...extra });
   return html`
   <div class="page-head">
     <div>
       <h1>Outreach</h1>
-      <p>Emails the outreach agent wrote for ${d.team ? "the team's" : "your"} leads, and the leads waiting for a reply. Nothing is sent until a person approves it.</p>
+      <p>Contact plans and emails before the first reply. Nothing is sent until a person approves it. In Insightly a lead is Identified until its first email goes out, then Contacted.</p>
     </div>
-    <div class="actions">
-      <a class="btn ghost" href="${teamLink}">${d.team ? "Show only mine" : "Show the whole team"}</a>
+    <div class="head-side">
+      <span class="legend"><span><span class="dot wait" aria-hidden="true"></span>Waiting on you</span>
+        <span><span class="dot agent" aria-hidden="true"></span>An agent works on it</span></span>
+      <div class="segmented" role="group" aria-label="Whose leads">
+        <a href="${href("outreach", { tab: d.tab })}" aria-current="${d.team ? "false" : "true"}">Mine</a>
+        <a href="${href("outreach", { tab: d.tab, team: "1" })}" aria-current="${d.team ? "true" : "false"}">Whole team</a>
+      </div>
       ${d.mail.ready ? html`<button type="button" class="btn" data-act="syncMail">${icon("refresh", 16)}Check email now</button>` : ""}
     </div>
   </div>
   ${mailNotice(d.mail)}
-  <div class="tabs" role="tablist" aria-label="Outreach" data-act="tabkeys" data-on="keydown">
-    ${TABS.map(([id, label]) => html`
-      <button type="button" role="tab" id="tab-${id}" aria-selected="${d.tab === id ? "true" : "false"}" aria-controls="panel"
-        tabindex="${d.tab === id ? "0" : "-1"}" data-act="tab" data-tab="${id}">${label}<span class="count">${count[id]}</span></button>`)}
+  <div class="stages" role="tablist" aria-label="Stages" data-act="tabkeys" data-on="keydown">
+    ${TABS.map(([id, label, who, line]) => html`
+      <button type="button" role="tab" class="stg" id="tab-${id}" aria-selected="${d.tab === id ? "true" : "false"}" aria-controls="panel"
+        tabindex="${d.tab === id ? "0" : "-1"}" data-act="tab" data-tab="${id}">
+        <span class="who ${who}" aria-hidden="true"></span>
+        <span class="n">${d.lists[id].length}</span>
+        <span class="${who === "you" ? "label you-text" : "label"}">${label}</span>
+        <span class="crm">${line}</span>
+      </button>`)}
   </div>
   <div id="panel" role="tabpanel" aria-labelledby="tab-${d.tab}">
-    ${d.tab === "talking" ? talkingView(d, ctx) : listAndDetail(d, ctx)}
-  </div>`;
+    ${d.tab === "you" ? queueView(d, ctx, link) : tableView(d, ctx, link)}
+  </div>
+  ${d.tab !== "you" && d.cur ? panel(d, ctx, link) : ""}`;
 }
 
+// Gmail signed out is a workspace problem: the red banner at the top says so (shell.js problems), not this notice.
+const gmailOff = (mail) => mail.provider === "gmail" && !mail.ready;
 function mailNotice(mail) {
-  if (mail.ready) return "";
+  if (mail.ready || gmailOff(mail)) return "";
   const why = mail.provider === "off" ? "Email is off in this workspace" : `The ${mail.provider} mailbox is not ready`;
   return html`<div class="notice" style="margin-bottom:20px">${icon("alert")}<span>${why}, so the workspace cannot send. Send from your own email or phone, then record what you sent here.</span></div>`;
 }
 
-function listAndDetail(d, ctx) {
+const STAGE_NOTE = {
+  mate: "Waiting on a colleague: the owner still has to review the draft, or the second approver has it.",
+  agent: "Nothing to do yet. The Outreach agent drafts each plan step when it is due, then it comes to Needs you.",
+  wait: "Sent and waiting. A plan stops the moment the client replies, and the lead moves to Qualification.",
+};
+const EMPTY = {
+  you: ["Nothing needs you right now", "When you accept a company, the Outreach agent drafts the first email or a contact plan and it appears here."],
+  mate: ["Nothing waits on a colleague", "Leads show here while a colleague has the next move, for example a second approval."],
+  agent: ["No plan step is being drafted", "Approved contact plans show their next step here until it is due."],
+  wait: ["No one to wait for", "Leads move here when the first message goes out."],
+};
+
+// ----- the plan: where a lead is, as dots and words -----
+const CHANNEL = {
+  email: "Email", linkedin_connect: "LinkedIn request", linkedin_message: "LinkedIn message", share_content: "Share a CGS piece",
+  invite: "Invitation", warm_intro: "Introduction", call: "Phone call",
+};
+const ROUTE = { warm: ["Warm route", "good"], value_first: ["Value first", ""], direct: ["Direct", ""] };
+function planOf(det) {
+  const pl = det && det.outreach && det.outreach.plan;
+  if (!pl || pl.status !== "approved" || !pl.plan) return null;
+  const steps = pl.plan.steps || [];
+  const cur = steps.find((s) => s.n === pl.current);
+  const last = steps[steps.length - 1];
+  return { pl, steps, cur, length: last ? last.day : 0, at: cur ? cur.day : last ? last.day : 0 };
+}
+function planDots(det) {
+  const p = planOf(det);
+  if (!p) return html`<span class="meta-3">No plan</span>`;
+  return html`<span class="plan-dots" title="${p.cur ? `Day ${p.at} of ${p.length}` : p.pl.running ? "" : "Plan stopped"}"><span class="pd-row" aria-hidden="true">${p.steps.map((s) =>
+    html`<span class="pd ${s.status === "done" || s.status === "skipped" ? "done" : p.cur && s.n === p.cur.n ? "now" : ""}"></span>`)}</span>
+    <span class="meta-3">${p.cur ? `Day ${p.at} of ${p.length}` : p.pl.running ? "Done" : "Stopped"}</span></span>`;
+}
+function routeTag(det) {
+  const pl = det && det.outreach && det.outreach.plan;
+  const r = pl && pl.plan && ROUTE[pl.plan.approach];
+  return r ? html`<span class="tag ${r[1]}">${r[0]}</span>` : html`<span class="meta-3">Single email</span>`;
+}
+
+// ----- the tables (With a teammate, Agent drafting, Waiting for a reply, Parked) -----
+function tableView(d, ctx, link) {
   const list = d.lists[d.tab];
-  if (!list.length) {
-    const empty = {
-      approve: ["Nothing to approve", "When you accept a company, the outreach agent drafts the first email and it appears here. Follow-ups appear when a lead has not replied.", { href: href("companies", { tab: "review" }), label: "Open companies to decide on" }],
-      waiting: ["No one to wait for", "Leads move here when you send or record the first email."],
-      nurture: ["Nothing in nurture", "Leads you move to nurture wait here until their review date."],
-    }[d.tab];
-    return html`<section class="card">${emptyState(...empty)}</section>`;
-  }
+  if (!list.length) return html`<section class="card">${emptyState(...EMPTY[d.tab])}</section>`;
   return html`
-  <div class="split">
-    <nav class="pick-list" aria-label="${TABS.find(([t]) => t === d.tab)[1]}">
-      ${list.map((x) => pickCard(x, d, ctx))}
+  <section class="card" aria-labelledby="out-h">
+    <div class="card-head"><div><h2 id="out-h">${TABS.find(([t]) => t === d.tab)[1]} <span class="cnt">${list.length}</span></h2><p class="meta">${STAGE_NOTE[d.tab]}</p></div></div>
+    <div class="table-wrap"><table class="list rows-table">
+      <thead><tr><th scope="col">Company</th><th scope="col">Contact</th><th scope="col">Next step</th><th scope="col">When</th><th scope="col">Route</th><th scope="col">Plan</th><th scope="col">Status</th></tr></thead>
+      <tbody>${list.map((x) => {
+        const o = x.opp;
+        const next = nextStep(x, ctx);
+        return html`<tr class="${x.key === d.id ? "on" : ""}">
+          <td><span class="co"><span class="avatar" aria-hidden="true">${initials(o.company)}</span><span class="co-text">
+            <a class="nm" href="${link(d.tab, { id: x.key })}" data-act="openRow" data-row="${x.key}">${o.company}</a><span class="meta-3">${o.owner ? `Owner: ${o.owner}` : "No owner"}</span></span></span></td>
+          <td><span class="cell-main">${o.contact.name || "To confirm"}</span><span class="meta-3">${o.contact.title}</span></td>
+          <td>${next.what}</td>
+          <td><span class="${next.late ? "you-text md" : "meta"}">${next.when}</span></td>
+          <td>${routeTag(x.det)}</td>
+          <td>${planDots(x.det)}</td>
+          <td>${statusTag(x, ctx, d.mail)}</td></tr>`;
+      })}</tbody>
+    </table></div>
+  </section>`;
+}
+
+function nextStep(x, ctx) {
+  const o = x.opp;
+  const p = planOf(x.det);
+  const due = p && p.cur && p.cur.due ? p.cur.due : o.next.due;
+  const what = p && p.cur ? `${CHANNEL[p.cur.channel] || p.cur.channel} to ${p.cur.to}` : x.kind === "parked" ? "Review" : o.next.action || "None set";
+  const left = due ? daysBetween(ctx.today, due) : null;
+  return { what, when: due ? (left === 0 ? "Today" : left < 0 ? `${plural(-left, "day")} late` : day(due, ctx.today)) : "No date", late: left !== null && left <= 0 };
+}
+
+function statusTag(x, ctx, mail) {
+  // With Gmail signed out, a row whose next move is an email says it cannot go out, and a sent one that its reply is not read.
+  if (mail && gmailOff(mail)) {
+    const email = ["draft", "first", "approve2"].includes(x.kind) || (["step", "agentstep"].includes(x.kind) && x.step && x.step.channel === "email");
+    if (email) return html`<span class="tag bad">Can't send, Gmail off</span>`;
+    if (x.kind === "wait") return html`<span class="tag bad">Replies not read</span>`;
+  }
+  if (x.kind === "approve2") return html`<span class="tag warn">With ${x.who} for approval</span>`;
+  if (["draft", "first", "plan", "step", "reply"].includes(x.kind)) return html`<span class="tag warn">${x.who === ctx.me ? "Needs you" : `With ${x.who || "no owner"}`}</span>`;
+  if (x.kind === "agentstep") return html`<span class="tag info">Agent drafts it${x.step && x.step.due ? ` ${day(x.step.due, ctx.today)}` : ""}</span>`;
+  if (x.kind === "parked") return html`<span class="tag">Parked until ${x.opp.next.due ? day(x.opp.next.due, ctx.today) : "no date"}</span>`;
+  return html`<span class="tag">Stops when they reply</span>`;
+}
+
+// ----- Needs you: the review queue in three columns -----
+function queueView(d, ctx, link) {
+  const list = d.lists.you;
+  if (!list.length) return html`<section class="card">${emptyState(...EMPTY.you, { href: href("companies", { tab: "decision" }), label: "Open Your decision" })}</section>`;
+  const c = content(d, ctx);
+  return html`
+  <div class="review three">
+    <nav class="card queue" aria-label="Needs you">
+      <div class="queue-head">Needs you</div>
+      ${list.map((x) => {
+        const sub = typeof KIND_LABEL[x.kind] === "function" ? KIND_LABEL[x.kind](x, ctx.me) : KIND_LABEL[x.kind];
+        return html`<a class="pick" href="${link("you", { id: x.key })}" ${d.cur && x.key === d.cur.key ? html`aria-current="true"` : ""}>
+          <span class="avatar" aria-hidden="true">${initials(x.opp.company)}</span>
+          <span><b>${x.opp.company}</b><span class="meta-3 you-text md">${sub}</span></span></a>`;
+      })}
+      <div class="queue-foot"><span class="keys">J</span><span class="keys">K</span>to move</div>
     </nav>
-    <section class="card detail" aria-labelledby="detail-h">${detailView(d, ctx)}</section>
+    <section class="card detail mid" aria-labelledby="detail-h">${c.main}</section>
+    <aside class="card side-col" aria-label="Check and decide">${c.side}</aside>
   </div>`;
 }
 
-function pickCard(x, d, ctx) {
-  const o = x.opp;
-  const link = x.item ? href("outreach", { tab: d.tab, item: x.item.id, team: d.team ? "1" : undefined })
-    : href("outreach", { tab: d.tab, id: o.id, team: d.team ? "1" : undefined });
-  const what = x.kind === "draft" ? `${PURPOSE[x.item.data.purpose] || "Email"} written by the ${x.item.agent.toLowerCase()}`
-    : x.kind === "reply" ? html`<span class="good-text">Replied ${day(x.item.data.on || x.item.on, ctx.today)}: record the reply</span>`
-    : x.kind === "first" ? "First email"
-    : x.kind === "waiting" ? (o.next.due ? `Follow up ${day(o.next.due, ctx.today)}` : "Waiting")
-    : `Review ${o.next.due ? day(o.next.due, ctx.today) : "date not set"}`;
-  return html`
-  <a class="pick" href="${link}" ${d.cur && d.cur.key === x.key ? html`aria-current="true"` : ""}>
-    <span class="avatar" aria-hidden="true">${initials(o.contact.name || o.company)}</span>
-    <span><b>${o.contact.name || "Contact to confirm"}</b><span class="meta">${o.company}</span><span class="meta-3" style="display:block">${what}</span></span>
-  </a>`;
-}
-
-function detailView(d, ctx) {
+// The selected lead: { main, side } for the queue, { blocks, foot } for the panel.
+function content(d, ctx) {
   const k = d.cur.kind;
   if (k === "first") return firstEmail(d, ctx);
   if (k === "draft") return agentDraft(d, ctx);
   if (k === "reply") return replyItem(d, ctx);
-  if (k === "waiting") return waiting(d, ctx);
-  return nurtureView(d, ctx);
+  if (k === "approve2") return secondApproval(d, ctx);
+  if (k === "plan" || k === "step" || k === "agentstep") return planItem(d, ctx);
+  return waiting(d, ctx);
+}
+
+function panel(d, ctx, link) {
+  const list = d.lists[d.tab];
+  const i = list.findIndex((x) => x.key === d.cur.key);
+  const near = (n) => (list[i + n] ? { href: link(d.tab, { id: list[i + n].key }), id: list[i + n].key } : null);
+  const c = content(d, ctx);
+  const o = d.cur.opp;
+  return drawer({
+    name: o.company, sub: `${o.contact.name || "Contact to confirm"}${o.contact.title ? `, ${o.contact.title}` : ""}`,
+    stage: STAGE_LABELS[o.stage], tone: o.stage === "nurture" ? "" : "info", owner: o.owner ? `Owner: ${o.owner}` : "No owner",
+    pos: `${i + 1} of ${list.length}`, prev: near(-1), next: near(1), record: o.id,
+    blocks: html`<section class="card detail">${c.main}</section>${c.side ? html`<section class="card side-col in-panel">${c.side}</section>` : ""}`,
+    foot: "",
+  });
 }
 
 // ----- shared pieces -----
-// "Skip for now": open the next item in the list without deciding this one.
-function skipLink(d) {
-  const list = d.lists[d.tab];
-  const i = list.findIndex((x) => x.key === d.cur.key);
-  const next = list[i + 1];
-  if (!next) return "";
-  const params = next.item ? { tab: d.tab, item: next.item.id } : { tab: d.tab, id: next.opp.id };
-  return html`<a class="btn ghost skip-next" href="${href("outreach", { ...params, team: d.team ? "1" : undefined })}">Skip for now</a>`;
-}
 function header(heading, sub, extra) {
   return html`<div class="block"><h2 id="detail-h">${heading}</h2><p class="meta">${sub}</p>${extra || ""}</div>`;
 }
 
 function contactLine(o) {
   const c = o.contact;
-  return `${c.title || "Role not known"}, ${o.company.name}`;
+  return `${c.title || "Role not known"}, ${o.company.name}${o.owner ? `. Owner: ${o.owner}` : ""}`;
+}
+
+// The company, its route and why it is worth writing to, from the brief.
+function leadHead(o, heading, extra) {
+  const b = o.brief || {};
+  const why = String(b.hypothesis || "").split(/(?<=[.!?])\s+/).slice(0, 2).join(" ");
+  return html`
+  <div class="block">
+    <div class="row-flex" style="flex-wrap:nowrap;align-items:flex-start">
+      <span class="avatar lg ink" aria-hidden="true">${initials(o.company.name)}</span>
+      <div style="flex:1;min-width:0"><h2 id="detail-h">${heading}</h2><p class="meta">${contactLine(o)}</p></div>
+      ${routeTag(o)}
+    </div>
+    ${why ? html`<div class="why-box"><span class="lbl">Why this company, from the brief</span><span>${why}</span></div>` : ""}
+    ${extra || ""}
+  </div>`;
+}
+
+// What was sent so far: the plan's done steps and the first email, folded.
+function threadBlock(o, ctx) {
+  const p = planOf(o);
+  const done = p ? p.steps.filter((s) => s.status === "done" || s.status === "skipped") : [];
+  const r = o.outreach || {};
+  const rows = [...done.map((s) => ({ when: s.doneOn, title: CHANNEL[s.channel] || s.channel, line: `${s.status === "skipped" ? "Skipped" : "Done"}${s.note ? `: ${s.note}` : ""}` })),
+    ...(r.sentOn && !done.some((s) => s.channel === "email") ? [{ when: r.sentOn, title: r.status === "followup" ? "Follow-up email" : "First email", line: r.subject || "" }] : [])];
+  if (!rows.length) return "";
+  const open = ui.thread === true;
+  const first = o.contact.name ? o.contact.name.split(" ")[0] : "the contact";
+  return html`<div class="block">
+    <button type="button" class="btn ghost small" data-act="thread" aria-expanded="${open ? "true" : "false"}">${icon("chevron", 14)}${open ? "Hide" : "Show"} the ${plural(rows.length, "earlier message")} to ${first}</button>
+    ${open ? html`<ul class="thread">${rows.map((x) => html`<li><span class="md">${x.title}</span><span class="meta">${x.line}</span><span class="meta-3">${day(x.when, ctx.today)}</span></li>`)}</ul>` : ""}
+  </div>`;
 }
 
 function contactBlock(o) {
   const c = o.contact;
   const confirmed = c.confirmedBy ? html`<span class="tag good">${icon("check", 14)}Confirmed by ${c.confirmedBy}</span>` : html`<span class="tag warn">Not confirmed by a person</span>`;
-  const panel = ui.mode === "contact";
+  const panelOpen = ui.mode === "contact";
   return html`
   <div class="block stack">
     <div class="row-flex"><h3 class="sub-title" style="margin:0">Contact</h3>${confirmed}${crmLinks(o.crm)}</div>
@@ -247,7 +432,7 @@ function contactBlock(o) {
     <p>${c.name || "No person named yet"}${c.name ? html`, <span class="meta">${c.title}</span>` : ""}
       <a class="meta-3" style="margin-left:8px" href="${linkedinSearch([c.name || (c.title === "Contact to confirm" ? "" : c.title), o.company.name])}" target="_blank" rel="noopener noreferrer">Search on LinkedIn</a></p>
     <p class="meta">${c.email ? `Email: ${c.email}` : "No email address on file. Agents never guess one; add it when you send."}</p>
-    ${panel ? html`
+    ${panelOpen ? html`
     <form class="panel-form" data-act="contactForm" data-on="submit input" data-id="${o.id}">
       <div class="form-grid">
         <label class="field">Name<input name="name" value="${c.name || ""}" required></label>
@@ -274,7 +459,12 @@ function relatedBlock(rel) {
   </span></div></div>`;
 }
 
+// Words in a draft, without the citation marks the client never sees.
+const plain = (body) => String(body || "").replace(/\[\[[^|\]]+\|([^\]]+)\]\]/g, "$1");
+const words = (body) => (plain(body).trim() ? plain(body).trim().split(/\s+/).length : 0);
+
 // Draft text with citation markers [[key|phrase]]: the phrase is highlighted and numbered; sources listed below.
+// canEdit: the text itself opens the editor (the person's own draft).
 function draftBody(subject, body, facts, extra = {}) {
   const notes = [];
   const byId = Object.fromEntries((facts || []).map((f) => [f.id, f]));
@@ -285,7 +475,8 @@ function draftBody(subject, body, facts, extra = {}) {
       parts.push(lines(para.slice(last, m.index)));
       let n = notes.findIndex((x) => x.key === m[1]) + 1;
       if (!n) { notes.push({ key: m[1], fact: byId[m[1]] }); n = notes.length; }
-      parts.push(html`<mark class="cite">${m[2]}</mark><sup class="cite-n">${n}</sup>`);
+      const f = byId[m[1]];
+      parts.push(html`<mark class="cite" title="${f ? `${f.text} (${f.src}${f.date ? `, ${f.date}` : ""})` : `CGS library: ${m[1]}`}">${m[2]}</mark><sup class="cite-n">${n}</sup>`);
       last = m.index + m[0].length;
     }
     parts.push(lines(para.slice(last)));
@@ -294,16 +485,19 @@ function draftBody(subject, body, facts, extra = {}) {
   return html`
   <div class="block">
     <dl class="email-head">
+      ${extra.from ? html`<dt>From</dt><dd>${extra.from}</dd>` : ""}
       ${extra.to !== undefined ? html`<dt>To</dt><dd>${extra.to || html`<span class="meta">Address needed: add it when you approve</span>`}${extra.confirmed ? html` <span class="tag good">Confirmed</span>` : ""}</dd>` : ""}
       <dt>Subject</dt><dd><b>${subject || "(no subject)"}</b></dd>
     </dl>
-    <div class="email-body">${paragraphs}</div>
+    ${extra.canEdit ? html`<div class="email-body can-edit" data-act="mode" data-mode="${extra.editMode}" title="Click to edit">${paragraphs}</div>
+      <p class="meta-3"><button type="button" class="btn small" data-act="mode" data-mode="${extra.editMode}">Edit</button> or click the text. Highlighted words come from a source; hover to see it.</p>`
+      : html`<div class="email-body">${paragraphs}</div>`}
     ${notes.length ? html`<ol class="sources">${notes.map((x) => html`<li>${x.fact ? html`${x.fact.text} <span class="meta-3">${sourceLink(x.fact.src, x.fact.date)}</span>` : `CGS library: ${x.key}`}</li>`)}</ol>` : ""}
     ${extra.checks ? checksRow(notes, extra) : ""}
   </div>`;
 }
 
-// What the page can verify about a draft, shown as the design's checks row. Nothing here is claimed without a check.
+// What the page can verify about a draft. Nothing here is claimed without a check.
 function checksRow(notes, extra) {
   const unsourced = notes.filter((x) => !x.fact && !/^[a-z]/i.test(x.key)).length;
   const fromBrief = notes.filter((x) => x.fact).length;
@@ -312,19 +506,54 @@ function checksRow(notes, extra) {
     [!!extra.confirmed, extra.confirmed ? "Contact confirmed by a person" : "Contact not confirmed by a person yet"],
   ];
   if (extra.blocked) items.push([false, extra.blocked]);
-  if (extra.review) items.push(reviewCheck(extra.review));
   return html`<ul class="checks">${items.map(([ok, text]) => html`<li class="${ok ? "good-text" : "warn-text"}">${icon(ok ? "check" : "alert", 16)}${text}</li>`)}</ul>`;
 }
 
-// The outreach agent's reviewer read the draft against the CGS email standard (Settings, Email standard).
-function reviewText(rv) {
-  if (!rv.scores) return `Not reviewed against the email standard (${rv.error || "the reviewer did not answer"})`;
-  const back = rv.rounds ? `, after ${plural(rv.rounds, "revision")}` : "";
-  return rv.meets ? `Meets the CGS email standard ${rv.standard}: ${rv.summary}${back}`
-    : `Below the CGS email standard ${rv.standard}: ${rv.summary}${back}.${rv.fixes && rv.fixes.length ? ` Reviewer: ${rv.fixes[0]}` : ""}`;
+// The CGS email standard (Settings, Email standard): the reviewer's score per line and its weighted mean, and the
+// length, counted here. Without a review, it says so.
+function standardBlock(body, review, tone = "standard") {
+  const range = rubric && rubric.length && rubric.length[tone];
+  const n = words(body);
+  const longOk = !range || (n >= range[0] && n <= range[1]);
+  const label = Object.fromEntries(((rubric && rubric.criteria) || []).map((c) => [c.key, c.label]));
+  const bar = rubric && rubric.bar ? rubric.bar.each : 3;
+  return html`<div class="side-sec">
+    <div class="sb"><h3>CGS email standard</h3>${review && review.scores ? html`<span><span class="n3">${review.weighted}</span> <span class="meta-3">of 5</span></span>` : ""}</div>
+    ${review && review.scores ? html`<ul class="std">${Object.entries(review.scores).map(([k, v]) => html`<li><span>${label[k] || k}</span><span class="${v >= bar ? "good-text" : "warn-text"} md">${v} of 5</span></li>`)}
+      <li><span>Length</span><span class="${longOk ? "good-text" : "warn-text"} md">${n} words${range ? ` (${range[0]}-${range[1]})` : ""}</span></li>
+      ${review.unsupported_claim ? html`<li><span>Claims</span><span class="warn-text md">One is not in the facts</span></li>` : ""}</ul>
+      <p class="meta-3">${review.meets ? `Meets standard ${review.standard}` : `Below standard ${review.standard}`}${review.rounds ? `, after ${plural(review.rounds, "revision")}` : ""}.${!review.meets && review.fixes && review.fixes.length ? ` Reviewer: ${review.fixes[0]}` : ""}</p>`
+    : html`<ul class="std"><li><span>Length</span><span class="${longOk ? "good-text" : "warn-text"} md">${n} words${range ? ` (${range[0]}-${range[1]})` : ""}</span></li></ul>
+      <p class="meta-3">${review && review.error ? `Not reviewed: ${review.error}` : "Not reviewed against the standard. Check it yourself."}</p>`}
+  </div>`;
 }
-function reviewCheck(rv) {
-  return [!!(rv.scores && rv.meets), reviewText(rv)];
+
+// Where this message sits in the contact plan, and what happens with no reply.
+function planSide(o, ctx, n) {
+  const p = planOf(o);
+  if (!p) return html`<div class="side-sec"><h3>Where this sits in the plan</h3><p class="meta">No contact plan: this is a single ${o.stage === "identified" ? "first email" : "message"}.${o.next.action ? ` Next: ${o.next.action}${o.next.due ? `, ${day(o.next.due, ctx.today)}` : ""}.` : ""}</p></div>`;
+  const here = n || (p.cur && p.cur.n);
+  const i = p.steps.findIndex((s) => s.n === here);
+  const after = i >= 0 ? p.steps[i + 1] : null;
+  const first = o.contact.name ? o.contact.name.split(" ")[0] : "the contact";
+  return html`<div class="side-sec">
+    <div class="sb"><h3>Where this sits in the plan</h3><span class="meta-3">${p.cur ? `Day ${p.at} of ${p.length}` : "Plan done"}</span></div>
+    <ol class="rl">${p.steps.map((s) => {
+      const done = s.status === "done" || s.status === "skipped";
+      const now = s.n === here;
+      return html`<li class="${done ? "done" : ""}"><span class="d ${done ? "done" : now ? "you" : ""}" aria-hidden="true"></span>
+        <span><span class="${now ? "you-text md" : "meta-3"}" style="display:block">Day ${s.day}${done ? `, ${s.status}` : now ? ", this message" : ""}</span>
+        <span class="${now ? "md" : ""}">${CHANNEL[s.channel] || s.channel} to ${s.to}</span></span></li>`;
+    })}</ol>
+    <p class="meta">${after ? `If ${first} does not reply: ${(CHANNEL[after.channel] || after.channel).toLowerCase()} on day ${after.day}.` : "This is the last step. With no reply, the plan ends."}</p>
+  </div>`;
+}
+
+// Who approves after this person, from Settings > People.
+function approverLine(writer, ctx) {
+  const p = (people || []).find((x) => x.name === writer);
+  if (!p || !p.secondApprover) return "";
+  return html`<p class="meta">${writer === ctx.me ? "You approve first" : `${writer} approves first`}; then ${p.secondApprover} approves it. Nothing is sent before then.</p>`;
 }
 
 function lines(text) {
@@ -363,14 +592,14 @@ function nurturePanel(o, ctx) {
   return html`
   <div class="block">
     <form class="panel-form" data-act="nurtureForm" data-on="submit input" data-id="${o.id}">
-      <h3 class="sub-title">Move to nurture</h3>
-      <p class="meta">The lead leaves the active list until the review date. Agents may draft a reconnect email then.</p>
+      <h3 class="sub-title">Park the lead</h3>
+      <p class="meta">The lead leaves the active lists until the review date. The agents may draft a reconnect email then. In Insightly it shows as Nurture.</p>
       <div class="form-grid">
         <label class="field">Reason<input name="reason" required placeholder="For example: budget is set for 2027"></label>
         <label class="field">Review on<input type="date" name="review_on" value="${addDays(ctx.today, 60)}" min="${ctx.today}" required></label>
       </div>
       <div class="actions">
-        <button type="submit" class="btn primary" disabled>Move to nurture</button>
+        <button type="submit" class="btn primary" disabled>Park until then</button>
         <button type="button" class="btn ghost" data-act="mode" data-mode="">Cancel</button>
         <span class="missing" data-missing>Give a reason.</span>
       </div>
@@ -403,7 +632,7 @@ function replyPanel(o, ctx) {
   <div class="block">
     <form class="panel-form" data-act="replyForm" data-on="submit input" data-id="${o.id}">
       <h3 class="sub-title">Record the client's reply</h3>
-      <p class="meta">Any reply makes the lead Active (In conversation) at once. The evidence agent labels it and reads it for qualification evidence, for you to review.</p>
+      <p class="meta">Any reply makes the lead Active at once. The Evidence agent labels it and reads it for qualification evidence, for you to review.</p>
       <label class="field">What they wrote<textarea name="text" rows="5" required></textarea></label>
       <label class="field">Received on<input type="date" name="on" value="${ctx.today}" max="${ctx.today}" required style="max-width:220px"></label>
       <div class="actions">
@@ -421,6 +650,27 @@ function noticeBlock() {
   return html`<div class="block">${ui.notice.map((n) => html`<div class="notice ${n.cls || ""}">${icon(n.cls === "good" ? "check" : "alert")}<span>${n.text}</span></div>`)}</div>`;
 }
 
+// The buttons in the right-hand column. Forms they open appear in the middle, next to the text they act on.
+function sideActions(lead, buttons, minor = "") {
+  return html`<div class="side-sec side-actions">${lead || ""}${buttons}${minor ? html`<div class="minor">${minor}</div>` : ""}</div>`;
+}
+
+// Skip this step / Stop the plan, when a plan is running.
+function planMinor(o) {
+  const p = planOf(o);
+  if (!p || !p.pl.running || !p.cur) return "";
+  return html`<button type="button" class="btn ghost small" data-act="mode" data-mode="planSkip:${p.cur.n}">Skip this step</button>
+    <button type="button" class="btn ghost small" data-act="mode" data-mode="planStop">Stop the plan</button>`;
+}
+
+function planForms(o) {
+  const m = ui.mode || "";
+  const p = planOf(o);
+  if (m === "planStop") return html`<div class="block">${planStopForm(o)}</div>`;
+  if (p && p.cur && (m === `planSkip:${p.cur.n}` || m === `planDo:${p.cur.n}`)) return html`<div class="block">${stepForm(p.cur, o, m.startsWith("planDo"))}</div>`;
+  return "";
+}
+
 // ----- first email from the Step 5 draft -----
 function firstEmail(d, ctx) {
   const o = d.detail;
@@ -428,41 +678,40 @@ function firstEmail(d, ctx) {
   const hasDraft = r.status === "draft" && r.body;
   const facts = (o.brief && o.brief.facts) || [];
   const m = ui.mode;
-  return html`
-  ${header(`First email to ${o.contact.name || "the contact"}`, contactLine(o))}
-  ${contactBlock(o)}
-  ${relatedBlock(d.related)}
-  ${noticeBlock()}
-  ${waitingNotice(r.waiting, ctx.me)}
-  ${planBlock(o, ctx)}
-  ${hasDraft && m !== "edit" ? draftBody(r.subject, r.body, facts, { to: (d.preview && d.preview.to) || "", confirmed: !!o.contact.confirmedBy, checks: true, blocked: d.preview && d.preview.blocked }) : ""}
-  ${!hasDraft && m !== "edit" ? html`<div class="block">${emptyState("No draft yet",
-    "The outreach agent writes one when the lead is accepted. If none arrived, ask for one now, or write it yourself.")}</div>` : ""}
-  ${m === "send" ? sendPanel(d) : ""}
-  ${m === "revise" ? revisePanel(o, hasDraft) : ""}
-  ${m === "edit" ? editPanel(o) : ""}
-  ${m === "record" ? recordSentPanel(o, ctx) : ""}
-  ${m === "nurture" ? nurturePanel(o, ctx) : ""}
-  ${linkedinBlock(o, ctx)}
-  ${(!m || m === "contact") && !emailWaits(r.waiting) ? html`
-  <div class="decision-bar">
-    <div class="actions">
-      ${hasDraft ? html`<button type="button" class="btn primary" data-act="mode" data-mode="send">Approve and send…</button>` : ""}
-      <button type="button" class="btn ${hasDraft ? "" : "primary"}" data-act="mode" data-mode="revise">${hasDraft ? "Comment and revise…" : "Ask the outreach agent for a draft…"}</button>
-      <button type="button" class="btn" data-act="mode" data-mode="edit">${hasDraft ? "Edit myself" : "Write it myself"}</button>
-      <button type="button" class="btn ghost" data-act="mode" data-mode="record">Record as sent…</button>
-      <button type="button" class="btn ghost" data-act="mode" data-mode="nurture">Move to nurture…</button>
-      ${skipLink(d)}
-    </div>
-  </div>` : ""}`;
+  const mine = o.owner === ctx.me;
+  const waits = emailWaits(r.waiting);
+  return {
+    main: html`
+      ${leadHead(o, `First email to ${o.contact.name || "the contact"}`)}
+      ${noticeBlock()}
+      ${waitingNotice(r.waiting, ctx.me)}
+      ${relatedBlock(d.related)}
+      ${hasDraft && m !== "edit" ? draftBody(r.subject, r.body, facts, { to: (d.preview && d.preview.to) || "", confirmed: !!o.contact.confirmedBy, checks: true,
+        blocked: d.preview && d.preview.blocked, from: d.preview && d.preview.from ? d.preview.from.address || "" : "", canEdit: mine && !waits, editMode: "edit" }) : ""}
+      ${!hasDraft && m !== "edit" ? html`<div class="block">${emptyState("No draft yet",
+        "The Outreach agent writes one when the lead is accepted, or a contact plan first. If none arrived, ask for one, or write it yourself.")}</div>` : ""}
+      ${m === "send" ? sendPanel(d) : ""}
+      ${m === "revise" ? revisePanel(o, hasDraft) : ""}
+      ${m === "edit" ? editPanel(o) : ""}
+      ${m === "record" ? recordSentPanel(o, ctx) : ""}
+      ${m === "nurture" ? nurturePanel(o, ctx) : ""}
+      ${planBlock(o, ctx)}
+      ${contactBlock(o)}
+      ${linkedinBlock(o, ctx)}`,
+    side: html`
+      ${hasDraft ? standardBlock(r.body, null) : ""}
+      ${planSide(o, ctx)}
+      ${!m && !waits ? sideActions(approverLine(o.owner, ctx), html`
+        ${hasDraft ? html`<button type="button" class="btn primary" data-act="mode" data-mode="send">Approve and send…</button>` : ""}
+        <button type="button" class="btn ${hasDraft ? "" : "primary"}" data-act="mode" data-mode="revise">${hasDraft ? "Ask the agent to revise…" : "Ask the agent for a draft…"}</button>
+        ${hasDraft ? "" : html`<button type="button" class="btn" data-act="mode" data-mode="edit">Write it myself</button>`}
+        <button type="button" class="btn ghost" data-act="mode" data-mode="record">Record as sent…</button>
+        <button type="button" class="btn ghost" data-act="mode" data-mode="nurture">Park the lead…</button>`) : ""}`,
+  };
 }
 
 // ----- contact plan (api/outreach_plan.py) -----
 // The outreach agent proposes whom to approach first and how, over a few weeks; a person approves or rejects it.
-const CHANNEL = {
-  email: "Email", linkedin_connect: "LinkedIn request", linkedin_message: "LinkedIn message", share_content: "Share a CGS piece",
-  invite: "Invitation", warm_intro: "Introduction", call: "Phone call",
-};
 const APPROACH = { warm: "Warm: through someone who knows them", value_first: "Value first: something useful before asking for time", direct: "Direct" };
 const ROLE = { budget: "Likely signs the budget", sponsor: "Sponsor", user: "Works on it", introducer: "Could introduce CGS" };
 
@@ -474,8 +723,8 @@ function planBlock(o, ctx) {
     return html`<div class="block stack plan">
       <h3 class="sub-title" style="margin:0">Contact plan</h3>
       <p class="meta">Before the first email: whom to approach first, who else matters, and a few steps over the next weeks.
-        A cold email is one option, not the default. The outreach agent proposes; you decide. Nothing is sent.</p>
-      ${asking ? planAskForm(o, false) : html`<div><button type="button" class="btn small" data-act="mode" data-mode="planAsk">Ask the outreach agent for a plan…</button></div>`}
+        A cold email is one option, not the default. The Outreach agent proposes; you decide. Nothing is sent.</p>
+      ${asking ? planAskForm(o, false) : html`<div><button type="button" class="btn small" data-act="mode" data-mode="planAsk">Ask the Outreach agent for a plan…</button></div>`}
       ${inlineError(err)}
     </div>`;
   }
@@ -513,14 +762,17 @@ function planBlock(o, ctx) {
       ${pl.running ? html`<button type="button" class="btn ghost small" data-act="mode" data-mode="planStop">Stop the plan…</button>` : ""}
       <button type="button" class="btn ghost small" data-act="mode" data-mode="planAsk">Ask for another plan…</button>
     </div>`}
-    ${ui.mode === "planStop" ? html`
-    <form class="panel-form" data-act="planStopForm" data-on="submit input" data-id="${o.id}">
-      <label class="field">Why stop it <span class="hint">For example: they replied on LinkedIn, or the contact left.</span><textarea name="note" rows="2"></textarea></label>
-      <div class="actions"><button type="submit" class="btn primary small" disabled>Stop the plan</button>
-        <button type="button" class="btn ghost small" data-act="mode" data-mode="">Cancel</button><span class="missing" data-missing>Say why.</span></div>
-    </form>` : ""}
+    ${ui.mode === "planStop" ? planStopForm(o) : ""}
     ${inlineError(err)}
   </div>`;
+}
+
+function planStopForm(o) {
+  return html`<form class="panel-form" data-act="planStopForm" data-on="submit input" data-id="${o.id}">
+    <label class="field">Why stop it <span class="hint">For example: they replied on LinkedIn, or the contact left. No steps run after this.</span><textarea name="note" rows="2"></textarea></label>
+    <div class="actions"><button type="submit" class="btn primary small" disabled>Stop the plan</button>
+      <button type="button" class="btn ghost small" data-act="mode" data-mode="">Cancel</button><span class="missing" data-missing>Say why.</span></div>
+  </form>`;
 }
 
 const STEP_STATUS = { done: ["good", "Done"], skipped: ["", "Skipped"], ready: ["warn", "Prepared, waiting for you"] };
@@ -550,10 +802,10 @@ function prepared(s, o) {
   const p = s.prepared;
   const copy = (text, label) => html`<button type="button" class="btn ghost small" data-act="liCopy" data-text="${text}">${label}</button>`;
   if (p.kind === "email") {
-    return html`<div class="meta">The email draft “${p.subject}” waits in <a href="${href("outreach", { tab: "approve", item: p.item, team: "1" })}">To approve</a>.
+    return html`<div class="meta">The email draft “${p.subject}” waits in <a href="${href("outreach", { tab: "you", item: p.item, team: "1" })}">Needs you</a>.
       Sending it there completes this step.</div>`;
   }
-  if (p.kind === "linkedin") return html`<div class="meta">The LinkedIn note is ready in the LinkedIn block below. Recording it as sent there completes this step.</div>`;
+  if (p.kind === "linkedin") return html`<div class="meta">The LinkedIn note is ready in the LinkedIn block. Recording it as sent there completes this step.</div>`;
   if (p.kind === "call") {
     return html`<div class="plan-prepared"><p><b>Opening:</b> ${p.opening}</p>
       <ul class="bullets">${p.questions.map((q) => html`<li>${q}</li>`)}</ul>
@@ -566,7 +818,7 @@ function prepared(s, o) {
 function stepActions(s, o, mine) {
   const contactOnly = ["email", "share_content", "invite", "linkedin_connect", "linkedin_message", "call"].includes(s.channel);
   return html`<div class="actions">
-    ${s.status === "pending" ? html`<button type="button" class="btn small" data-act="planPrepare" data-id="${o.id}" data-n="${s.n}" ${contactOnly && !mine ? "disabled" : ""}>Prepare it now</button>` : ""}
+    ${s.status === "pending" ? html`<button type="button" class="btn small" data-act="planPrepare" data-id="${o.id}" data-n="${s.n}" ${contactOnly && !mine ? "disabled" : ""}>Draft it now</button>` : ""}
     <button type="button" class="btn small" data-act="mode" data-mode="planDo:${s.n}">I did it…</button>
     <button type="button" class="btn ghost small" data-act="mode" data-mode="planSkip:${s.n}">Skip…</button>
     ${contactOnly && !mine ? html`<span class="meta-3">Goes to ${s.to}: confirm them as the contact first, or skip it.</span>` : ""}
@@ -575,7 +827,7 @@ function stepActions(s, o, mine) {
 
 function stepForm(s, o, done) {
   const need = !done || s.channel === "call";
-  const hint = !done ? "Why you skip it." : s.channel === "call" ? "What happened on the call." : "Optional, for example where you sent it.";
+  const hint = !done ? "Why you skip it. Nothing is sent for this step; the plan moves on." : s.channel === "call" ? "What happened on the call." : "Optional, for example where you sent it.";
   return html`<form class="panel-form" data-act="planStepForm" data-on="submit input" data-id="${o.id}" data-n="${s.n}" data-action="${done ? "done" : "skip"}" data-need="${need ? "1" : ""}">
     <label class="field">${done ? "Note" : "Reason"} <span class="hint">${hint}</span><textarea name="note" rows="2"></textarea></label>
     <div class="actions"><button type="submit" class="btn primary small" ${need ? "disabled" : ""}>${done ? "Record it as done" : "Skip this step"}</button>
@@ -596,10 +848,10 @@ function revisePanel(o, hasDraft) {
   return html`
   <div class="block">
     <form class="panel-form" data-act="reviseForm" data-on="submit" data-id="${o.id}">
-      <h3 class="sub-title">${hasDraft ? "Tell the outreach agent what to change" : "Ask the outreach agent for a draft"}</h3>
+      <h3 class="sub-title">${hasDraft ? "Ask the agent to revise" : "Ask the Outreach agent for a draft"}</h3>
       <p class="meta">${hasDraft ? "It writes the draft again from the research brief and your comment. The new draft replaces this one." : "It writes from the research brief. Nothing is sent."}</p>
       <div class="chips">${REVISE_HINTS.map((c) => html`<button type="button" class="chip" data-act="chip" data-text="${c}">${c}</button>`)}</div>
-      <label class="field">Your comment <span class="hint">Optional.</span><textarea name="angle" rows="3"></textarea></label>
+      <label class="field">Or say it in your own words <span class="hint">Optional.</span><textarea name="angle" rows="3"></textarea></label>
       <label class="field" style="max-width:220px">Length<select name="tone"><option value="standard">Standard</option><option value="brief">Brief</option></select></label>
       <div class="actions">
         <button type="submit" class="btn primary">${hasDraft ? "Send to the agent" : "Write the draft"}</button>
@@ -608,6 +860,12 @@ function revisePanel(o, hasDraft) {
       ${inlineError(ui.error && ui.error.where === "revise" ? ui.error.message : "")}
     </form>
   </div>`;
+}
+
+function wordLine(body, tone = "standard") {
+  const range = rubric && rubric.length && rubric.length[tone];
+  const n = words(body);
+  return html`<span class="${range && (n < range[0] || n > range[1]) ? "warn-text md" : "meta-3"}" data-words data-min="${range ? range[0] : ""}" data-max="${range ? range[1] : ""}">${n} words${range ? ` (${range[0]}-${range[1]} for this standard)` : ""}</span>`;
 }
 
 function editPanel(o) {
@@ -620,44 +878,58 @@ function editPanel(o) {
       <label class="field">Subject<input name="subject" value="${r.subject || ""}" required></label>
       <label class="field">Message<textarea name="body" rows="12" required>${r.body || ""}</textarea></label>
       <div class="actions">
-        <button type="submit" class="btn primary" ${r.subject && r.body ? "" : "disabled"}>Save draft</button>
+        <button type="submit" class="btn primary" ${r.subject && r.body ? "" : "disabled"}>Done editing</button>
         <button type="button" class="btn ghost" data-act="mode" data-mode="">Cancel</button>
         <span class="missing" data-missing>${r.subject && r.body ? "" : "Write a subject and a message."}</span>
+        <span style="margin-left:auto">${wordLine(r.body)}</span>
       </div>
       ${inlineError(ui.error && ui.error.where === "edit" ? ui.error.message : "")}
     </form>
   </div>`;
 }
 
-// ----- a draft the agent put in the inbox (first, follow-up or reconnect) -----
+// ----- a draft the agent put in the inbox (first, follow-up, reconnect, or a plan step's email) -----
 function agentDraft(d, ctx) {
   const o = d.detail;
   const it = d.cur.item;
   const purpose = it.data.purpose || "followup";
   const facts = [...((o.brief && o.brief.facts) || []), ...(it.data.facts || [])];
   const m = ui.mode;
-  return html`
-  ${header(`${PURPOSE[purpose] || "Email"} to ${o.contact.name || "the contact"}`, contactLine(o),
-    html`<p class="meta-3">${it.agent}, ${day(it.on, ctx.today)}${it.expiresOn ? `. Expires ${day(it.expiresOn, ctx.today)} if nobody decides.` : ""}</p>`)}
-  ${contactBlock(o)}
-  ${relatedBlock(d.related)}
-  ${noticeBlock()}
-  ${waitingNotice(o.outreach.waiting, ctx.me)}
-  ${it.data.editedBy ? html`<div class="block"><span class="tag info">Edited by ${it.data.editedBy}${it.data.editedOn ? `, ${day(it.data.editedOn, ctx.today)}` : ""}</span></div>` : ""}
-  ${m === "editItem" ? itemEditPanel(it) : draftBody(it.data.subject, it.data.body, facts, { to: (d.preview && d.preview.to) || "", confirmed: !!o.contact.confirmedBy, checks: true, blocked: d.preview && d.preview.blocked, review: it.data.review })}
-  ${m === "send" ? sendPanel(d, { itemId: it.id, hash: it.payloadHash }) : ""}
-  ${(!m || m === "contact") && !emailWaits(o.outreach.waiting) ? html`
-  <div class="decision-bar">
-    <div class="actions">
-      ${d.mail.ready ? html`<button type="button" class="btn primary" data-act="mode" data-mode="send">Approve and send…</button>` : ""}
-      <button type="button" class="btn" data-act="mode" data-mode="editItem">Edit</button>
-      <button type="button" class="btn ${d.mail.ready ? "" : "primary"}" data-act="inboxAct" data-do="apply" data-item="${it.id}" data-hash="${it.payloadHash}">
-        ${purpose === "first" ? "Use it as my draft" : "Accept, I will send it myself"}</button>
-      <button type="button" class="btn ghost" data-act="inboxAct" data-do="dismiss" data-item="${it.id}">Dismiss</button>
-      ${skipLink(d)}
-    </div>
-    <p class="meta-3" style="margin-top:8px">${purpose === "first" ? "Use it as my draft: you can then edit it, ask for a revision, or send it." : "After you send it yourself, record the follow-up under Waiting for a reply."}</p>
-  </div>` : ""}`;
+  const mine = o.owner === ctx.me;
+  const edited = !!it.data.editedBy;
+  const step = it.data.planStep;
+  const writer = edited ? `Agent draft, edited by ${it.data.editedBy}` : `Written by the ${it.agent}`;
+  return {
+    main: html`
+      ${leadHead(o, `${PURPOSE[purpose] || "Email"} to ${o.contact.name || "the contact"}`)}
+      ${threadBlock(o, ctx)}
+      ${noticeBlock()}
+      ${waitingNotice(o.outreach.waiting, ctx.me)}
+      ${relatedBlock(d.related)}
+      <div class="block draft-head">
+        <h3 class="sub-title" style="margin:0">${mine ? "Your draft to review" : `${o.owner}'s draft`}</h3>
+        <span class="row-flex" style="gap:6px">${edited ? html`<span class="tag">Edited by ${it.data.editedBy === ctx.me ? "you" : it.data.editedBy}</span>
+          ${it.data.original && mine ? html`<button type="button" class="btn ghost small" data-act="restoreDraft" data-item="${it.id}" data-hash="${it.payloadHash}">Restore the agent's draft</button>` : ""}` : ""}
+          <span class="tag info">${writer}</span></span>
+        <p class="meta-3" style="flex-basis:100%">${it.agent}, ${day(it.on, ctx.today)}${it.expiresOn ? `. Expires ${day(it.expiresOn, ctx.today)} if nobody decides.` : ""}</p>
+      </div>
+      ${m === "editItem" ? itemEditPanel(it) : draftBody(it.data.subject, it.data.body, facts, {
+        to: (d.preview && d.preview.to) || "", confirmed: !!o.contact.confirmedBy, checks: true, blocked: d.preview && d.preview.blocked,
+        from: d.preview && d.preview.from ? d.preview.from.address || "" : "", canEdit: mine, editMode: "editItem" })}
+      ${m === "send" ? sendPanel(d, { itemId: it.id, hash: it.payloadHash }) : ""}
+      ${planForms(o)}
+      ${contactBlock(o)}`,
+    side: html`
+      ${standardBlock(it.data.body, it.data.review)}
+      ${planSide(o, ctx, step)}
+      ${(!m || m === "contact") && !emailWaits(o.outreach.waiting) ? sideActions(approverLine(o.owner, ctx), html`
+        ${d.mail.ready ? html`<button type="button" class="btn primary" data-act="mode" data-mode="send">Approve and send…</button>` : ""}
+        <button type="button" class="btn ${d.mail.ready ? "" : "primary"}" data-act="inboxAct" data-do="apply" data-item="${it.id}" data-hash="${it.payloadHash}">
+          ${purpose === "first" ? "Use it as my draft" : "Accept, I will send it myself"}</button>
+        <button type="button" class="btn ghost" data-act="inboxAct" data-do="dismiss" data-item="${it.id}">Dismiss the draft</button>
+        <p class="meta-3">${purpose === "first" ? "Use it as my draft: you can then ask for a revision or write it yourself." : "After you send it yourself, record it under Waiting for a reply."}</p>`,
+        planMinor(o)) : ""}`,
+  };
 }
 
 function itemEditPanel(it) {
@@ -665,17 +937,55 @@ function itemEditPanel(it) {
   <div class="block">
     <form class="panel-form" data-act="itemEditForm" data-on="submit input" data-item="${it.id}" data-hash="${it.payloadHash}">
       <h3 class="sub-title">Edit the draft</h3>
-      <p class="meta">Your version is the one you approve. The agent's text is kept, so it can learn from what you change. Text in [[f1|...]] marks a citation of the research brief: keep the mark, or delete it with its phrase. The client never sees the marks.</p>
+      <p class="meta">Your version is the one you approve. The agent's text is kept, so it can learn from what you change, and you can restore it. Text in [[f1|...]] marks a citation of the research brief: keep the mark, or delete it with its phrase. The client never sees the marks.</p>
       <label class="field">Subject<input name="subject" value="${it.data.subject || ""}" required></label>
       <label class="field">Message<textarea name="body" rows="12" required>${it.data.body || ""}</textarea></label>
       <div class="actions">
-        <button type="submit" class="btn primary">Save my version</button>
+        <button type="submit" class="btn primary">Done editing</button>
         <button type="button" class="btn ghost" data-act="mode" data-mode="">Cancel</button>
         <span class="missing" data-missing></span>
+        <span style="margin-left:auto">${wordLine(it.data.body)}</span>
       </div>
       ${inlineError(ui.error && ui.error.where === "itemEdit" ? ui.error.message : "")}
     </form>
   </div>`;
+}
+
+// ----- an email a colleague approved that waits for this person's second approval (api/undo.py) -----
+function secondApproval(d, ctx) {
+  const o = d.detail;
+  const w = o.outreach.waiting;
+  return {
+    main: html`
+      ${leadHead(o, `Approve ${w.by}'s email to ${o.contact.name || w.to}`)}
+      ${threadBlock(o, ctx)}
+      ${noticeBlock()}
+      ${waitingNotice(w, ctx.me)}`,
+    side: html`
+      ${standardBlock(w.body, null)}
+      ${planSide(o, ctx)}
+      ${sideActions(html`<p class="meta">${w.by} approved this. ${w.approver === ctx.me ? "You are the second approver: it goes out from their mailbox once you approve it, after the 10-second undo window." : `It waits for ${w.approver}.`}</p>`, "")}`,
+  };
+}
+
+// ----- a contact plan to decide, a step to do, or a step the agent drafts when it is due -----
+function planItem(d, ctx) {
+  const o = d.detail;
+  const k = d.cur.kind;
+  const headText = k === "plan" ? `Contact plan for ${o.company.name}` : k === "agentstep" ? `Next step for ${o.company.name}` : `Plan step for ${o.contact.name || o.company.name}`;
+  return {
+    main: html`
+      ${leadHead(o, headText)}
+      ${threadBlock(o, ctx)}
+      ${noticeBlock()}
+      ${waitingNotice(o.outreach.waiting, ctx.me)}
+      ${k === "agentstep" ? html`<div class="block"><div class="notice info">${icon("clock")}<span>The Outreach agent drafts this step when it is due${d.cur.step && d.cur.step.due ? `, on ${day(d.cur.step.due, ctx.today)}` : ""}. Nothing to do yet; Draft it now asks for it today.</span></div></div>` : ""}
+      ${planBlock(o, ctx)}
+      ${contactBlock(o)}
+      ${linkedinBlock(o, ctx)}`,
+    side: html`${planSide(o, ctx)}
+      ${k === "plan" ? sideActions(html`<p class="meta">The plan is a proposal. Approving it starts the steps; each email still needs your approval.</p>`, "") : ""}`,
+  };
 }
 
 // ----- a client reply found by the mail rules -----
@@ -688,27 +998,28 @@ function replyItem(d, ctx) {
   const s = it.data.sender;
   const writer = s ? s.name || s.email : o.contact.name || "the client";
   const other = s && !s.isContact;
-  return html`
-  ${header(`Reply from ${writer}`, other ? `Your email went to ${o.contact.name || "the contact"} (${contactLine(o)})` : contactLine(o), html`<p class="meta-3">Found in the email thread, ${day(it.data.on || it.on, ctx.today)}${s && s.email ? ` · ${s.email}` : ""}</p>${answers}`)}
-  ${other && s.sameAddress ? html`<div class="block"><div class="notice warn" role="status">${icon("alert")}<span>
-    <b>Signed ${writer}, from ${s.email}: the address on file for ${s.contact}.</b>
-    Check that address: it may be wrong, shared, or someone may answer for ${s.contact}. Recording it notes who signed it.
-  </span></div></div>`
-  : other ? html`<div class="block"><div class="notice warn" role="status">${icon("alert")}<span>
-    <b>${writer} wrote this reply, not ${s.contact || "the contact on file"}.</b>
-    ${s.knownAs ? ` ${s.knownAs} is on file as a contact at ${o.company.name}.` : " They may now be involved: an assistant, or a colleague the contact passed your email to."}
-    Recording it keeps ${s.contact || "the contact"} as the lead's contact and notes who wrote.
-    ${!s.knownAs && s.email ? html`<div class="actions" style="margin-top:8px"><button type="button" class="btn small" data-act="addSender" data-item="${it.id}">Add ${writer} as a contact at ${o.company.name}</button></div>` : ""}
-  </span></div></div>` : ""}
-  ${noticeBlock()}
-  <div class="block"><div class="email-plain">${it.data.text || it.body}</div></div>
-  <div class="decision-bar">
-    <div class="actions">
-      <button type="button" class="btn primary" data-act="inboxAct" data-do="apply" data-item="${it.id}" data-hash="${it.payloadHash}">Record the reply</button>
-      <button type="button" class="btn ghost" data-act="inboxAct" data-do="dismiss" data-item="${it.id}">Not a reply</button>
-    </div>
-    <p class="meta-3" style="margin-top:8px">Recording makes the lead Active. Choose Not a reply for an out-of-office or automatic message.</p>
-  </div>`;
+  return {
+    main: html`
+      ${header(`Reply from ${writer}`, other ? `Your email went to ${o.contact.name || "the contact"} (${contactLine(o)})` : contactLine(o), html`<p class="meta-3">Found in the email thread, ${day(it.data.on || it.on, ctx.today)}${s && s.email ? ` · ${s.email}` : ""}</p>${answers}`)}
+      ${other && s.sameAddress ? html`<div class="block"><div class="notice warn" role="status">${icon("alert")}<span>
+        <b>Signed ${writer}, from ${s.email}: the address on file for ${s.contact}.</b>
+        Check that address: it may be wrong, shared, or someone may answer for ${s.contact}. Recording it notes who signed it.
+      </span></div></div>`
+      : other ? html`<div class="block"><div class="notice warn" role="status">${icon("alert")}<span>
+        <b>${writer} wrote this reply, not ${s.contact || "the contact on file"}.</b>
+        ${s.knownAs ? ` ${s.knownAs} is on file as a contact at ${o.company.name}.` : " They may now be involved: an assistant, or a colleague the contact passed your email to."}
+        Recording it keeps ${s.contact || "the contact"} as the lead's contact and notes who wrote.
+        ${!s.knownAs && s.email ? html`<div class="actions" style="margin-top:8px"><button type="button" class="btn small" data-act="addSender" data-item="${it.id}">Add ${writer} as a contact at ${o.company.name}</button></div>` : ""}
+      </span></div></div>` : ""}
+      ${noticeBlock()}
+      <div class="block"><div class="quote big">${it.data.text || it.body}</div></div>
+      ${threadBlock(o, ctx)}`,
+    side: html`${planSide(o, ctx)}
+      ${sideActions(html`<p class="meta">Recording it makes the lead Active and stops the plan. The Evidence agent then reads it for evidence, for a person to confirm.</p>`, html`
+        <button type="button" class="btn primary" data-act="inboxAct" data-do="apply" data-item="${it.id}" data-hash="${it.payloadHash}">Record the reply</button>
+        <button type="button" class="btn ghost" data-act="inboxAct" data-do="dismiss" data-item="${it.id}">Not a reply</button>
+        <p class="meta-3">Choose Not a reply for an out-of-office or automatic message.</p>`)}`,
+  };
 }
 
 // ----- LinkedIn: a note and a message the person sends themselves (api/linkedin.py) -----
@@ -724,8 +1035,8 @@ function linkedinBlock(o, ctx) {
     <div class="row-flex"><h3 class="sub-title" style="margin:0">LinkedIn</h3>
       ${sent.note ? html`<span class="tag good">${icon("check", 14)}Request sent ${day(sent.note, ctx.today)}</span>` : ""}
       ${sent.message ? html`<span class="tag good">${icon("check", 14)}Message sent ${day(sent.message, ctx.today)}</span>` : ""}</div>
-    <p class="meta">Sometimes a LinkedIn note works better than an email. The outreach agent writes it from the research brief;
-      you send it yourself. Agents never open LinkedIn. <a href="${li.search}" target="_blank" rel="noopener noreferrer">Find ${who} on LinkedIn</a></p>
+    <p class="meta">Sometimes a LinkedIn note works better than an email. The Outreach agent writes it from the research brief;
+      you send it yourself. Agents never open LinkedIn. <a href="${safeUrl(li.search)}" target="_blank" rel="noopener noreferrer">Find ${who} on LinkedIn</a></p>
     ${editing ? html`
     <form class="panel-form" data-act="liForm" data-on="submit input" data-id="${o.id}">
       <label class="field">Connection note <span class="hint" data-count="note">${(li.note || "").length} of ${li.noteMax} characters</span>
@@ -759,119 +1070,42 @@ function linkedinBlock(o, ctx) {
 function waiting(d, ctx) {
   const o = d.detail;
   const r = o.outreach;
-  const pending = d.inbox.find((i) => i.opportunityId === o.id && i.kind === "draft" && i.status === "new");
   const m = ui.mode;
   const sent = r.sentOn ? `${r.status === "followup" ? "Follow-up" : "First message"} sent ${day(r.sentOn, ctx.today)}${r.via ? ` by ${r.via}` : ""}${r.toEmail ? ` to ${r.toEmail}` : ""}.` : "Sent.";
-  return html`
-  ${header(`${o.contact.name || "Contact"} at ${o.company.name}`, contactLine(o))}
-  <div class="block stack">
-    <p>${sent}</p>
-    ${r.subject ? html`<p class="meta">Subject: ${r.subject}</p>` : ""}
-    <p class="meta">${o.next.action ? `${o.next.action}, due ${day(o.next.due, ctx.today)}.` : "No next step set."}</p>
-    ${pending ? html`<div class="notice info">${icon("inbox")}<span>The ${pending.agent.toLowerCase()} wrote a ${PURPOSE[pending.data.purpose]?.toLowerCase() || "draft"}. <a href="${href("outreach", { tab: "approve", item: pending.id })}">Review it</a></span></div>` : ""}
-  </div>
-  ${noticeBlock()}
-  ${o.outreach.plan ? planBlock(o, ctx) : ""}
-  ${m === "reply" ? replyPanel(o, ctx) : ""}
-  ${m === "nurture" ? nurturePanel(o, ctx) : ""}
-  ${linkedinBlock(o, ctx)}
-  ${!m ? html`
-  <div class="decision-bar"><div class="actions">
-    <button type="button" class="btn primary" data-act="mode" data-mode="reply">Record a reply…</button>
-    <button type="button" class="btn" data-act="followup" data-id="${o.id}">I sent a follow-up</button>
-    <button type="button" class="btn ghost" data-act="mode" data-mode="nurture">Move to nurture…</button>
-  </div></div>` : ""}`;
-}
-
-// Nurture: the client does not need this now but may later. The lead waits here until its review date.
-function nurtureView(d, ctx) {
-  const o = d.detail;
-  const moved = [...o.activity].reverse().find((a) => /^Moved to nurture/.test(a.text));
-  const reason = moved ? moved.text.replace(/^Moved to nurture( at Step 8)? by [^:.]+[:.]?\s*/, "").replace(/\s*\d+ unsent email draft\(s\) withdrawn\.?$/, "") : "";
-  const by = moved && (moved.text.match(/ by ([^:.]+)/) || [])[1];
-  const due = o.next.due;
-  const left = due ? daysBetween(ctx.today, due) : null;
-  const asked = [...o.activity].reverse().find((a) => /asked to reconnect now/.test(a.text) && a.on === ctx.today);
-  const m = ui.mode;
-  return html`
-  ${header(`${o.contact.name || "Contact"} at ${o.company.name}`, contactLine(o))}
-  ${noticeBlock()}
-  <div class="block stack">
-    <dl class="need">
-      <dt>Why</dt><dd>${reason || "No reason was recorded."}</dd>
-      <dt>Moved</dt><dd>${moved ? `${by ? `By ${by}, ` : ""}${day(moved.on, ctx.today)}` : "Not recorded"}</dd>
-      <dt>Review</dt><dd>${due ? html`${day(due, ctx.today)} <span class="meta">${left > 0 ? `in ${plural(left, "day")}` : left === 0 ? "today" : `${plural(-left, "day")} ago`}</span>` : "No date set"}</dd>
-    </dl>
-    <div class="notice">${icon("clock")}<span>On the review date the research agent checks ${o.company.name} for news since the brief. If it finds some, the outreach agent drafts a reconnect email that cites it, for ${o.owner || "the owner"} to approve; if not, ${o.owner || "the owner"} is told and decides. Nothing is sent on its own.${o.crm && o.crm.leadId ? " Insightly shows the lead as Nurture until then." : ""}</span></div>
-    ${asked && !ui.notice ? html`<div class="notice info">${icon("clock")}<span>Reconnect was asked for today. The research agent is checking for news; a notification follows when it is done.</span></div>` : ""}
-  </div>
-  ${m === "reply" ? replyPanel(o, ctx) : ""}
-  ${m === "review" ? reviewDatePanel(o, ctx) : ""}
-  ${m === "close" ? closePanel(o) : ""}
-  ${!m ? html`
-  <div class="decision-bar"><div class="actions">
-    <button type="button" class="btn primary" data-act="reconnect" data-id="${o.id}" ${asked ? "disabled" : ""}>Reconnect now</button>
-    <button type="button" class="btn" data-act="mode" data-mode="review">Change the review date…</button>
-    <button type="button" class="btn" data-act="mode" data-mode="reply">Record a reply…</button>
-    <button type="button" class="btn ghost" data-act="mode" data-mode="close">Close the lead…</button>
-  </div>
-  <p class="meta-3" style="margin-top:8px">Reconnect now does the review today instead of waiting for the date.</p></div>` : ""}`;
-}
-
-function reviewDatePanel(o, ctx) {
-  return html`
-  <div class="block">
-    <form class="panel-form" data-act="reviewDateForm" data-on="submit input" data-id="${o.id}">
-      <h3 class="sub-title">Change the review date</h3>
-      <div class="form-grid">
-        <label class="field">Review on<input type="date" name="review_on" value="${o.next.due || addDays(ctx.today, 30)}" min="${ctx.today}" required></label>
-        <label class="field">Reason<input name="reason" required placeholder="For example: their budget round is in March"></label>
+  return {
+    main: html`
+      ${header(`${o.contact.name || "Contact"} at ${o.company.name}`, contactLine(o))}
+      <div class="block stack">
+        <p>${sent}</p>
+        ${r.subject ? html`<p class="meta">Subject: ${r.subject}</p>` : ""}
+        <p class="meta">${o.next.action ? `${o.next.action}, due ${day(o.next.due, ctx.today)}.` : "No next step set."}</p>
       </div>
-      <div class="actions">
-        <button type="submit" class="btn primary" disabled>Save the date</button>
-        <button type="button" class="btn ghost" data-act="mode" data-mode="">Cancel</button>
-        <span class="missing" data-missing>Give a reason.</span>
-      </div>
-      ${inlineError(ui.error && ui.error.where === "review" ? ui.error.message : "")}
-    </form>
-  </div>`;
+      ${noticeBlock()}
+      ${waitingNotice(r.waiting, ctx.me)}
+      ${m === "reply" ? replyPanel(o, ctx) : ""}
+      ${m === "nurture" ? nurturePanel(o, ctx) : ""}
+      ${planForms(o)}
+      ${o.outreach.plan ? planBlock(o, ctx) : ""}
+      ${linkedinBlock(o, ctx)}`,
+    side: html`${planSide(o, ctx)}
+      ${!m ? sideActions("", html`
+        <button type="button" class="btn primary" data-act="mode" data-mode="reply">Record a reply…</button>
+        <button type="button" class="btn" data-act="followup" data-id="${o.id}">I sent a follow-up</button>
+        <button type="button" class="btn ghost" data-act="mode" data-mode="nurture">Park the lead…</button>`, planMinor(o)) : ""}`,
+  };
 }
 
-function closePanel(o) {
-  return html`
-  <div class="block">
-    <form class="panel-form" data-act="closeForm" data-on="submit input change" data-id="${o.id}">
-      <h3 class="sub-title">Close the lead</h3>
-      <p class="meta">The lead leaves nurture for good and no reconnect email is drafted. The reason is kept with the decision.</p>
-      <label class="field">Reason<select name="reason" required><option value="">Choose a reason</option>${CLOSE_REASONS.map((r) => html`<option>${r}</option>`)}</select></label>
-      <label class="field">Comment <span class="hint">Needed when the reason is Other.</span><textarea name="comment" rows="2"></textarea></label>
-      <div class="actions">
-        <button type="submit" class="btn primary" disabled>Close the lead</button>
-        <button type="button" class="btn ghost" data-act="mode" data-mode="">Cancel</button>
-        <span class="missing" data-missing>Choose a reason.</span>
-      </div>
-      ${inlineError(ui.error && ui.error.where === "close" ? ui.error.message : "")}
-    </form>
-  </div>`;
-}
-
-// ----- after the reply -----
-function talkingView(d, ctx) {
-  const list = d.lists.talking;
-  if (!list.length) return html`<section class="card">${emptyState("No one in conversation yet", "A lead moves here when the client replies.")}</section>`;
-  return html`
-  <section class="card">
-    <div class="card-head"><h2>In conversation</h2><span class="meta">Qualification continues on the Qualification page</span></div>
-    <div class="table-wrap"><table class="list">
-      <thead><tr><th scope="col">Contact</th><th scope="col">Stage</th><th scope="col">Next step</th><th scope="col"><span class="sr-only">Open</span></th></tr></thead>
-      <tbody>${list.map((o) => html`<tr>
-        <td><b>${o.contact.name || "Contact"}</b><span class="meta">${o.company}</span></td>
-        <td>${STAGE_LABELS[o.stage] || o.stage}</td>
-        <td>${o.next.action || "None set"}${o.next.due ? html`<div class="meta-3">Due ${day(o.next.due, ctx.today)}</div>` : ""}</td>
-        <td><a class="btn small" href="${href("qualification", { id: o.id })}">Open</a></td>
-      </tr>`)}</tbody>
-    </table></div>
-  </section>`;
+// ---------- keys on Needs you: J and K move through the queue ----------
+let keysOn = false;
+function queueKey(e) {
+  if (!/^#\/outreach\?(.*&)?tab=you/.test(location.hash) || document.querySelector(".drawer")) return;
+  if ((e.target && e.target.matches && e.target.matches("input, textarea, select")) || e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = (e.key || "").toLowerCase();
+  if (k !== "j" && k !== "k") return;
+  const list = [...document.querySelectorAll(".queue .pick")];
+  const i = list.findIndex((a) => a.getAttribute("aria-current") === "true");
+  const n = list[(i + (k === "j" ? 1 : -1) + list.length) % list.length];
+  if (n && list.length > 1) { e.preventDefault(); location.hash = n.getAttribute("href"); }
 }
 
 // ---------- actions ----------
@@ -898,6 +1132,7 @@ async function attempt(where, button, ctx, fn) {
   }
 }
 
+// After a decision on an item: the queue moves to the next one (the full load picks it).
 function moveOn(ctx, d, message, link) {
   resetUi();
   ctx.toast(message, link ? { link } : {});
@@ -905,7 +1140,18 @@ function moveOn(ctx, d, message, link) {
   ctx.go("outreach", { tab: ctx.route.params.tab, team: ctx.route.params.team });
 }
 
+// Keep the word count beside the editor in step with the text.
+function countWords(form) {
+  const line = form.querySelector("[data-words]");
+  if (!line) return;
+  const n = words(form.elements.body.value);
+  const min = Number(line.dataset.min), max = Number(line.dataset.max);
+  line.textContent = `${n} words${max ? ` (${min}-${max} for this standard)` : ""}`;
+  line.className = max && (n < min || n > max) ? "warn-text md" : "meta-3";
+}
+
 export const actions = {
+  ...panelActions("outreach", (ctx) => ({ team: ctx.route.params.team })),
   crmResolve: resolveCrm,
   tab(t, e, ctx) { resetUi(); ctx.go("outreach", { tab: t.dataset.tab, team: ctx.route.params.team }); },
   tabkeys(t, e, ctx) {
@@ -923,6 +1169,11 @@ export const actions = {
     ui.mode = t.dataset.mode || null;
     ui.error = null;
     ctx.focusAfter = ui.mode ? ".panel-form input:not([type=hidden]), .panel-form textarea, .panel-form select" : null;
+    ctx.refresh();
+  },
+  thread(t, e, ctx) {
+    ui.thread = !(ui.thread === true);
+    ctx.focusAfter = "[data-act=thread]";
     ctx.refresh();
   },
   chip(t) {
@@ -959,13 +1210,13 @@ export const actions = {
     if (!res) return;
     ui.mode = null;
     ui.notice = (res.warnings || []).map((w) => ({ text: w, cls: "warn" }));
-    if (res.review) ui.notice.push({ text: reviewText(res.review), cls: res.review.scores && res.review.meets ? "good" : "warn" });
     if ((res.newFacts || []).length) ui.notice.push({ text: `The agent added ${plural(res.newFacts.length, "newer fact")} to the research brief.`, cls: "" });
     if (!ui.notice.length) ui.notice = null;
     ctx.refresh();
   },
   editForm(form, e, ctx) {
     const f = form.elements;
+    countWords(form);
     const why = !f.subject.value.trim() || !f.body.value.trim() ? "Write a subject and a message." : "";
     if (e.type !== "submit") return missing(form, why);
     if (why) return;
@@ -993,24 +1244,23 @@ export const actions = {
     if (!res) return;
     const pending = itemId ? res.sent : res;
     if (pending && pending.mode === "approval") {
-      return moveOn(ctx, null, `Approved. It waits for ${pending.approver}'s approval before it goes to ${to}.`);
+      return moveOn(ctx, null, `Approved. It waits for ${pending.approver}'s approval before it goes to ${to}. It is under With a teammate until then.`);
     }
     if (how === "draft") return moveOn(ctx, null, `The email is in your Gmail drafts for ${to}. Nothing was sent; the workspace records it once you send it from Gmail.`);
     const out = itemId ? res.sent : res;
     if (out && out.mode === "queued") {
-      resetUi();
+      resetUi(ui.key);
       offerUndo(ctx, `Approved. The email goes to ${to} in ${out.seconds} seconds.`, () => undoEmail(ctx, out.id), { seconds: out.seconds, key: `email:${out.id}` });
-      ctx.scrollTop = true;
-      return ctx.go("outreach", { tab: ctx.route.params.tab, team: ctx.route.params.team });
+      return ctx.refresh();
     }
-    moveOn(ctx, null, `Sent to ${to}. The lead is now waiting for a reply.`, { href: href("outreach", { tab: "waiting", id }), label: "See it" });
+    moveOn(ctx, null, `Sent to ${to}. The lead is now waiting for a reply.`, { href: href("outreach", { tab: "wait", id }), label: "See it" });
   },
   async recordSentForm(form, e, ctx) {
     const f = form.elements;
     const id = form.dataset.id;
     const ok = await attempt("sent", form.querySelector("[type=submit]"), ctx, () =>
       ctx.api.post(`/opportunities/${enc(id)}/outreach/sent`, { via: f.via.value, on: f.on.value }));
-    if (ok) moveOn(ctx, null, `Recorded: ${f.via.value} sent. The lead is now waiting for a reply.`, { href: href("outreach", { tab: "waiting", id }), label: "See it" });
+    if (ok) moveOn(ctx, null, `Recorded: ${f.via.value} sent. The lead is now waiting for a reply.`, { href: href("outreach", { tab: "wait", id }), label: "See it" });
   },
 
   undoEmail: undoEmailAct,
@@ -1026,7 +1276,7 @@ export const actions = {
   },
   async planDecide(t, e, ctx) {
     const ok = await attempt("plan", t, ctx, () => ctx.api.post(`/opportunities/${enc(t.dataset.id)}/outreach/plan/decision`, { decision: t.dataset.decision }));
-    if (ok) { ui.mode = null; ctx.toast("Plan approved. Draft each step when you are ready; nothing is sent without you."); }
+    if (ok) { ui.mode = null; ctx.toast("Plan approved. Each step comes to Needs you when it is due; nothing is sent without you."); }
     ctx.refresh();
   },
   async planRejectForm(form, e, ctx) {
@@ -1048,7 +1298,7 @@ export const actions = {
     if (e.type !== "submit") return missing(form, need && note.length < 3 ? "Write a few words." : "");
     const ok = await attempt("plan", form.querySelector("[type=submit]"), ctx, () =>
       ctx.api.post(`/opportunities/${enc(form.dataset.id)}/outreach/plan/steps/${form.dataset.n}`, { action: form.dataset.action, note }));
-    if (ok) { ui.mode = null; ctx.toast(form.dataset.action === "done" ? `Step ${form.dataset.n} recorded.` : `Step ${form.dataset.n} skipped.`); }
+    if (ok) { ui.mode = null; ctx.toast(form.dataset.action === "done" ? `Step ${form.dataset.n} recorded.` : `Step ${form.dataset.n} skipped. The plan moves on to the next one.`); }
     ctx.refresh();
   },
   async planStopForm(form, e, ctx) {
@@ -1056,7 +1306,7 @@ export const actions = {
     if (e.type !== "submit") return missing(form, note.length < 3 ? "Say why." : "");
     const ok = await attempt("plan", form.querySelector("[type=submit]"), ctx, () =>
       ctx.api.post(`/opportunities/${enc(form.dataset.id)}/outreach/plan/stop`, { note }));
-    if (ok) ui.mode = null;
+    if (ok) { ui.mode = null; ctx.toast("Plan stopped. No steps run after this."); }
     ctx.refresh();
   },
   async liDraft(t, e, ctx) {
@@ -1106,8 +1356,20 @@ export const actions = {
     if (!res) return ctx.toast(ui.error.message);
     moveOn(ctx, null, res.note || "Done.");
   },
+  // Put the agent's own text back (it was kept when the person edited it).
+  async restoreDraft(t, e, ctx) {
+    const ok = await attempt("itemEdit", t, ctx, async () => {
+      const cur = (await ctx.api.get("/inbox")).find((x) => x.id === t.dataset.item);
+      if (!cur || !cur.data.original) throw new Error("The agent's draft could not be found.");
+      return ctx.api.put(`/inbox/${enc(cur.id)}/draft`, { subject: cur.data.original.subject, body: cur.data.original.body, payload_hash: cur.payloadHash });
+    });
+    if (!ok) return ctx.toast(ui.error.message);
+    ui.mode = null;
+    ui.notice = [{ text: "The agent's draft is back. Approve it, or edit it again.", cls: "good" }];
+    ctx.refresh();
+  },
 
-  // waiting and nurture
+  // waiting and parked
   async followup(t, e, ctx) {
     const ok = await attempt("followup", t, ctx, () => ctx.api.post(`/opportunities/${enc(t.dataset.id)}/outreach/followup`));
     if (!ok) return ctx.toast(ui.error.message);
@@ -1122,11 +1384,12 @@ export const actions = {
     const res = await attempt("reply", form.querySelector("[type=submit]"), ctx, () =>
       ctx.api.post(`/opportunities/${enc(id)}/outreach/reply`, { text: f.text.value.trim(), on: f.on.value }));
     if (!res) return;
-    const label = res.replyLabel === "pending" ? "The reply label is pending: label it by hand on the Qualification page." : `The evidence agent labelled the reply: ${res.replyLabel}.`;
-    moveOn(ctx, null, `Reply recorded; the lead is now In conversation. ${label}`, { href: href("qualification", { id }), label: "Open it" });
+    const label = res.replyLabel === "pending" ? "The reply label is pending: label it by hand on the Qualification page." : `The Evidence agent labelled the reply: ${res.replyLabel}.`;
+    moveOn(ctx, null, `Reply recorded; the lead is now Active. ${label}`, { href: href("qualification", { id }), label: "Open it" });
   },
   async itemEditForm(form, e, ctx) {
     const f = form.elements;
+    countWords(form);
     const why = f.subject.value.trim() && f.body.value.trim() ? "" : "Write a subject and a message.";
     if (e.type !== "submit") return missing(form, why);
     if (why) return;
@@ -1137,34 +1400,6 @@ export const actions = {
     ui.notice = [{ text: "Saved your version. Approve and send it when it is ready.", cls: "good" }];
     ctx.refresh();
   },
-  async reconnect(t, e, ctx) {
-    const res = await attempt("reconnect", t, ctx, () => ctx.api.post(`/opportunities/${enc(t.dataset.id)}/nurture/reconnect`));
-    if (!res) return ctx.toast(ui.error.message);
-    ui.notice = [{ text: res.queued ? "The research agent checks for news now. If it finds some, a reconnect draft follows for you to approve."
-      : "The research agent is already checking this company.", cls: "good" }];
-    ctx.refresh();
-  },
-  async reviewDateForm(form, e, ctx) {
-    const f = form.elements;
-    const why = !f.review_on.value ? "Choose a date." : !f.reason.value.trim() ? "Give a reason." : "";
-    if (e.type !== "submit") return missing(form, why);
-    if (why) return;
-    const ok = await attempt("review", form.querySelector("[type=submit]"), ctx, () =>
-      ctx.api.post(`/opportunities/${enc(form.dataset.id)}/nurture/review`, { review_on: f.review_on.value, reason: f.reason.value.trim() }));
-    if (!ok) return;
-    ui.mode = null;
-    ui.notice = [{ text: `The review is now on ${day(f.review_on.value, ctx.today)}.`, cls: "good" }];
-    ctx.refresh();
-  },
-  async closeForm(form, e, ctx) {
-    const f = form.elements;
-    const why = !f.reason.value ? "Choose a reason." : f.reason.value === "Other" && !f.comment.value.trim() ? "Say why: the reason is Other." : "";
-    if (e.type !== "submit") return missing(form, why);
-    if (why) return;
-    const ok = await attempt("close", form.querySelector("[type=submit]"), ctx, () =>
-      ctx.api.post(`/opportunities/${enc(form.dataset.id)}/close`, { reason: f.reason.value, comment: f.comment.value.trim() }));
-    if (ok) moveOn(ctx, null, `Closed: ${f.reason.value}.`);
-  },
   async nurtureForm(form, e, ctx) {
     const f = form.elements;
     if (e.type !== "submit") return missing(form, f.reason.value.trim() ? "" : "Give a reason.");
@@ -1172,6 +1407,6 @@ export const actions = {
     const id = form.dataset.id;
     const ok = await attempt("nurture", form.querySelector("[type=submit]"), ctx, () =>
       ctx.api.post(`/opportunities/${enc(id)}/nurture`, { reason: f.reason.value.trim(), review_on: f.review_on.value }));
-    if (ok) moveOn(ctx, null, `Moved to nurture until ${day(f.review_on.value, ctx.today)}.`, { href: href("outreach", { tab: "nurture", id }), label: "See it" });
+    if (ok) moveOn(ctx, null, `Parked until ${day(f.review_on.value, ctx.today)}.`, { href: href("qualification", { tab: "parked", id }), label: "See it" });
   },
 };
