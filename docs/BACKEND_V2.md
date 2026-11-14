@@ -1034,3 +1034,20 @@ agents start paused, so they spend no search credits on their own (`PATCH /api/a
 Tavily credits for discovery and up to 22 per company, plus the AI calls. The result is saved in
 `runtime/real-data-result.txt`. The same natural-language request works in any workspace: `POST /api/candidates/recommend`
 with `{"intent": "..."}`.
+
+## Additions for the redesigned page (14 Nov 2026)
+
+Small read and write paths that close gaps in `docs/REDESIGN_PLAN.md` (D6 B-a..B-e, G5, G7, G12, G16, G27). Tests:
+`tests/v2/test_backend_gaps.py`.
+
+| Endpoint or field | What it does |
+|---|---|
+| `GET /api/todo` rows: `ref`, `owner`, `since` | Record ids on second-approval emails, packs (`id`, `revision`, `stale`), direction proposals, lessons, research; whose work it is; the day it started waiting (none when no record says) |
+| `research.step`, `startedAt`, `endedAt`, `returnedWith` on `GET /api/opportunities/{id}` | The live research agent's fixed step n of 4 (`api/research_agent.py STEPS`): a step starts with its first tool call and never goes back; saved in `research_tasks.progress` at each sync |
+| `directors`, `exceptionMax` in `GET /api/config` | Who approves packs (`CGS_DIRECTORS`; empty = any colleague but the owner) and the exception reason limit |
+| Pack exception over 140 characters | Refused (`400 too_long`) |
+| `brief.versions`, `brief.changes` | A brief returned at Step 4 is kept (column `research_briefs.versions`, last 5) before research runs again; `changes` compares the new brief with it (facts added/dropped, conclusions rewritten, open questions answered, recommendation and flags before/now) |
+| `POST /api/candidates/rounds/{n}/skip` | Skips every candidate of a round still waiting, one reason, feedback per candidate |
+| `POST /api/opportunities/{id}/reopen` `{reason}` | A rejected company returns to Your decision; decision "Brought back"; the rejection's feedback is withdrawn unless the direction already changed because of it |
+| `POST /api/opportunities/{id}/reply-label` `{label, note}` | The owner corrects what the client's reply means; the stage stays; a new "defer" queues the nurture suggestion |
+| `GET /api/settled?days=7&mine=true` | Decisions, emails sent, client replies and contact plan steps done in the last days, newest first (`api/settled.py`, read only) |

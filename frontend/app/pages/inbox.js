@@ -5,8 +5,9 @@
 // due steps are only under All (the design has no tab for them). Done lists the agents' items people settled, and
 // what was settled in this browser (REDESIGN_PLAN G6).
 //
-// Quick actions only where the API allows them without a form the row cannot hold. A row's key carries the record id
-// (api/todo.py: "approve:<email id>", "proposal:<id>", "lesson:<id>"; tests/v2/test_frontend.py checks this).
+// Quick actions only where the API allows them without a form the row cannot hold. A row's ref names its record
+// (api/todo.py: email, pack, proposal, lesson, inbox, research); the key carries the same id for older servers
+// (tests/v2/test_frontend.py checks this). Rows also say whose work it is and since when (owner, since).
 import { html, icon, day, href, initials, plural } from "../lib.js";
 import { enc } from "../api.js";
 import { STAGE_LABELS } from "../options.js";
@@ -37,6 +38,10 @@ export function typeOf(row) {
 
 // The record a row stands for, from its key (api/todo.py builds the keys).
 export function recordOf(row) {
+  const ref = row.ref || {};
+  if (ref.type === "email" && row.label === "Approve email") return { type: "outbound", id: String(ref.id) };
+  if (ref.type === "proposal") return { type: "direction", id: String(ref.id) };
+  if (ref.type === "lesson") return { type: "lesson", id: String(ref.id) };
   const [kind, ...rest] = String(row.key || "").split(":");
   const id = rest.join(":");
   if (kind === "approve" && row.label === "Approve email") return { type: "outbound", id };
@@ -132,7 +137,8 @@ export function view(d, ctx) {
       <nav class="card queue inbox-list" aria-label="Items">
         ${d.list.map((r) => html`<a class="pick" href="${href("inbox", { tab: d.tab, sel: r.key })}" ${r.key === d.sel ? html`aria-current="true"` : ""}>
           ${r.opportunity ? html`<span class="avatar" aria-hidden="true">${initials(r.opportunity.company)}</span>` : html`<span class="avatar agent" aria-hidden="true">${icon("sparkle", 14)}</span>`}
-          <span class="pick-text"><b>${shown(r.title)}</b><span class="meta-3 ellipsis">${r.sub}</span></span>
+          <span class="pick-text"><b>${shown(r.title)}</b><span class="meta-3 ellipsis">${r.sub}</span>
+            ${r.since || (r.owner && r.owner !== ctx.me) ? html`<span class="meta-3">${[r.owner && r.owner !== ctx.me ? r.owner : "", r.since ? `since ${day(r.since, ctx.today)}` : ""].filter(Boolean).join(", ")}</span>` : ""}</span>
           <span class="tag ${TONE[r.group] || ""}">${labelOf(r)}</span></a>`)}
       </nav>
       <section class="card inbox-detail" aria-labelledby="detail-h">${detail(d, ctx)}</section>

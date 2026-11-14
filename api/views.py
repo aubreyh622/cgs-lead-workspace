@@ -37,6 +37,7 @@ def summary(o: m.Opportunity) -> dict:
 
 
 def detail(s: Session, o: m.Opportunity) -> dict:
+    from api import services as S  # services builds on this module's callers; import here to avoid a cycle
     rows = lambda model, *order: s.scalars(select(model).where(model.opportunity_id == o.id).order_by(*order)).all()
     b = o.brief
     out = summary(o)
@@ -52,7 +53,10 @@ def detail(s: Session, o: m.Opportunity) -> dict:
         "company": {"id": o.company.id, "name": o.company.name, "domain": o.company.domain, "domainBy": o.company.domain_by, "industry": o.company.industry, "hq": o.company.hq},
         "brief": None if not b else {"facts": b.facts, "hypothesis": b.hypothesis, "relevance": b.relevance, "alternative": b.alternative,
                                      "unknowns": b.unknowns, "flags": b.flags, "priority": b.priority, "recommendation": b.recommendation,
-                                     "suggested": b.suggested, "usage": b.usage, "contacts": b.contacts or [], "frozenOn": iso(b.frozen_on)},
+                                     "suggested": b.suggested, "usage": b.usage, "contacts": b.contacts or [], "frozenOn": iso(b.frozen_on),
+                                     # earlier versions kept when a person returned the brief (B-e), and what changed since the last one
+                                     "versions": [{k: v.get(k) for k in ("n", "on", "by", "question")} for v in b.versions or []],
+                                     "changes": S.brief_changes(b)},
         "notes": [{"id": n.id, "type": n.type, "on": iso(n.on), "text": n.text, "analysis": n.analysis,
                    "reading": n.id in reading} for n in rows(m.Note, m.Note.on)],
         "proposals": [{"id": p.id, "noteId": p.note_id, "kind": p.kind, "key": p.key, "value": p.value, "quote": p.quote, "why": p.why,
@@ -81,8 +85,13 @@ def detail(s: Session, o: m.Opportunity) -> dict:
     out["outreach"]["plan"] = OP.view(out_reach, o)  # the contact plan the outreach agent proposed (api/outreach_plan.py)
     out["undo"] = U.view(o)
     task = s.scalars(select(m.ResearchTask).where(m.ResearchTask.opportunity_id == o.id).order_by(m.ResearchTask.started_at.desc())).first()
+    from api.research_agent import step_view
     out["research"] = None if not task else {"status": task.status, "progress": task.progress, "pauseReason": task.pause_reason,
-                                             "error": task.error, "log": task.log}
+                                             "error": task.error, "log": task.log, "startedAt": task.started_at.isoformat() if task.started_at else None,
+                                             "endedAt": task.ended_at.isoformat() if task.ended_at else None,
+                                             # step n of 4 while it runs (B-b); a finished run has no current step
+                                             "step": step_view(task.progress or 1) if task.status in ("running", "queued") else None,
+                                             "returnedWith": task.returned_with}
     return out
 
 

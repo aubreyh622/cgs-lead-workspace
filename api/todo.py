@@ -58,9 +58,17 @@ def _opp(o: m.Opportunity | None) -> dict | None:
     return {"id": o.id, "stage": o.stage, "company": o.company.name} if o else None
 
 
-def _row(group, label, title, sub, o=None, open=None, ref=None, act=(), key=None):
+def _day(v) -> str | None:
+    """A date or datetime as an ISO day (the row's `since`), or None when the source keeps no date."""
+    if v is None:
+        return None
+    return (v.date() if isinstance(v, datetime) else v).isoformat()
+
+
+def _row(group, label, title, sub, o=None, open=None, ref=None, act=(), key=None, since=None, owner=None):
+    """since: the day this piece of work started waiting (None when no record says); owner: whose work it is."""
     return {"key": key, "group": group, "label": label, "title": title, "sub": sub, "opportunity": _opp(o), "open": open,
-            "ref": ref, "act": list(act)}
+            "ref": ref, "act": list(act), "since": _day(since), "owner": owner if owner is not None else (o.owner if o else None) or None}
 
 
 def _mine(o: m.Opportunity | None, me: str) -> bool:
@@ -81,13 +89,14 @@ def todo(c: S.Ctx, follow_days: int, mail=None) -> dict:
         if e.status in EMAIL_PROBLEMS and not e.resolved_at and (e.by == me or _mine(o, me)):
             what = f"the {PURPOSES.get(e.purpose, e.purpose)} email to {e.to}"
             rows.append(_row("problem", EMAIL_PROBLEMS[e.status], f"{o.company.name}: {what}" if o else what.capitalize(), e.error or "It could not go out.", o,
-                             ref={"type": "email", "id": e.id}, act=("checked",), key=f"email:{e.id}"))
+                             ref={"type": "email", "id": e.id}, act=("checked",), key=f"email:{e.id}", since=e.created_at, owner=e.by))
     for e in latest.values():  # a colleague's email waits for this person's second approval (api/people.py)
         o = opps.get(e.opportunity_id)
         if e.status == "approval" and e.approver == me:
             rows.append(_row("waiting", "Approve email", f"{o.company.name if o else 'An opportunity'}: {PURPOSES.get(e.purpose, e.purpose)} email from {e.by}",
                              f"To {e.to}: \"{e.subject}\". Nothing goes out until you approve it.", o,
-                             open={"page": "outreach", "params": {"id": e.opportunity_id, "team": "1"}}, key=f"approve:{e.id}"))
+                             open={"page": "outreach", "params": {"id": e.opportunity_id, "team": "1"}}, key=f"approve:{e.id}",
+                             ref={"type": "email", "id": e.id}, since=e.created_at, owner=e.by))
     last_task: dict[str, m.ResearchTask] = {}
     for t in s.scalars(select(m.ResearchTask).order_by(m.ResearchTask.started_at)):
         last_task[t.opportunity_id] = t
@@ -96,7 +105,8 @@ def todo(c: S.Ctx, follow_days: int, mail=None) -> dict:
         if o and o.stage == "researching" and t.status in ("failed", "paused"):
             why = (t.error or "Research failed.") if t.status == "failed" else "Paused: it reached its budget." if t.pause_reason == "budget" else "Paused."
             rows.append(_row("problem", "Research stopped", f"Research on {o.company.name}", why, o,
-                             open={"page": "companies", "params": {"tab": "research"}}, key=f"research:{t.id}"))
+                             open={"page": "companies", "params": {"tab": "research"}}, key=f"research:{t.id}",
+                             ref={"type": "research", "id": t.id}, since=t.ended_at or t.started_at))
     for o in opps.values():
         if not _mine(o, me):
             continue
@@ -128,7 +138,7 @@ def todo(c: S.Ctx, follow_days: int, mail=None) -> dict:
         elif o is None:
             open = {"page": "companies", "params": {"tab": "new"}} if i.kind == "candidates" else {"page": "agents", "params": {}}
         rows.append(_row(group, label, i.title, f"{i.agent}, {S.fmt(i.created_on)}" + (f". {o.company.name}" if o else ""), o, open,
-                         ref={"type": "inbox", "id": i.id, "hash": i.payload_hash}, act=act, key=f"inbox:{i.id}"))
+                         ref={"type": "inbox", "id": i.id, "hash": i.payload_hash}, act=act, key=f"inbox:{i.id}", since=i.created_on))
 
     # ---------- contact plans (api/outreach_plan.py) ----------
     from api import outreach_plan as OP
@@ -143,7 +153,7 @@ def todo(c: S.Ctx, follow_days: int, mail=None) -> dict:
             p_ = pl["plan"]
             rows.append(_row("decide", "Decide the contact plan", f"{o.company.name}: start with {p_['entry']['name']}",
                              f"{p_['approach'].replace('_', ' ').capitalize()}, {len(p_['steps'])} steps. Approve, reject or ask for another.",
-                             o, link, key=f"plan:{o.id}"))
+                             o, link, key=f"plan:{o.id}", since=OP._d(pl.get("on"))))
             continue
         run = OP.running(o, r)
         if not run:
@@ -157,11 +167,11 @@ def todo(c: S.Ctx, follow_days: int, mail=None) -> dict:
         if st["status"] == "ready":
             rows.append(_row("decide", "Do the plan step", f"{o.company.name}, step {st['n']}: {what}",
                              "Prepared by the outreach agent. Do it, then record it on the Outreach page (or skip it).", o, link,
-                             key=f"planstep:{o.id}:{st['n']}"))
+                             key=f"planstep:{o.id}:{st['n']}", since=due))
         elif due and due <= c.today:
             rows.append(_row("waiting", "Plan step due", f"{o.company.name}, step {st['n']}: {what}",
                              f"Due {S.fmt(due)}. The outreach agent prepares it at the next patrol, or prepare it now.", o, link,
-                             key=f"planstep:{o.id}:{st['n']}"))
+                             key=f"planstep:{o.id}:{st['n']}", since=due))
 
     # ---------- the rules ----------
     alerts = [a for a in S.alerts(c, follow_days) if opps.get(a["opportunityId"]) is not None and opps[a["opportunityId"]].owner == me
@@ -171,7 +181,7 @@ def todo(c: S.Ctx, follow_days: int, mail=None) -> dict:
         o = opps[a["opportunityId"]]
         name = o.company.name
         if a["type"] == "overdue":
-            rows.append(_row("waiting", "Overdue", f"{name}: {o.next_action}", f"Due {S.fmt(o.next_due)}. {o.title}.", o, key=f"overdue:{o.id}"))
+            rows.append(_row("waiting", "Overdue", f"{name}: {o.next_action}", f"Due {S.fmt(o.next_due)}. {o.title}.", o, key=f"overdue:{o.id}", since=o.next_due))
         elif a["type"] == "stale_pack":
             rows.append(_row("problem", "Pack out of date", f"Update the qualification pack for {name}", a["message"], o, key=f"stale:{o.id}"))
         elif a["type"] == "follow_up_due" and o.id not in drafted and o.id not in overdue:  # one row per piece of work
@@ -181,23 +191,29 @@ def todo(c: S.Ctx, follow_days: int, mail=None) -> dict:
     directors = c.settings.directors
     for o in opps.values():
         if o.stage == "approval" and o.owner != me and (not directors or me in directors):
+            pk = S.open_pack(c, o)
             rows.append(_row("waiting", "Approve or return", f"The qualification pack for {o.company.name}", f"{o.title}. Sent by {o.owner}.", o,
-                             open={"page": "qualification", "params": {"tab": "approval", "id": o.id}}, key=f"approve:{o.id}"))
+                             open={"page": "qualification", "params": {"tab": "approval", "id": o.id}}, key=f"approve:{o.id}",
+                             ref={"type": "pack", "id": pk.id, "opportunity": o.id, "revision": o.revision, "stale": bool(pk.stale_reason)} if pk else None,
+                             since=pk.submitted_on if pk else None))
         elif o.stage == "active" and _mine(o, me) and o.id not in ready_noted and (assessment(o) or {}).get("readiness") == "Ready":
             rows.append(_row("decide", "Send for approval", f"The pack for {o.company.name}", "The rules say Ready.", o,
                              open={"page": "qualification", "params": {"tab": "active", "id": o.id}}, key=f"ready:{o.id}"))
         elif o.stage == "review":
             rows.append(_row("decide", "Accept or reject", f"Step 4: {o.company.name}", f"{o.title}. The research brief is ready.", o,
-                             open={"page": "companies", "params": {"tab": "review", "id": o.id}}, key=f"review:{o.id}"))
+                             open={"page": "companies", "params": {"tab": "review", "id": o.id}}, key=f"review:{o.id}",
+                             since=(last_task.get(o.id).ended_at if last_task.get(o.id) else None)))
 
     # ---------- steer ----------
     for p in proposals:
         rows.append(_row("steer", "Direction change", f"Leave {p.target} out of future searches" if p.type == "exclude" else (p.title or f"Change {p.field}"),
                          "A change to the research direction, waiting for a person to apply or dismiss it.", None,
-                         open={"page": "agents", "params": {}}, key=f"proposal:{p.id}"))
+                         open={"page": "agents", "params": {}}, key=f"proposal:{p.id}", ref={"type": "proposal", "id": p.id},
+                         owner=p.proposed_by))
     for l in lessons:
         rows.append(_row("steer", "Lesson to review", l.text, f"A lesson for the {l.agent.lower()}, proposed by {l.proposed_by}.", None,
-                         open={"page": "agents", "params": {}}, key=f"lesson:{l.id}"))
+                         open={"page": "agents", "params": {}}, key=f"lesson:{l.id}", ref={"type": "lesson", "id": l.id},
+                         since=l.proposed_on))
     new_cands = s.scalar(select(func.count()).select_from(m.Candidate).where(m.Candidate.status == "new")) or 0
     if new_cands and not any(i.kind == "candidates" for i in items):
         rows.append(_row("steer", "Pick candidates", f"Pick which of {new_cands} new candidate{'s' if new_cands != 1 else ''} get researched",

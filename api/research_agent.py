@@ -441,10 +441,46 @@ def card(company: str, domain: str, record: dict, args: dict) -> dict:
         "review": {"decision": "Ready for review" if evidence and dated else "Needs research"}}
 
 
+# The research run's fixed steps (GET /api/opportunities/{id} research.step). A step starts with the first tool call that
+# belongs to it and never goes back, so a run that searches again while recording facts stays at "Recording facts".
+STEPS = ("Finding the company", "Reading sources", "Recording facts", "Writing the brief")
+STEP_OF_TOOL = {"company_pages": 1, "search_web": 2, "read_page": 2, "add_fact": 3, "record_size": 3, "add_contact": 3, "finish": 4}
+
+
+def _track_steps(spec: R.AgentSpec, record: dict) -> None:
+    """Every tool call moves record["step"] forward to the tool's step (STEP_OF_TOOL); the call itself is unchanged."""
+    record.setdefault("step", 1)
+
+    def wrap(tool: R.Tool) -> None:
+        n, inner = STEP_OF_TOOL.get(tool.name), tool.run
+        if not n:
+            return
+
+        def run(args):
+            record["step"] = max(record["step"], n)
+            return inner(args)
+        tool.run = run
+    for tool in [*spec.tools, spec.finish]:
+        wrap(tool)
+
+
+def step_view(n: int | None) -> dict | None:
+    """{n, of, label} for a step number 1-4, or None."""
+    if not n:
+        return None
+    n = max(1, min(len(STEPS), int(n)))
+    return {"n": n, "of": len(STEPS), "label": STEPS[n - 1]}
+
+
 def research(provider, search, company: str, domain: str, focus: str = "", may_call=None, size: dict | None = None,
-             problem: str = "", lessons: str = "", news: str = "") -> tuple[dict | None, dict, list, str, list]:
-    """Run the brief task. Returns (card or None, usage counts, trace, why there is no card, progress events)."""
+             problem: str = "", lessons: str = "", news: str = "", live: dict | None = None) -> tuple[dict | None, dict, list, str, list]:
+    """Run the brief task. Returns (card or None, usage counts, trace, why there is no card, progress events).
+
+    live: a dict that gets the run's record at once, so a caller in another thread can read its events and step while it runs."""
     spec, record = research_agent(search, company, domain, size, lessons)
+    _track_steps(spec, record)
+    if live is not None:
+        live["record"] = record
     out = R.run(spec, provider, task(company, domain, focus, size, problem, news), **({"may_call": may_call} if may_call else {}))
     usage = {"searches": record["searches"], "extractions": record["reads"], "model_calls": getattr(provider, "calls", 0),
              "tokens_in": out.usage.tokens_in, "tokens_out": out.usage.tokens_out,
@@ -491,7 +527,7 @@ class AgentResearchBridge:
                     search = toolkit.connector("Research agent", "web", lambda: self.search_factory(as_of))
                 self.label = f"{provider.label}+{getattr(search, 'name', 'web')}"
                 c, usage, trace, reason, events = research(provider, search, company, domain, focus, size=size, problem=problem,
-                                                           lessons=lessons, news=news)
+                                                           lessons=lessons, news=news, live=r)
                 r.update(card=c, usage=usage, trace=trace, events=events, error=reason or None,
                          status="completed" if c else "failed")
             except (LLMError, toolkit.Denied) as e:
@@ -507,8 +543,10 @@ class AgentResearchBridge:
 
     def status(self, run_id: str) -> dict:
         r = self.runs.get(run_id) or {"status": "failed", "usage": {}, "error": "This research run is no longer in memory. Retry it.", "events": []}
+        rec = r.get("record") or {}  # the live record while the run works (research(live=...))
+        events = r.get("events") or list(rec.get("events") or [])
         return {"status": r["status"], "stage": "researching" if r["status"] == "running" else "done", "usage": r["usage"],
-                "error": r["error"], "events": r.get("events", [])[-10:]}
+                "error": r["error"], "events": events[-10:], "step": rec.get("step")}
 
     def result(self, run_id: str) -> dict | None:
         return (self.runs.get(run_id) or {}).get("card")

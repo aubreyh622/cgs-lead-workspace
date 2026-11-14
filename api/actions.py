@@ -336,6 +336,11 @@ def unskip(cand_id: str, c: S.Ctx = Actor):
     return {"ok": True}
 
 
+@router.post("/candidates/rounds/{rnd}/skip", tags=["step 1"], summary="Skip every candidate of one round still waiting, with one reason (feedback per candidate)")
+def skip_round(rnd: int, body: Skip, c: S.Ctx = Actor):
+    return {"skipped": S.skip_round(c, rnd, body.reason, body.scope)}
+
+
 @router.post("/opportunities", tags=["step 1"], summary="Add one lead by hand; research starts at once")
 def add(body: ManualLead, c: S.Ctx = Actor):
     return {"id": S.add_manual(c, body.company, body.domain, body.name, body.title, body.source, body.notes)}
@@ -391,6 +396,16 @@ def step4(opp_id: str, body: Step4, c: S.Ctx = Actor):
 def step4_undo(opp_id: str, c: S.Ctx = Actor):
     from api import undo as U
     return U.undo_step4(c, opp_id)
+
+
+class Reopen(BaseModel):
+    reason: str = Field(examples=["New funding announced; worth a second look"])
+
+
+@router.post("/opportunities/{opp_id}/reopen", tags=["step 4"], summary="Bring a rejected company back to Your decision, with a reason")
+def reopen(opp_id: str, body: Reopen, c: S.Ctx = Actor):
+    S.reopen(c, opp_id, body.reason)
+    return {"ok": True}
 
 
 @router.post("/opportunities/{opp_id}/contact", tags=["step 4"], summary="Confirm the contact's name and role")
@@ -453,6 +468,12 @@ def generate(opp_id: str, body: Generate, c: S.Ctx = Actor):
 def todo(request: Request, c: S.Ctx = Actor):
     from api import todo as TD
     return TD.todo(c, follow_days(c), getattr(request.app.state, "mail", None))
+
+
+@router.get("/settled", tags=["system"], summary="What was settled in the last days: decisions, emails sent, replies, plan steps done (Overview, Done this week)")
+def settled(days: int = 7, mine: bool = True, c: S.Ctx = Actor):
+    from api import settled as ST
+    return ST.settled(c, days, mine)
 
 
 @router.post("/outbound/{out_id}/checked", tags=["step 5"], summary="Mark a failed, unsent or maybe-sent email as looked at: it leaves the to-do list; nothing is sent")
@@ -839,6 +860,17 @@ def reply(opp_id: str, body: Reply, c: S.Ctx = Actor):
     return S.record_reply(c, opp_id, body.text, body.on)
 
 
+class ReplyLabel(BaseModel):
+    label: Literal["courtesy", "meet", "need", "defer", "decline"]
+    note: str | None = None
+
+
+@router.post("/opportunities/{opp_id}/reply-label", tags=["step 6"], summary="Correct what the client's reply means (the stage stays)")
+def reply_label(opp_id: str, body: ReplyLabel, c: S.Ctx = Actor):
+    S.set_reply_label(c, opp_id, body.label, body.note or "")
+    return {"ok": True}
+
+
 class NurtureReview(BaseModel):
     review_on: date
     reason: str
@@ -932,7 +964,7 @@ class TaskIn(BaseModel):
 
 
 class PackIn(BaseModel):
-    exception: str | None = Field(None, description="Required when the rules do not say Ready")
+    exception: str | None = Field(None, description="Required when the rules do not say Ready; one short reason, up to 140 characters")
     revision: int | None = None
 
 

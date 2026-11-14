@@ -23,7 +23,7 @@ const STAGE_OF = { active: "active", approval: "approval", qualified: "qualifica
 // Tab names before the redesign. Closed leads are under Companies, Set aside, now (D2).
 const TAB_ALIAS = { qualification: "qualified", nurture: "parked" };
 const DIMS = ["B", "A", "N", "T", "H", "E"];
-// What the reply means: the Evidence agent's label (api/services.py). There is no endpoint to change it (G16).
+// What the reply means: the Evidence agent's label (api/services.py); the owner can correct it (POST .../reply-label).
 const MEANS = {
   meet: ["Wants to meet", "good"], need: ["Talks about a need", "info"], courtesy: ["Polite, no ask", ""],
   defer: ["Not now", "warn"], decline: ["Not interested", "warn"], pending: ["Not read yet", ""],
@@ -414,8 +414,9 @@ function activeSide(o, ctx) {
   const [means, tone] = MEANS[o.replyLabel] || MEANS.pending;
   return html`
   <div class="side-sec">
-    <div class="sb"><h3>1. What the reply means</h3><span class="tag info">Agent's reading</span></div>
-    <p><span class="tag ${tone}">${means}</span></p>
+    <div class="sb"><h3>1. What the reply means</h3><span class="tag info">${(o.activity || []).some((x) => /^Reply label changed by /.test(x.text)) ? "Corrected by a person" : "Agent's reading"}</span></div>
+    ${mine && isOpen("label") ? labelForm(o) : html`<p class="row-flex" style="gap:6px"><span class="tag ${tone}">${means}</span>
+      ${mine && o.replyLabel ? openBtn("label", "Change…", "btn ghost small", "Change what the reply means") : ""}</p>`}
     ${mine ? html`
     ${isOpen("park") ? parkForm(o, ctx) : isOpen("close") ? closeForm(o) : html`<div class="row-flex" style="gap:6px">
       ${openBtn("park", "Not now: park it…", o.replyLabel === "defer" ? "btn primary small" : "btn small")}
@@ -510,7 +511,7 @@ function replyAndPack(o, ctx, rd) {
     <button type="button" class="btn ghost small" data-act="resetReply" data-id="${o.id}">Start again</button></div>
   <div class="pack-line">
     ${o.proposals.some((p) => p.status === "pending") ? html`<p class="meta-3">Evidence proposals still wait for you. Decide on them first, or they will not count in the pack.</p>` : ""}
-    ${isOpen("pack") ? packForm(o, rd) : rd.ready
+    ${isOpen("pack") ? packForm(o, rd, ctx) : rd.ready
       ? openBtn("pack", "All six confirmed. Send the pack for approval…", "btn primary")
       : openBtn("pack", `${rd.excLabel}…`, "btn ghost")}
     ${err("pack")}
@@ -521,10 +522,17 @@ function startReply(o, ctx) {
   return `Hi ${first(o.contact.name)},\n\n\n\nBest regards,\n${ctx.me}`;
 }
 
-function packForm(o, rd) {
+// Who approves the pack (GET /api/config directors; none named = any colleague but the owner).
+function approvers(ctx) {
+  const ds = ((ctx.config && ctx.config.directors) || []).filter((n) => n !== ctx.me);
+  return ds.length ? `${list(ds, "or")} approves it.` : "A colleague approves it.";
+}
+
+function packForm(o, rd, ctx) {
+  const max = (ctx.config && ctx.config.exceptionMax) || 140;
   if (rd.ready) {
     return html`<form class="panel-form" data-act="packForm" data-on="submit" data-id="${o.id}" data-revision="${o.revision}" data-ready="1">
-      <p class="meta">The rules say Ready. The pack freezes today's conditions, scores, revenue estimate and need for the approver.</p>
+      <p class="meta">The rules say Ready. The pack freezes today's conditions, scores, revenue estimate and need for the approver. ${approvers(ctx)}</p>
       <div class="actions"><button type="submit" class="btn primary">Send the pack</button>${cancelBtn}</div>
     </form>`;
   }
@@ -532,9 +540,19 @@ function packForm(o, rd) {
     ...(rd.blocker ? [`Blocker: ${rules.reasons[o.blocker] || o.blocker}`] : [])];
   return html`<form class="panel-form exc" data-act="packForm" data-on="submit input" data-id="${o.id}" data-revision="${o.revision}" data-ready="">
     <b>${rd.excLabel}</b>
-    <p class="meta">Missing: ${missing.join("; ")}. The approver sees what is missing and your reason before anything else in the pack. Readiness stays as the rules say.</p>
-    <label class="field">Reason, one line <span class="hint">Up to 140 characters.</span><input name="exception" maxlength="140" required placeholder="Why this should go ahead now"></label>
+    <p class="meta">Missing: ${missing.join("; ")}. The approver sees what is missing and your reason before anything else in the pack. Readiness stays as the rules say. ${approvers(ctx)}</p>
+    <label class="field">Reason, one line <span class="hint">Up to ${max} characters.</span><input name="exception" maxlength="${max}" required placeholder="Why this should go ahead now"></label>
     <div class="actions"><button type="submit" class="btn primary" disabled>Send for approval</button>${cancelBtn}<span class="missing" data-missing>Give the reason.</span></div>
+  </form>`;
+}
+
+const LABEL_CHOICES = ["meet", "need", "courtesy", "defer", "decline"];
+function labelForm(o) {
+  return html`<form class="panel-form" data-act="labelForm" data-on="submit" data-id="${o.id}">
+    <label class="field">The reply means<select name="label">${LABEL_CHOICES.map((k) => html`<option value="${k}" ${k === o.replyLabel ? "selected" : ""}>${MEANS[k][0]}</option>`)}</select></label>
+    <label class="field">Why <span class="hint">Optional. Recorded in the activity.</span><input name="note" placeholder="For example: they asked for a call next week"></label>
+    <div class="actions"><button type="submit" class="btn primary small">Save</button>${cancelBtn}</div>
+    ${err("label")}
   </form>`;
 }
 
@@ -1267,6 +1285,14 @@ export const actions = {
     const status = (e.submitter && e.submitter.value) || "done";
     write(`promise:${form.dataset.cid}`, e.submitter, ctx, () => ctx.api.post(`/opportunities/${enc(form.dataset.id)}/commitments/${enc(form.dataset.cid)}`, { status, why }),
       () => { ui.notice = [{ text: status === "done" ? "Promise marked done." : "Promise closed: it no longer applies.", cls: "good" }]; });
+  },
+
+  labelForm(form, e, ctx) {
+    const f = form.elements;
+    write("label", form.querySelector("[type=submit]"), ctx, () => ctx.api.post(`/opportunities/${enc(form.dataset.id)}/reply-label`, { label: f.label.value, note: f.note.value.trim() }), () => {
+      resetUi();
+      ctx.toast(`Saved: the reply means “${MEANS[f.label.value][0].toLowerCase()}”.`);
+    });
   },
 
   // the reply means not now, or not interested

@@ -235,14 +235,15 @@ function skipForm({ act, id = "", name, label }) {
 }
 
 // ----- Researching (Steps 2-3) -----
-// The research run reports what it did as log lines; it does not report a fixed step number (REDESIGN_PLAN G3).
+// A running research run reports a fixed step (research.step: n of 4, api/research_agent.py STEPS) and its log lines.
 const RESEARCH_STATE = {
   running: ["info", "Researching"], queued: ["", "Queued"], paused: ["warn", "Paused"],
   failed: ["bad", "Stopped: needs you"], done: ["good", "Brief done"],
 };
 function researchState(o) {
   const r = o.research || { status: "queued", log: [] };
-  const [cls, text] = RESEARCH_STATE[r.status] || ["", r.status];
+  const [cls, base] = RESEARCH_STATE[r.status] || ["", r.status];
+  const text = r.step && r.status === "running" ? `Step ${r.step.n} of ${r.step.of}` : base;
   const last = (r.log || []).slice(-1)[0];
   const now = r.status === "failed" ? r.error || "The research stopped." : r.status === "paused"
     ? (r.pauseReason === "budget" ? "Paused: today's AI requests are used up." : "Paused.") : last ? last.m || last.message || "" : "Waiting to start.";
@@ -373,7 +374,7 @@ function foundPanel(c, d) {
   };
 }
 
-function researchPanel(o, d) {
+function researchPanel(o, d, ctx) {
   const det = (d.details || {})[o.id] || o;
   const s = researchState(det);
   const r = s.r;
@@ -388,6 +389,10 @@ function researchPanel(o, d) {
         { cls: "err", aside: html`<span class="tag bad">Needs you</span>` }) : ""}
       ${r.status === "paused" ? block("Paused", html`<p>${r.pauseReason === "budget" ? "Today's AI requests are used up. Resume it tomorrow, or raise the limit on the Agent hub. Nothing done so far is lost." : "Someone paused this research. Nothing done so far is lost."}</p>`,
         { cls: "warn", aside: html`<span class="tag warn">Paused</span>` }) : ""}
+      ${r.step ? html`<section class="card pblock"><div class="pblock-head"><h3>Step ${r.step.n} of ${r.step.of}: ${r.step.label}</h3>
+        ${r.startedAt ? html`<span class="meta-3">Started ${day(r.startedAt.slice(0, 10), ctx.today)}, ${r.startedAt.slice(11, 16)} UTC</span>` : ""}</div>
+        <div class="steps-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${r.step.of}" aria-valuenow="${r.step.n}" aria-label="Research step">
+          ${Array.from({ length: r.step.of }, (_, i) => html`<span class="${i < r.step.n - 1 ? "done" : i === r.step.n - 1 ? "live" : ""}"></span>`)}</div></section>` : ""}
       ${block("Progress", log.length ? html`<ol class="rl">${log.map((l, i) => html`<li class="${i < log.length - 1 || r.status === "done" ? "done" : ""}">
           <span class="d ${i < log.length - 1 || r.status === "done" ? "done" : r.status === "running" ? "live" : r.status === "failed" ? "err" : ""}" aria-hidden="true"></span><span>${l}</span></li>`)}
           ${r.status === "running" ? html`<li><span class="d live" aria-hidden="true"></span><span class="meta">Working on the next step</span></li>` : ""}</ol>`
@@ -432,7 +437,12 @@ function asidePanel(x, d, ctx) {
         ${r.note ? html`<dt>Teaches</dt><dd>${r.note.replace(/^Teaches: /, "")}</dd>` : ""}
         <dt>By</dt><dd>${r.by || "Not recorded"}</dd>
         <dt>When</dt><dd>${r.when ? day(r.when, ctx.today) : "Not recorded"}</dd></dl>`)}
-      ${x.kind !== "skipped" ? block("Bringing it back", html`<p class="meta">A rejected or closed lead cannot be brought back from here. Add the company again from Find if things change.</p>`) : ""}`,
+      ${x.kind === "rejected" ? block("Bringing it back", html`<form class="skip-form" data-act="reopenForm" data-on="submit" data-id="${x.id}">
+        <label class="field">What changed? <span class="hint">Recorded with the decision. The rejection then no longer teaches the Direction agent.</span>
+          <textarea name="reason" rows="2" required></textarea></label>
+        <div class="actions"><button type="submit" class="btn primary">Bring back to Your decision</button></div>
+        ${inlineError(ui.error && ui.error.where === `reopen:${x.id}` ? ui.error.message : "")}</form>`) : ""}
+      ${x.kind === "closed" ? block("Bringing it back", html`<p class="meta">A closed lead cannot be brought back from here. Add the company again from Find if things change.</p>`) : ""}`,
     foot: x.kind === "skipped" ? html`<div class="actions">
       <button type="button" class="btn primary" data-act="unskip" data-id="${x.id}">Bring back to Found</button>
       <span class="meta-3" style="margin-left:auto">The skip then no longer teaches the Direction agent.</span></div>` : "",
@@ -556,7 +566,28 @@ function decisionCard(o, d, ctx) {
       ${ui.mode === "reject" ? html`<div class="band-form">${rejectForm(o)}${inlineError(err)}</div>` : ""}
       ${!ui.mode && err ? html`<div class="band-form">${inlineError(err)}</div>` : ""}
     </div>
+    ${changesView(b.changes, ctx)}
   </section>`;
+}
+
+// What changed since a person sent the brief back (brief.changes, kept by the server when it was returned).
+const REC_WORD = { accept: "accept", return: "send back", reject: "set aside" };
+function changesView(ch, ctx) {
+  if (!ch) return "";
+  const rec = ch.recommendation || {};
+  const lines = [
+    ch.factsAdded.length && `${plural(ch.factsAdded.length, "new source")}`,
+    ch.factsDropped.length && `${plural(ch.factsDropped.length, "source")} no longer used`,
+    ch.rewritten.length && `rewrote the ${ch.rewritten.join(", ")}`,
+    ch.unknownsAnswered.length && `${plural(ch.unknownsAnswered.length, "open question")} answered`,
+    rec.before !== rec.now && rec.now && `suggests ${REC_WORD[rec.now] || rec.now} (was ${REC_WORD[rec.before] || rec.before || "none"})`,
+    ch.flagsBefore !== ch.flagsNow && `flags ${ch.flagsBefore} to ${ch.flagsNow}`,
+  ].filter(Boolean);
+  return html`<div class="changes" aria-label="What changed">
+    <p class="meta"><b>Since ${ch.by} sent it back ${day(ch.on, ctx.today)}</b>${ch.question ? html` with “${ch.question}”` : ""}:
+      ${lines.length ? lines.join("; ") : "nothing in the brief changed"}.</p>
+    ${ch.factsAdded.length ? html`<ul class="meta">${ch.factsAdded.map((f) => html`<li>New: ${f.text}</li>`)}</ul>` : ""}
+  </div>`;
 }
 
 function evidence(o, d, ctx) {
@@ -1055,6 +1086,20 @@ export const actions = {
       ui.error = null;
     } catch (err) {
       ui.error = { where: t.dataset.id, message: err.message };
+    }
+    ctx.refresh();
+  },
+  async reopenForm(form, e, ctx) {
+    const id = form.dataset.id;
+    const button = form.querySelector("[type=submit]");
+    try {
+      await busy(button, () => ctx.api.post(`/opportunities/${enc(id)}/reopen`, { reason: form.elements.reason.value }));
+      ui.error = null;
+      ctx.toast("Brought back to Your decision.");
+      ctx.go("companies", { tab: "review", id });
+      return;
+    } catch (err) {
+      ui.error = { where: `reopen:${id}`, message: err.message };
     }
     ctx.refresh();
   },

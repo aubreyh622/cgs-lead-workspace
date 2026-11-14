@@ -377,7 +377,7 @@ entry form in Qualification but never redisplay the amount: after saving it read
 <date>". If CGS keeps the estimate only in Insightly, the form goes and the rules read it from the CRM read-back (a
 backend change, not in this plan).
 
-**D6. Backend additions (new; your agreement needed before any is made).**
+**D6. Backend additions.** All five built on 14 Nov 2026 (branch `backend-gaps`, tests/v2/test_backend_gaps.py), with G5, G7, G12 and G16.
 None is required to start R1-R4. These small read-side additions would close gaps without inventing data:
 
 | Id | Addition | Closes |
@@ -439,22 +439,22 @@ the banners with stubbed problems. New gap G22.
 
 | Id | What the design shows | Why it is missing | Until then |
 |---|---|---|---|
-| G1 | What changed since last time | One brief per opportunity, no versions | Left out |
+| G1 | What changed since last time | **Closed 14 Nov (B-e):** a returned brief keeps its earlier version (`brief.versions`, up to 5) and `brief.changes` says what changed; Your decision shows it under the suggestion | Left out |
 | G2 | N of 6 priority conditions, Met/Missing | `brief.priority` has four cells with words, not six met/missing | The real cells, no count |
-| G3 | Research Step N of 4, Started | `progress` is not updated by live runs; `started_at` not in the view | Log lines |
+| G3 | Research Step N of 4, Started | **Closed 14 Nov (B-b):** the research agent reports a fixed step (`research.step` n of 4: Finding the company, Reading sources, Recording facts, Writing the brief; never goes back) and `startedAt` | Log lines |
 | G4 | Reply rate, replies per period, by route | No counts per period; scorecard has per-plan-approach rates only | Plan approaches only, or left out |
-| G5 | Done this week (Overview) | No list of what was settled this week | Qualified this week only, derived |
+| G5 | Done this week (Overview) | **Closed 14 Nov:** `GET /api/settled?days=7` lists decisions, emails sent, replies and plan steps done on the person's leads or by them; Overview uses it | Qualified this week only, derived |
 | G6 | Inbox Done tab with Undo | Todo lists only open items; settled items are not kept as one list | Agent items done/dismissed (`GET /api/inbox?status=done`) + this browser's own actions; Undo only inside undo windows |
-| G7 | Skip this round of candidates | No endpoint | Left out |
+| G7 | Skip this round of candidates | **Backend 14 Nov:** `POST /api/candidates/rounds/{n}/skip` (one reason, feedback per candidate). The page keeps Select all + Set aside, which does the same | Left out |
 | G8 | Candidate industry, city, fit grade, search name, found date | Not on candidates | Left out; round number shown |
-| G9 | Ids for quick actions on several todo rows | Rows lack `ref`; **R5:** the row `key` carries the id for second-approval emails, direction proposals and lessons | Quick actions for those; packs and briefs open their page |
-| G10 | Approver's name in "Ask Alex to approve" | Directors not exposed | "Ask for approval with N missing" |
-| G11 | 140-character reason, enforced | Server accepts any length | `maxlength` in the page |
-| G12 | Bring a rejected opportunity back | No endpoint | Only skipped candidates come back |
+| G9 | Ids for quick actions on several todo rows | **Closed 14 Nov (B-a):** rows carry `ref` for second-approval emails (email), packs (pack id, revision, stale), direction proposals and lessons; the Inbox reads `ref` first | Quick actions for those; packs and briefs open their page |
+| G10 | Approver's name in "Ask Alex to approve" | **Closed 14 Nov (B-c):** `GET /api/config` gives `directors`; the pack form names who approves it | "Ask for approval with N missing" |
+| G11 | 140-character reason, enforced | **Closed 14 Nov (B-d):** the server refuses a reason over 140 characters (`too_long`); `exceptionMax` in `/api/config` sets the page's limit | `maxlength` in the page |
+| G12 | Bring a rejected opportunity back | **Closed 14 Nov:** `POST /api/opportunities/{id}/reopen` with a reason brings a rejected company back to Your decision (decision "Brought back"; the rejection's feedback is withdrawn unless the direction already changed); Set aside has the form | Only skipped candidates come back |
 | G13 | Source phrases highlighted in drafts | **Closed in R3:** drafts carry citation marks `[[fact|phrase]]` tied to the brief's facts | Highlighted and numbered |
 | G14 | Ask the agent to revise a draft (Shorter, Warmer…), Redraft | Supported for the first email (`POST .../outreach/generate` with a comment); an inbox follow-up draft has no redo endpoint | First email: Ask the agent to revise; follow-ups: Edit or Dismiss |
 | G15 | Try another contact, Try again in 3 months | No endpoints | Park and Close |
-| G16 | Changing what the reply means | **Checked in R4:** no endpoint sets `reply_label` | Read-only label; Not now and Not interested are actions (park, set aside) |
+| G16 | Changing what the reply means | **Closed 14 Nov:** `POST /api/opportunities/{id}/reply-label` lets the owner correct the label (stage stays; "defer" queues the nurture suggestion); Qualification has Change… | Read-only label; Not now and Not interested are actions (park, set aside) |
 | G17 | How the Discovery agent reads a request, and its cost | No dry run | Simple confirm |
 | G18 | Workflows tab | No workflow objects | Left out |
 | G19 | Library document table, passages per document, quoted count, per-document switch | Only search and totals | Search and Drive list |
@@ -465,7 +465,7 @@ the banners with stubbed problems. New gap G22.
 | G24 | Pack review: Approve with the new estimate | The backend refuses to approve a pack that is out of date | Ask for it again, or return it |
 | G25 | Find: Up to 20, example requests ("Try"), a schedule per search (daily, Monday, monthly, manual) with an On switch | Up to 20 and per-search schedules are not offered by the page; **Try examples added 14 Nov**, one per signal of the approved direction | As built |
 | G26 | Qualification, Active: only the six conditions | **Closed 14 Nov:** values read as the rules' own words (`rules.anchors`), never a number; the minimum reads \"At least: …\". The Ready rules still use the numbers behind them | Lead screens show no dimension number |
-| G27 | Overview cards with owner and age; Settings, Add a person | To-do rows carry no date or owner; people come from the server's configuration | Cards without the footer; no Add a person |
+| G27 | Overview cards with owner and age; Settings, Add a person | **Partly closed 14 Nov:** to-do rows carry `owner` and `since` (the day the work started waiting, where a record says); the Inbox shows them. Add a person stays out | Cards without the footer; no Add a person |
 
 ## 7. Checks for every phase
 

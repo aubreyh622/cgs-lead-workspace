@@ -31,6 +31,7 @@ from urllib.parse import urlsplit
 from api.actions import router as actions_router
 from api.routes import router
 from api.services import ActionError
+from api import services as S
 from api.seed import load_demo
 from api.settings import Settings, load_settings
 
@@ -277,6 +278,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "web": search_config()["provider"], "timeTravel": simulated(settings), "agentWorker": bool(app.state.worker),
                 "demoData": app.state.demo_data, "agentRuntime": agent_runtime_name(), "gemini": gemini_backend_name(),
                 "cloudTelemetry": cloud_telemetry_status(),
+                # who may approve a qualification pack at Step 8 (CGS_DIRECTORS); empty = anyone but its owner
+                "directors": list(settings.directors), "exceptionMax": S.EXCEPTION_MAX,
                 "note": "Demo mode uses text rules instead of AI. In live mode, AI actions return an error rather than demo results."}
 
     @app.get("/api/rules", tags=["rules"], summary="The qualification rules (weights, anchors, minimums)")

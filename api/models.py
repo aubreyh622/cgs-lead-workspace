@@ -117,6 +117,9 @@ class ResearchBrief(Base):
     usage: Mapped[dict] = mapped_column(JSON, default=dict)            # {searches, pages, calls}
     contacts: Mapped[Optional[list]] = mapped_column(JSON)             # up to 3 people the sources name: [{name, title, url, why}]
     frozen_on: Mapped[Optional[date]] = mapped_column(Date)            # set when accepted at Step 4
+    # earlier versions, oldest first: the brief as it was each time a person returned it at Step 4 (api/services.py
+    # keep_brief_version) [{n, on, by, question, facts, hypothesis, relevance, alternative, unknowns, flags, priority, recommendation, contacts}]
+    versions: Mapped[Optional[list]] = mapped_column(JSON)
     opportunity: Mapped[Opportunity] = relationship(back_populates="brief")
 
 

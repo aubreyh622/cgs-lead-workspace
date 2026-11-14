@@ -21,11 +21,12 @@ export async function load(ctx) {
     opt("/agents/jobs?status=running&limit=20", []), opt("/agents", { research: { running: [] } }),
     opt("/manager/scorecard", null), opt("/inbox", []),
   ]);
+  const settled = await opt("/settled?days=7", null);  // what was settled this week (api/settled.py)
   // The leads whose details the columns need: active and qualified (team), and the person's own before a reply.
   const need = opps.filter((o) => ["active", "qualification"].includes(o.stage)
     || (["identified", "contacted"].includes(o.stage) && o.owner === ctx.me));
   const details = Object.fromEntries((await Promise.all(need.map((o) => opt(`/opportunities/${enc(o.id)}`, null)))).filter(Boolean).map((x) => [x.id, x]));
-  return { todo, opps, cands, running, research: (agents.research && agents.research.running) || [], score, inbox, details };
+  return { todo, opps, cands, running, research: (agents.research && agents.research.running) || [], score, inbox, details, settled };
 }
 
 // ---------- what each part shows ----------
@@ -58,25 +59,22 @@ function waitingOnOthers(d, ctx) {
   });
 }
 
-// Settled in the last seven days: leads qualified, and clients who replied. (No list of everything settled exists:
-// REDESIGN_PLAN G5.)
+// Settled in the last seven days, on this person's leads or by them: decisions, emails sent, replies and plan steps done
+// (GET /api/settled). Newest first.
+const SETTLED_PAGE = {
+  Qualified: (o) => href("qualification", { tab: "qualified", id: o.id, team: "1" }),
+  "Client replied": (o) => href("qualification", { tab: "active", id: o.id, team: "1" }),
+  "Email sent": (o) => href("outreach", { id: o.id, team: "1" }),
+  "Plan step done": (o) => href("outreach", { id: o.id, team: "1" }),
+};
 function doneThisWeek(d, ctx) {
-  const since = new Date(`${ctx.today}T00:00:00`);
-  since.setDate(since.getDate() - 6);
-  const recent = (iso) => iso && new Date(`${iso}T00:00:00`) >= since;
-  const out = [];
-  for (const o of Object.values(d.details)) {
-    if (o.stage === "qualification") {
-      const dec = [...o.decisions].reverse().find((x) => x.step === 8 && /approv/i.test(x.decision));
-      if (dec && recent(dec.on)) out.push({ on: dec.on, tag: "Qualified", title: o.company.name, line: o.crm && o.crm.leadId ? "Opportunity in Insightly" : "Pack approved",
-        foot: o.owner || "", mono: initials(o.owner || o.company.name), href: href("qualification", { tab: "qualified", id: o.id, team: "1" }) });
-    }
-    if (o.stage === "active" && o.outreach && recent(o.outreach.replyOn)) {
-      out.push({ on: o.outreach.replyOn, tag: "Client replied", title: o.company.name, line: o.contact.name ? `${o.contact.name} wrote back` : "The client wrote back",
-        foot: o.owner || "", mono: initials(o.owner || o.company.name), href: href("qualification", { tab: "active", id: o.id, team: "1" }) });
-    }
-  }
-  return out.sort((a, b) => b.on.localeCompare(a.on)).map((x) => ({ ...x, when: day(x.on, ctx.today) }));
+  const items = (d.settled && d.settled.items) || [];
+  return items.filter((x) => x.opportunity).map((x) => {
+    const o = x.opportunity;
+    const link = (SETTLED_PAGE[x.kind] || (() => href("record", { id: o.id })))(o);
+    return { on: x.on, when: day(x.on, ctx.today), tag: x.kind, title: o.company, line: x.title.replace(`${o.company}: `, "").replace(/^./, (c) => c.toUpperCase()),
+      foot: x.by || o.owner || "", mono: initials(x.by || o.owner || o.company), href: link };
+  });
 }
 
 function agentsWorking(d) {

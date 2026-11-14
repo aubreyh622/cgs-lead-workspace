@@ -5,6 +5,8 @@ Each function checks the workflow rules, writes the change, and appends history.
 """
 from __future__ import annotations
 
+import copy
+
 from dataclasses import dataclass, field
 from typing import Any, Callable
 from datetime import date, datetime, timedelta, timezone
@@ -413,6 +415,39 @@ def run_research(c: Ctx, o: m.Opportunity) -> None:
     log(c, o.id, "a", f"Research agent finished the brief: {len(b.facts)} sources" + (f", {len(b.flags)} flag" if b.flags else ""))
 
 
+BRIEF_FIELDS = ("facts", "hypothesis", "relevance", "alternative", "unknowns", "flags", "priority", "recommendation", "contacts")
+MAX_BRIEF_VERSIONS = 5
+
+
+def keep_brief_version(c: Ctx, o: m.Opportunity, question: str) -> None:
+    """Before a returned brief is researched again, keep it as it was (REDESIGN_PLAN B-e): the reviewer then sees what changed."""
+    b = o.brief
+    if not b:
+        return
+    old = list(b.versions or [])
+    snap = {k: copy.deepcopy(getattr(b, k)) for k in BRIEF_FIELDS}
+    old.append({"n": (old[-1]["n"] + 1) if old else 1, "on": c.today.isoformat(), "by": c.actor, "question": question, **snap})
+    b.versions = old[-MAX_BRIEF_VERSIONS:]
+
+
+def brief_changes(b: m.ResearchBrief) -> dict | None:
+    """What changed since the last kept version: facts added and dropped (by source and text), conclusions rewritten,
+    the recommendation before and now. None when there is no earlier version."""
+    if not b or not b.versions:
+        return None
+    prev = b.versions[-1]
+    key = lambda f: (f.get("src") or "", (f.get("text") or "").strip())
+    before, now = {key(f): f for f in prev.get("facts") or []}, {key(f): f for f in b.facts or []}
+    rec = lambda r: (r or {}).get("decision")
+    return {"since": prev["n"], "on": prev["on"], "by": prev["by"], "question": prev.get("question"),
+            "factsAdded": [f for k, f in now.items() if k not in before],
+            "factsDropped": [f for k, f in before.items() if k not in now],
+            "rewritten": [k for k in ("hypothesis", "relevance", "alternative") if (prev.get(k) or "").strip() != (getattr(b, k) or "").strip()],
+            "unknownsAnswered": [u for u in prev.get("unknowns") or [] if u not in (b.unknowns or [])],
+            "recommendation": {"before": rec(prev.get("recommendation")), "now": rec(b.recommendation)},
+            "flagsBefore": len(prev.get("flags") or []), "flagsNow": len(b.flags or [])}
+
+
 def close_round_notice(c: Ctx, rnd: int) -> None:
     """The "N new candidates" notice leaves the inbox once every candidate of its round has a decision."""
     c.s.flush()
@@ -520,6 +555,19 @@ def skip_candidate(c: Ctx, cand_id: str, reason: str, scope: str) -> None:
         propose_exclusion(c, cand.company, cand.domain, scope, f"Skipped at Step 1 by {c.actor}: {reason.lower()}.", fb)
 
 
+def skip_round(c: Ctx, rnd: int, reason: str, scope: str) -> int:
+    """Skip every candidate of one discovery round still waiting for a decision, with one reason (REDESIGN_PLAN G7).
+    Each candidate gets its own feedback, as a one-by-one skip would. Returns how many were skipped."""
+    if reason not in SKIP_REASONS:
+        raise ActionError(f"Reason must be one of {SKIP_REASONS}.")
+    waiting = list(c.s.scalars(select(m.Candidate).where(m.Candidate.round == rnd, m.Candidate.status == "new")))
+    if not waiting:
+        raise ActionError(f"Round {rnd} has no candidates waiting for a decision.", 409, "nothing_to_skip")
+    for cand in waiting:
+        skip_candidate(c, cand.id, reason, scope)
+    return len(waiting)
+
+
 def add_manual(c: Ctx, company: str, domain: str, name: str, title: str, source: str, notes: str) -> str:
     company = need_text(company, "Company")
     o = new_opportunity(c, opp_id=unique_opp_id(c, slug(company)), company=company, domain=domain, title="Opportunity to define", team="",
@@ -588,7 +636,9 @@ def sync_research(c: Ctx) -> list[dict]:
         u = st.get("usage") or {}
         o.brief.usage = {"searches": u.get("searches", 0), "pages": u.get("extractions", 0), "calls": u.get("model_calls", 0)}
         if st["status"] in ("running", "stopping", "queued"):
-            out.append({"opportunityId": o.id, "status": "running", "stage": st.get("stage")})
+            if st.get("step"):  # the live research agent's fixed step (api/research_agent.py STEPS); never goes back
+                task.progress = max(task.progress or 0, min(4, int(st["step"])))
+            out.append({"opportunityId": o.id, "status": "running", "stage": st.get("stage"), "step": st.get("step")})
             continue
         brief = None
         try:
@@ -708,6 +758,7 @@ def step4(c: Ctx, opp_id: str, b) -> None:
             U.hold_step4(c, o, "Accepted", before, seconds, fb.id, job)
     elif b.decision == "return":
         q = need_text(b.questions, "What the agent should find out")
+        keep_brief_version(c, o, q)
         o.stage = "researching"
         c.s.add(m.ResearchTask(id=new_id("rt"), opportunity_id=o.id, returned_with=q, started_at=datetime.now(timezone.utc) + timedelta(seconds=1)))
         feedback(c, o.company.name, 4, "Returned", "Returned for research", b.scope, o.direction_version, q, b.minutes, o.id)
@@ -730,6 +781,48 @@ def step4(c: Ctx, opp_id: str, b) -> None:
         if seconds:
             U.hold_step4(c, o, "Rejected", before, seconds, fb.id)
     o.revision += 1
+
+
+def reopen(c: Ctx, opp_id: str, reason: str) -> None:
+    """Bring a company rejected at Step 4 back to Your decision (REDESIGN_PLAN G12). The brief is the one the person rejected;
+    the rejection's lesson for the learning loop is withdrawn unless the research direction already changed because of it."""
+    from api import undo as U
+    o = opp(c, opp_id, "rejected")
+    reason = need_text(reason, "Why it comes back")
+    fb = c.s.scalars(select(m.Feedback).where(m.Feedback.opportunity_id == o.id, m.Feedback.step == 4, m.Feedback.outcome == "Rejected",
+                                              m.Feedback.withdrawn_by.is_(None)).order_by(m.Feedback.on.desc())).first()
+    kept = ""
+    try:
+        U.withdraw_feedback(c, fb)
+    except ActionError:
+        kept = " The direction change the rejection led to stays; change it on the Find page if it should not."
+    o.stage, o.undo = "review", None
+    c.s.add(m.Decision(opportunity_id=o.id, step=4, decision="Brought back", by=c.actor, note=reason, on=c.today))
+    touch(c, o)
+    o.revision += 1
+    log(c, o.id, "h", f"Brought back to Your decision by {c.actor}: {reason}.{kept}")
+
+
+REPLY_LABELS = ("courtesy", "meet", "need", "defer", "decline")
+
+
+def set_reply_label(c: Ctx, opp_id: str, label: str, note: str = "") -> None:
+    """A person corrects what the client's reply means (REDESIGN_PLAN G16). Changes the label only: the stage stays, and a
+    follow-on the old label started (a nurture suggestion for "defer") is not undone."""
+    o = opp(c, opp_id, *QUAL_STAGES, "nurture")
+    if label not in REPLY_LABELS:
+        raise ActionError(f"Label must be one of {REPLY_LABELS}.")
+    r = c.s.get(m.Outreach, o.id)
+    if not r or not r.reply_on:
+        raise ActionError("There is no client reply to label.", 409, "no_reply")
+    old = o.reply_label
+    if old == label:
+        return
+    o.reply_label = label
+    touch(c, o)
+    log(c, o.id, "h", f"Reply label changed by {c.actor}: {old or 'none'} to {label}" + (f". {note.strip()}" if note and note.strip() else ""))
+    if label == "defer" and old != "defer":
+        J.enqueue(c.s, c.today, "defer_nurture", o.id, "event", f"{c.actor} says the reply means not now, but later", requested_by=c.actor)
 
 
 def confirm_contact(c: Ctx, opp_id: str, name: str, title: str, note: str) -> None:
@@ -1708,7 +1801,12 @@ def snooze(c: Ctx, opp_id: str, days: int) -> date:
     return o.snoozed_until
 
 
+EXCEPTION_MAX = 140  # the exception reason on a pack: one short sentence an approver reads at a glance (REDESIGN_PLAN B-d)
+
+
 def submit_pack(c: Ctx, opp_id: str, exception: str | None, revision: int | None) -> str:
+    if exception and len(exception.strip()) > EXCEPTION_MAX:
+        raise ActionError(f"Keep the exception reason to {EXCEPTION_MAX} characters.", 400, "too_long")
     o = opp(c, opp_id, "active", "approval")
     check_revision(o, revision)
     old = open_pack(c, o)
