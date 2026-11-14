@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agent hub, CGS Lead Workspace</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="app">
+<div style="flex: none"><dc-import name="Rail" active="agents" hint-size="232px,1040px"></dc-import></div>
+
+<main class="main">
+  <header class="top">
+    <h1 class="h1">Agent hub</h1>
+    <span class="{{headCls}}" style="margin-left: 8px"><sc-if value="{{anyWorking}}" hint-placeholder-val="{{ true }}"><span class="d live" aria-hidden="true" style="margin: 0; width: 7px; height: 7px"></span></sc-if>{{headText}}</span>
+    <span class="grow"></span>
+    <span class="fx mut" style="gap: 10px">All agents<button type="button" class="sw" role="switch" aria-checked="{{all.checked}}" aria-label="All agents" onClick="{{all.flip}}"><span></span></button></span>
+  </header>
+
+  <sc-if value="{{allOff}}" hint-placeholder-val="{{ false }}">
+    <div class="card" role="status" style="flex-direction: row; flex-wrap: wrap; align-items: center; gap: 12px; border-color: #F3D2BF; background: #FFFAF6">
+      <svg class="i c-org" aria-hidden="true" viewBox="0 0 24 24"><path d="M10 9v6M14 9v6M3 12a9 9 0 1018 0 9 9 0 10-18 0"></path></svg>
+      <span class="grow" style="flex-basis: 300px"><span class="sbd">All agents are paused.</span> <span class="mut">Nothing new is found, researched or drafted. Work already in your Inbox stays there.</span></span>
+      <button type="button" class="b bp" onClick="{{all.flip}}">Turn agents back on</button>
+    </div>
+  </sc-if>
+
+  <div role="tablist" class="tabs">
+    <sc-for list="{{tabs}}" as="t" hint-placeholder-count="2">
+      <button type="button" role="tab" class="tab" aria-selected="{{t.selected}}" onClick="{{t.pick}}">{{t.label}}<span class="cnt">{{t.count}}</span></button>
+    </sc-for>
+  </div>
+
+  <sc-if value="{{isOverview}}" hint-placeholder-val="{{ true }}">
+    <div class="row">
+      <sc-for list="{{stages}}" as="s" hint-placeholder-count="4">
+        <section class="card" style="flex: 1 1 230px; gap: 14px">
+          <h2 class="t">{{s.title}}</h2>
+          <div class="col" style="gap: 6px"><span class="sm dim">{{s.metric}}</span><div class="fx" style="gap: 10px"><span class="bar lite grow" role="img" aria-label="{{s.result}}"><span style="width: {{s.pct}}"></span></span><span class="sm md tn">{{s.result}}</span></div></div>
+          <div class="list push">
+            <sc-for list="{{s.agents}}" as="a" hint-placeholder-count="1">
+              <div class="li" style="align-items: flex-start">
+                <span class="grow col" style="gap: 4px">
+                  <span class="fx" style="gap: 8px"><span class="sbd">{{a.name}}</span><span class="{{a.chip}}"><sc-if value="{{a.live}}" hint-placeholder-val="{{ false }}"><span class="d live" aria-hidden="true" style="margin: 0; width: 6px; height: 6px"></span></sc-if>{{a.state}}</span></span>
+                  <span class="{{a.nowCls}}">{{a.now}}</span>
+                </span>
+                <button type="button" class="sw" role="switch" aria-checked="{{a.checked}}" aria-disabled="{{a.disabled}}" aria-label="{{a.label}}" title="{{a.title}}" onClick="{{a.flip}}"><span></span></button>
+              </div>
+            </sc-for>
+          </div>
+        </section>
+      </sc-for>
+    </div>
+
+    <div class="row">
+      <section class="card" style="flex: 5 1 340px">
+        <div class="sb"><span class="fx" style="gap: 8px"><h2 class="t">Manager agent</h2><span class="{{manager.chip}}">{{manager.state}}</span></span><button type="button" class="sw" role="switch" aria-checked="{{manager.checked}}" aria-disabled="{{manager.disabled}}" aria-label="Manager agent" title="{{manager.title}}" onClick="{{manager.flip}}"><span></span></button></div>
+        <p class="mut" style="max-width: 48ch">{{manager.now}}</p>
+        <dl class="kv push" style="padding-top: 14px; border-top: 1px solid #F0F1F3"><dt>Last run</dt><dd>Today at 08:00</dd><dt>Actions followed</dt><dd>9 of 11</dd></dl>
+      </section>
+      <section class="card" style="flex: 3 1 240px">
+        <h2 class="t">AI requests today</h2>
+        <div class="fx" style="align-items: baseline; gap: 8px"><span class="num n2">14</span><span class="mut">of 60</span></div>
+        <div class="bar" role="img" aria-label="14 of 60 used"><span style="width: 23%"></span></div>
+        <a href="Connectors.dc.html" class="sm push">Change the limit</a>
+      </section>
+      <section class="card" style="flex: 3 1 240px">
+        <h2 class="t">Agent proposals</h2>
+        <div class="fx" style="align-items: baseline; gap: 8px"><span class="num n2">4</span><span class="mut">waiting in your Inbox</span></div>
+        <a class="b bs push" href="Inbox.dc.html" style="align-self: flex-start">Review in Inbox</a>
+      </section>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isWorkflows}}" hint-placeholder-val="{{ false }}">
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px">
+      <sc-for list="{{flows}}" as="f" hint-placeholder-count="6">
+        <section class="card">
+          <div class="sb" style="align-items: flex-start"><div class="col" style="gap: 3px"><h2 class="t">{{f.title}}</h2><span class="mut">{{f.when}}</span></div><button type="button" class="sw" role="switch" aria-checked="{{f.checked}}" aria-disabled="{{f.disabled}}" aria-label="{{f.title}}" title="{{f.tip}}" onClick="{{f.flip}}"><span></span></button></div>
+          <div class="fx" style="flex-wrap: wrap; gap: 6px"><sc-for list="{{f.steps}}" as="st" hint-placeholder-count="3"><span class="chip">{{st}}</span></sc-for></div>
+          <div class="sb push" style="padding-top: 12px; border-top: 1px solid #F0F1F3"><span class="mut">Runs, last 30 days</span><span class="num n3">{{f.runs}}</span></div>
+        </section>
+      </sc-for>
+    </div>
+  </sc-if>
+</main>
+
+<div class="act"><dc-import name="Activity" start-open="{{ false }}" hint-size="130px,40px"></dc-import></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1040}}'>
+class Component extends DCLogic {
+renderVals() {
+  const st = this.state || {};
+  const off = st.off || {};
+  const tab = st.tab || 'overview';
+  const allOn = !off.all;
+  const sw = (key) => {
+    const own = !off[key];
+    const locked = key !== 'all' && !allOn;
+    const on = own && (key === 'all' || allOn);
+    return {
+      on, checked: on ? 'true' : 'false',
+      disabled: locked ? 'true' : 'false',
+      title: locked ? 'Turned off with All agents' : (on ? 'Pause' : 'Turn on'),
+      tip: locked ? 'Turned off with All agents' : '',
+      flip: () => { if (!locked) this.setState({ off: { ...off, [key]: !off[key] } }); }
+    };
+  };
+  let working = 0;
+  const agent = (key, name, now, live, effect) => {
+    const s = sw(key);
+    const isLive = s.on && live;
+    if (isLive) working += 1;
+    return {
+      ...s, name, label: name + ' agent',
+      live: isLive,
+      state: !s.on ? 'Paused' : live ? 'Working' : 'Idle',
+      chip: isLive ? 'chip blue' : 'chip',
+      now: s.on ? now : (allOn ? 'Paused. ' + effect : 'Paused with all agents'),
+      nowCls: s.on ? 'mut sm' : 'c-org sm'
+    };
+  };
+  const flow = (key, title, when, steps, runs) => ({ ...sw(key), title, when, steps, runs });
+  const stages = [
+    { title: 'Find companies', metric: 'Candidates you picked', result: '12 of 40', pct: '30%',
+      agents: [agent('discovery', 'Discovery', '10 candidates wait for you', false, 'No new candidates until you turn it back on.'),
+               agent('direction', 'Direction', '1 change proposed', false, 'The buyer list stays as it is.')] },
+    { title: 'Research', metric: 'Briefs you accepted', result: '8 of 10', pct: '80%',
+      agents: [agent('research', 'Research', 'Writing 2 briefs now', true, 'The 2 briefs in progress stop at their current step.')] },
+    { title: 'Reach out', metric: 'Emails sent as written', result: '5 of 7', pct: '71%',
+      agents: [agent('outreach', 'Outreach', '4 contact plans running', false, 'Steps due while paused wait for you to write them by hand.')] },
+    { title: 'Qualify', metric: 'Proposals you confirmed', result: '3 of 5', pct: '60%',
+      agents: [agent('evidence', 'Evidence', 'Reading 1 new reply', true, 'New replies are not read or labelled.')] }
+  ];
+  const mgr = agent('manager', 'Manager', 'Checks all 14 open opportunities every morning and plans the next action for each.', false, 'No morning plan tomorrow. Owners get no reminders.');
+  return {
+    tabs: [['overview', 'Overview', ''], ['workflows', 'Workflows', '6']].map(([id, label, count]) => ({
+      label, count, selected: id === tab ? 'true' : 'false', pick: () => this.setState({ tab: id })
+    })),
+    isOverview: tab === 'overview', isWorkflows: tab === 'workflows',
+    all: sw('all'),
+    allOff: !allOn,
+    manager: mgr,
+    stages,
+    anyWorking: working > 0,
+    headText: !allOn ? 'All paused' : working + ' of 6 working',
+    headCls: !allOn ? 'fx sm c-org md' : 'fx sm c-blue md',
+    flows: [
+      flow('f1', 'Daily check', 'Every day at 08:00', ['Read the pipeline', 'Plan next actions', 'Message owners'], 26),
+      flow('f2', 'First draft after you accept', 'When a company is accepted', ['Read the brief', 'Write the email', 'Review against the standard'], 9),
+      flow('f3', 'Contact plan steps', 'When a plan step is due', ['Draft the message', 'Add to your Inbox'], 14),
+      flow('f4', 'Pick up client replies', 'When a reply arrives in Gmail', ['Label the reply', 'Propose evidence', 'Stop the plan'], 31),
+      flow('f5', 'Sync to Insightly', 'After each decision, and daily', ['Update the lead', 'Copy the notes'], 31),
+      flow('f6', 'Weekly lessons review', 'Every Monday', ['Read the scorecard', 'Propose lessons to your Inbox'], 4)
+    ]
+  };
+}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Activity log</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px; font-family: Geist, 'Segoe UI', system-ui, sans-serif; font-size: 13.5px; color: #101828">
+  <sc-if value="{{open}}" hint-placeholder-val="{{ true }}">
+    <section aria-label="Activity" class="card" style="width: 340px; max-width: 100%; gap: 6px; box-shadow: 0 16px 40px -16px rgba(16,24,40,.3)">
+      <div class="sb" style="padding-bottom: 6px"><h2 class="t">Activity</h2><button type="button" class="b bg" style="height: 26px; padding: 0 8px">Mark all read</button></div>
+      <div class="list">
+        <div class="li" style="align-items: flex-start"><span class="dot c-blue" aria-hidden="true" style="margin-top: 7px"></span><span class="grow"><span class="sbd">12 leads synced to Insightly</span></span><span class="dim sm tn">15:02</span></div>
+        <div class="li" style="align-items: flex-start"><span class="dot c-blue" aria-hidden="true" style="margin-top: 7px"></span><span class="grow"><span class="sbd">James Walker replied</span><br><span class="mut">Evidence agent read it as wanting a meeting</span></span><span class="dim sm tn">14:40</span></div>
+        <div class="li" style="align-items: flex-start"><span class="dot c-blue" aria-hidden="true" style="margin-top: 7px"></span><span class="grow"><span class="sbd">10 new candidates</span><br><span class="mut">Discovery agent finished round 4</span></span><span class="dim sm tn">11:15</span></div>
+        <div class="li" style="align-items: flex-start"><span class="dot" aria-hidden="true" style="margin-top: 7px; color: #C8CDD6"></span><span class="grow"><span class="md">Alex Morgan sent a pack</span><br><span class="mut">Northstar Health</span></span><span class="dim sm">23 Oct</span></div>
+      </div>
+      <a href="#" class="sm">See the past week</a>
+    </section>
+  </sc-if>
+  <button type="button" class="b bp" onClick="{{toggle}}" aria-expanded="{{expanded}}" style="height: 36px; padding: 0 12px; box-shadow: 0 8px 20px -8px rgba(16,24,40,.45)">
+    <svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0112 0c0 7 3 8 3 8H3s3-1 3-8M10 20a2 2 0 004 0"></path></svg>
+    Activity
+    <span class="tn" style="color: #B6BECC">3 new</span>
+  </button>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"startOpen":{"editor":"boolean","default":true},"$preview":{"width":380,"height":440}}'>
+class Component extends DCLogic {
+renderVals() {
+  const open = (this.state && this.state.open != null) ? this.state.open : (this.props.startOpen ?? true);
+  return { open, expanded: open ? 'true' : 'false', toggle: () => this.setState({ open: !open }) };
+}
+}
+</script>
+</body>
+</html>

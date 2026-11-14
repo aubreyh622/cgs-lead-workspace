@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Connectors, CGS Lead Workspace</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap">
+<style>
+body{margin:0}
+.pm{display:grid;grid-template-columns:minmax(150px,1.2fr) repeat(4,minmax(170px,1fr)) minmax(150px,1fr);align-items:center;column-gap:16px;padding:12px 20px;border-top:1px solid #EEF0F3}
+.pm.h{border-top:0;padding-top:4px;padding-bottom:10px;font-size:12px;font-weight:500;color:#667085}
+.lock{display:inline-flex;align-items:center;gap:6px;color:#667085;font-size:12.5px}
+</style>
+</helmet>
+<div class="app">
+<div style="flex: none; display: flex"><dc-import name="Rail" active="connectors" hint-size="244px,1012px"></dc-import></div>
+
+<main class="main">
+  <header class="top" style="align-items: flex-end">
+    <div class="col" style="gap: 4px"><h1 class="h1">Connectors</h1><span class="mut">The systems agents can reach, and what each agent may do with them. Nothing is sent or written without a person's click.</span></div>
+  </header>
+
+  <div role="tablist" class="tabs">
+    <sc-for list="{{tabs}}" as="t" hint-placeholder-count="2">
+      <button type="button" role="tab" class="tab" aria-selected="{{t.selected}}" onClick="{{t.pick}}">{{t.label}}<span class="cnt">{{t.count}}</span></button>
+    </sc-for>
+  </div>
+
+  <sc-if value="{{isSystems}}" hint-placeholder-val="{{ true }}">
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px">
+      <sc-for list="{{systems}}" as="c" hint-placeholder-count="5">
+        <section class="card">
+          <div class="sb" style="align-items: flex-start">
+            <div class="fx" style="gap: 12px"><span class="av" aria-hidden="true" style="width: 36px; height: 36px">{{c.mono}}</span><div class="col" style="gap: 1px"><h2 class="t">{{c.name}}</h2><span class="mut sm">{{c.role}}</span></div></div>
+            <button type="button" class="sw" role="switch" aria-checked="{{c.checked}}" aria-label="{{c.name}}" onClick="{{c.flip}}"><span></span></button>
+          </div>
+          <dl class="kv rule">
+            <dt>Status</dt><dd><span class="{{c.chip}}"><span class="dot" aria-hidden="true"></span>{{c.status}}</span></dd>
+            <dt>Allows</dt><dd>{{c.may}}</dd>
+            <dt>Last used</dt><dd>{{c.last}}</dd>
+          </dl>
+          <sc-if value="{{c.isOff}}" hint-placeholder-val="{{ false }}"><button type="button" class="b bs push" onClick="{{c.flip}}" style="align-self: flex-start">Connect {{c.name}}</button></sc-if>
+          <sc-if value="{{c.isOn}}" hint-placeholder-val="{{ true }}"><button type="button" class="b bg push" onClick="{{c.toPerms}}" style="align-self: flex-start; margin-left: -12px">See which agents use it</button></sc-if>
+        </section>
+      </sc-for>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isTools}}" hint-placeholder-val="{{ false }}">
+    <section class="card flat">
+      <div class="fx" style="flex-wrap: wrap; gap: 10px 16px; padding: 16px 20px; border-bottom: 1px solid #EEF0F3">
+        <div class="grow col" style="gap: 2px; flex-basis: 320px"><h2 class="t">What each agent may do</h2><span class="mut sm">Give each agent the least it needs. Changes apply from the agent's next run and are logged.</span></div>
+        <span class="dim sm">Last changed by Quinn Harper, 20 Oct</span>
+      </div>
+      <div class="scroll">
+        <div style="min-width: 1080px">
+          <div class="pm h"><span>Agent</span><span>Web search</span><span>Library</span><span>Gmail</span><span>Insightly</span><span>Send or write</span></div>
+          <sc-for list="{{matrix}}" as="m" hint-placeholder-count="6">
+            <div class="pm">
+              <span class="col" style="gap: 1px"><span class="sbd">{{m.agent}}</span><span class="dim sm">{{m.job}}</span></span>
+              <sc-for list="{{m.cells}}" as="c" hint-placeholder-count="4">
+                <select class="{{c.cls}}" aria-label="{{c.label}}" value="{{c.value}}" onChange="{{c.change}}">
+                  <sc-for list="{{c.options}}" as="o" hint-placeholder-count="3"><option value="{{o}}">{{o}}</option></sc-for>
+                </select>
+              </sc-for>
+              <span class="lock" title="Only a person can send an email or write to Insightly"><svg class="i s" aria-hidden="true" viewBox="0 0 24 24"><path d="M6 11h12v9H6zM8 11V8a4 4 0 018 0v3"></path></svg>People only</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div class="fx" style="flex-wrap: wrap; gap: 10px; padding: 14px 20px; border-top: 1px solid #EEF0F3; background: #FAFAFC">
+        <sc-if value="{{dirty}}" hint-placeholder-val="{{ false }}">
+          <span class="md">{{changeText}}</span>
+          <span class="dim sm">Agents pick these up on their next run.</span>
+          <span class="grow"></span>
+          <button type="button" class="b bg" onClick="{{discard}}">Discard</button>
+          <button type="button" class="b bp" onClick="{{save}}">Save changes</button>
+        </sc-if>
+        <sc-if value="{{clean}}" hint-placeholder-val="{{ true }}">
+          <svg class="i s dim" aria-hidden="true" viewBox="0 0 24 24"><path d="M6 11h12v9H6zM8 11V8a4 4 0 018 0v3"></path></svg>
+          <span class="dim sm">No agent can send an email or write to Insightly. Those happen only when a person approves.</span>
+        </sc-if>
+      </div>
+    </section>
+  </sc-if>
+</main>
+
+<sc-if value="{{hasToast}}" hint-placeholder-val="{{ false }}">
+  <div class="toast" role="status"><svg class="i" aria-hidden="true" viewBox="0 0 24 24" style="color: #8FE0B5"><path d="M5 12l5 5 9-10"></path></svg><span class="sbd">{{toastText}}</span><button type="button" class="b bw" onClick="{{undoSave}}">Undo</button></div>
+</sc-if>
+
+<div class="act"><dc-import name="Activity" start-open="{{ false }}" hint-size="130px,40px"></dc-import></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1040}}'>
+class Component extends DCLogic {
+renderVals() {
+  const st = this.state || {};
+  const off = st.off || { Drive: true };
+  const tab = st.tab || 'systems';
+  const mk = (mono, name, role, may, last) => {
+    const on = !off[name];
+    return { mono, name, role, may, last: on ? last : 'Never', isOn: on, isOff: !on,
+      checked: on ? 'true' : 'false', status: on ? 'Connected' : 'Not connected', chip: on ? 'chip grn' : 'chip',
+      flip: () => this.setState({ off: { ...off, [name]: on } }),
+      toPerms: () => this.setState({ tab: 'tools' }) };
+  };
+  const OPTS = [
+    ['Web search', ['No access', 'Search only', 'Search and read pages']],
+    ['Library', ['No access', 'Read', 'Read and quote in drafts']],
+    ['Gmail', ['No access', 'Read replies', 'Write drafts only']],
+    ['Insightly', ['No access', 'Check for duplicates', 'Read records']]
+  ];
+  const base = {
+    Discovery: ['Search only', 'No access', 'No access', 'Check for duplicates'],
+    Direction: ['No access', 'Read', 'No access', 'No access'],
+    Research: ['Search and read pages', 'Read', 'No access', 'No access'],
+    Outreach: ['Search and read pages', 'Read and quote in drafts', 'Write drafts only', 'No access'],
+    Evidence: ['No access', 'No access', 'Read replies', 'No access'],
+    Manager: ['No access', 'No access', 'No access', 'Read records']
+  };
+  const jobs = { Discovery: 'Finds companies', Direction: 'Tunes the search', Research: 'Writes briefs', Outreach: 'Plans and drafts', Evidence: 'Reads replies', Manager: 'Plans next actions' };
+  const saved = st.saved || base;
+  const draft = st.draft || saved;
+  let changes = 0;
+  const matrix = Object.keys(base).map((agent) => ({
+    agent, job: jobs[agent],
+    cells: OPTS.map(([tool, options], i) => {
+      const value = draft[agent][i];
+      const changed = value !== saved[agent][i];
+      if (changed) changes += 1;
+      return {
+        value, options, label: agent + ' agent, ' + tool,
+        cls: 'sel' + (value === 'No access' ? ' off' : '') + (changed ? ' changed' : ''),
+        change: (e) => {
+          const v = e.target.value;
+          const next = {}; Object.keys(draft).forEach((k) => { next[k] = draft[k].slice(); });
+          next[agent][i] = v;
+          this.setState({ draft: next });
+        }
+      };
+    })
+  }));
+  return {
+    tabs: [['systems', 'Connected systems', '5'], ['tools', 'Agent permissions', '6']].map(([id, label, count]) => ({
+      label, count, selected: id === tab ? 'true' : 'false', pick: () => this.setState({ tab: id })
+    })),
+    isSystems: tab === 'systems', isTools: tab === 'tools',
+    systems: [
+      mk('In', 'Insightly', 'CRM, the record of every opportunity', 'Read leads. Writes only after a person approves.', 'Today 15:02, 12 leads synced'),
+      mk('Gm', 'Gmail', 'Each person signs in with their own mailbox', 'Read replies. Sends only what a person approves.', 'Today 14:40, 3 of 5 people signed in'),
+      mk('Dr', 'Drive', 'Source of the CGS library and saved records', 'Read chosen folders, save drafts and notes', 'Never'),
+      mk('Ws', 'Web search', 'Public news and company websites', 'Search and read public pages', 'Today 15:20, Research agent'),
+      mk('AI', 'AI model', 'Gemini by default', 'Up to 60 requests a day', 'Today 15:21')
+    ],
+    matrix,
+    dirty: changes > 0, clean: changes === 0,
+    changeText: changes + (changes === 1 ? ' unsaved change' : ' unsaved changes'),
+    discard: () => this.setState({ draft: null }),
+    save: () => {
+      this.setState({ prevSaved: saved, saved: draft, draft: null, toast: changes + (changes === 1 ? ' permission saved and logged' : ' permissions saved and logged') });
+      clearTimeout(this._t);
+      this._t = setTimeout(() => this.setState({ toast: null }), 6000);
+    },
+    hasToast: !!st.toast, toastText: st.toast || '',
+    undoSave: () => this.setState({ saved: st.prevSaved || base, draft: null, toast: null })
+  };
+}
+}
+</script>
+</body>
+</html>

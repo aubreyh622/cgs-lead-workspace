@@ -14,15 +14,52 @@ import json
 import sys
 
 ROUTES = [
-    "home",
-    *[f"companies?tab={t}" for t in ("new", "research", "review", "accepted", "aside")],
-    *[f"outreach?tab={t}" for t in ("approve", "waiting", "nurture", "talking")],
-    *[f"qualification?tab={t}" for t in ("active", "approval", "qualification", "closed")],
-    *[f"sources?tab={t}" for t in ("find", "direction", "learned")],
-    "agents",  # the six agent cards
-    *[f"agents?tab={t}" for t in ("controls", "work", "runs", "permissions", "lessons", "scorecard")],
+    "overview",
+    "inbox",
+    "settings",
+    *[f"companies?tab={t}" for t in ("found", "research", "decision", "identified", "aside")],
+    "companies?tab=found&id=c2",          # the side panel
+    "companies?tab=identified&id=bluegate",
+    *[f"outreach?tab={t}&team=1" for t in ("you", "mate", "agent", "wait")],
+    "outreach?tab=wait&team=1&id=summit",  # the side panel
+    *[f"inbox?tab={t}" for t in ("approval", "decision", "proposal", "done")],
+    *[f"qualification?tab={t}&team=1" for t in ("active", "approval", "qualified", "parked")],
+    "qualification?tab=active&team=1&id=cedarbay",   # a reply with evidence to confirm
+    "qualification?tab=qualified&team=1&id=kestrel",  # the side panel
+    *[f"find?tab={t}" for t in ("searches", "direction", "learned")],
+    "agents",  # the agents by stage
+    *[f"agents?tab={t}" for t in ("work", "runs", "lessons", "team", "scorecard")],
+    "library", "library?q=operating%20model",
+    *[f"connectors?tab={t}" for t in ("systems", "permissions")],
+    *[f"record?id=northstar&tab={t}" for t in ("brief", "outreach", "conv", "qual", "activity")],  # the company record
+    "record?id=halvorsen&tab=outreach", "record",
+    *[f"settings?tab={t}" for t in ("scoring", "email", "playbook")],
     *[f"agents?agent=research&dtab={t}" for t in ("overview", "work", "runs", "permissions", "lessons")],
 ]
+
+# The problem banners (shell.js problems) show only when something is wrong, which the demo never is. These routes are
+# checked again with GET /api/todo and /api/toolkit answered as if the AI limit were used up, Gmail signed out and one
+# research stopped.
+PROBLEM_ROUTES = ["companies?tab=research", "outreach?tab=wait&team=1", "qualification?tab=active&team=1"]
+STOPPED = {"key": "research:audit", "group": "problem", "label": "Research stopped", "title": "Research on Marlow Fastening Systems",
+           "sub": "The company website would not load after 3 tries.", "open": None, "ref": None, "act": [],
+           "opportunity": {"id": "marlow", "company": "Marlow Fastening Systems", "stage": "researching"}}
+
+
+def _with_problems(route):
+    response = route.fetch()
+    data = response.json()
+    if "/api/todo" in route.request.url:
+        data["health"] = data.get("health", []) + [{"key": "budget", "text": "", "page": "agents"}, {"key": "gmail", "text": "", "page": "agents"}]
+        group = next((g for g in data["groups"] if g["id"] == "problem"), None)
+        if not group:
+            group = {"id": "problem", "title": "Something went wrong", "why": "", "count": 0, "items": []}
+            data["groups"].insert(0, group)
+        group["items"].append(STOPPED)
+    else:
+        data["mail"] = {"provider": "gmail", "ready": False}
+    route.fulfill(response=response, json=data)
+
 
 CHECK = r"""
 () => {
@@ -100,9 +137,21 @@ def main(base: str, person: str) -> int:
                 found += [f"(form open) {x}" for x in page.evaluate(CHECK)]
             if found:
                 problems[route] = sorted(set(found))
+        page.route("**/api/todo", _with_problems)
+        page.route("**/api/toolkit", _with_problems)
+        for route in PROBLEM_ROUTES:
+            page.goto(f"{base}/#/overview")  # a hash change alone keeps the counts already loaded
+            page.goto(f"{base}/#/{route}")
+            page.wait_for_selector("#problems .problem", timeout=15000)
+            page.wait_for_timeout(300)
+            found = page.evaluate(CHECK)
+            if found:
+                problems[f"{route} (problem banners)"] = sorted(set(found))
+        page.unroute("**/api/todo")
+        page.unroute("**/api/toolkit")
         # keyboard: the page puts focus on the main region; the skip button shows when focused;
         # Tab moves to a control with a visible focus ring
-        page.goto(f"{base}/#/home")
+        page.goto(f"{base}/#/overview")
         page.wait_for_selector(".page-head h1")
         start = page.evaluate("() => document.activeElement.id")
         page.focus(".skip")
@@ -121,7 +170,7 @@ def main(base: str, person: str) -> int:
         print(f"## {route}")
         for x in items:
             print(f"  - {x}")
-    print(f"{sum(len(v) for v in problems.values())} problem(s) on {len(problems)} of {len(ROUTES) + 1} checks.")
+    print(f"{sum(len(v) for v in problems.values())} problem(s) on {len(problems)} of {len(ROUTES) + len(PROBLEM_ROUTES) + 1} checks.")
     return 1 if problems else 0
 
 

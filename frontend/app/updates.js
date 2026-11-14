@@ -1,7 +1,7 @@
 // Background updates and the notification history.
 // The page asks the server what happened for this person (GET /api/updates) every 20 seconds while the tab is visible,
 // and at once when they come back to it. New items show as notices; they, and the notices of the person's own actions,
-// stay in the notification history (the bell, bottom right) for a week. What has been read is remembered per person in
+// stay in the notification history (Activity, bottom right) for a week. What has been read is remembered per person in
 // this browser.
 import { href } from "./lib.js";
 import { linkFor } from "./pages/links.js";
@@ -24,11 +24,11 @@ export function linkOf(x) {
     if (["draft", "reply"].includes(x.itemKind) && o && ["identified", "contacted", "nurture"].includes(o.stage)) {
       return { href: href("outreach", { item: x.itemId }), label: "Open it" };
     }
-    if (x.itemKind === "candidates") return { href: href("companies", { tab: "new" }), label: "Open them" };
+    if (x.itemKind === "candidates") return { href: href("companies", { tab: "found" }), label: "Open them" };
     return o && o.stage ? { href: linkFor(o), label: "Open it" } : { href: href("agents"), label: "Open the agents" };
   }
   if (x.kind === "research") {
-    return x.status === "done" && o.stage === "review" ? { href: href("companies", { tab: "review", id: o.id }), label: "Review it" }
+    return x.status === "done" && o.stage === "review" ? { href: href("companies", { tab: "decision", id: o.id }), label: "Review it" }
       : { href: o.stage ? linkFor(o) : href("companies", { tab: "research" }), label: "See it" };
   }
   return o && o.stage ? { href: linkFor(o), label: "See it" } : null;

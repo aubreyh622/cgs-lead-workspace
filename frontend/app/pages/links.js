@@ -2,17 +2,20 @@
 import { href } from "../lib.js";
 
 export function pageFor(stage) {
-  if (["researching", "review", "rejected"].includes(stage)) return "companies";
-  if (["identified", "contacted", "nurture"].includes(stage)) return "outreach";
-  if (["active", "approval", "qualification", "closed"].includes(stage)) return "qualification";
-  return "home";
+  if (["researching", "review", "rejected", "closed"].includes(stage)) return "companies";
+  if (["identified", "contacted"].includes(stage)) return "outreach";
+  if (["active", "approval", "qualification", "nurture"].includes(stage)) return "qualification";
+  return "overview";
 }
+
+const QUAL_TAB = { active: "active", approval: "approval", qualification: "qualified", nurture: "parked" };
 
 export function linkFor(o) {
   const page = pageFor(o.stage);
   if (page === "companies") {
-    const tab = o.stage === "review" ? "review" : o.stage === "researching" ? "research" : "aside";
-    return href("companies", { tab, id: o.stage === "review" ? o.id : undefined });
+    const tab = o.stage === "review" ? "decision" : o.stage === "researching" ? "research" : "aside";
+    return href("companies", { tab, id: o.id });
   }
+  if (page === "qualification") return href(page, { tab: QUAL_TAB[o.stage], id: o.id });
   return href(page, { id: o.id });
 }

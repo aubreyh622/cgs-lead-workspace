@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Company record, CGS Lead Workspace</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="app">
+<div style="flex: none; display: flex"><dc-import name="Rail" active="{{railActive}}" hint-size="244px,1012px"></dc-import></div>
+
+<main class="main">
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="{{listHref}}">{{listLabel}}</a><svg class="i s" aria-hidden="true" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></svg><span aria-current="page" class="md" style="color: #101828">{{c.name}}</span></nav>
+
+  <header class="top" style="gap: 14px">
+    <span class="av lg k" aria-hidden="true">{{c.mono}}</span>
+    <div class="col" style="gap: 2px; flex: 1 1 260px"><h1 class="h1">{{c.name}}</h1><span class="mut">{{c.sub}}</span></div>
+    <sc-for list="{{c.chips}}" as="hc" hint-placeholder-count="1"><span class="{{hc.cls}}">{{hc.t}}</span></sc-for>
+    <span class="fx" style="gap: 8px"><span class="av r" aria-hidden="true" style="width: 28px; height: 28px; font-size: 10.5px">{{c.ownerMono}}</span><span class="col" style="gap: 0; line-height: 1.25"><span class="dim sm">Owner</span><span class="md">{{c.owner}}</span></span></span>
+    <a class="b bs" href="#">Open in Insightly</a>
+  </header>
+
+  <section class="card" style="gap: 12px; padding: 16px 20px 14px" aria-label="Where this company is">
+    <ol class="jr">
+      <sc-for list="{{journey}}" as="j" hint-placeholder-count="8">
+        <li class="{{j.cls}}" aria-current="{{j.current}}">
+          <span class="{{j.labelCls}}">{{j.label}}</span>
+          <span class="crm">{{j.crm}}</span>
+          <sc-if value="{{j.hasWhen}}" hint-placeholder-val="{{ false }}"><span class="dim sm tn">{{j.when}}</span></sc-if>
+        </li>
+      </sc-for>
+    </ol>
+  </section>
+
+  <section class="{{next.cardCls}}" style="flex-direction: row; flex-wrap: wrap; align-items: center; gap: 12px 16px" aria-label="Next step">
+    <sc-if value="{{next.pending}}" hint-placeholder-val="{{ true }}">
+      <div class="grow col" style="gap: 2px; flex-basis: 320px"><span class="lbl" style="color: {{next.lblColor}}">{{next.label}}</span><span class="sbd" style="font-size: 14.5px">{{next.title}}</span><span class="mut">{{next.body}}</span></div>
+      <div class="fx" style="flex-wrap: wrap">
+        <a class="{{next.linkCls}}" href="{{next.linkHref}}">{{next.linkLabel}}</a>
+        <sc-for list="{{next.actions}}" as="na" hint-placeholder-count="1"><button type="button" class="{{na.cls}}" onClick="{{na.go}}">{{na.label}}</button></sc-for>
+      </div>
+    </sc-if>
+    <sc-if value="{{next.settled}}" hint-placeholder-val="{{ false }}">
+      <div class="ok grow" role="status" style="padding: 8px 8px 8px 12px"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"></path></svg><span class="grow" style="flex-basis: 260px"><span class="sbd">{{next.doneHead}}</span> {{next.doneBody}}</span><button type="button" class="b bs" onClick="{{next.undo}}">Undo</button></div>
+    </sc-if>
+  </section>
+
+  <div role="tablist" class="tabs" aria-label="Record">
+    <sc-for list="{{tabs}}" as="t" hint-placeholder-count="5">
+      <button type="button" role="tab" class="tab" aria-selected="{{t.selected}}" onClick="{{t.pick}}">{{t.label}}<span class="cnt">{{t.count}}</span></button>
+    </sc-for>
+  </div>
+
+  <sc-if value="{{isBrief}}" hint-placeholder-val="{{ true }}">
+    <div class="row" style="align-items: flex-start">
+      <div class="col" style="flex: 7 1 460px">
+        <div class="fx sm dim" style="gap: 8px"><svg class="i s" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 7v5l3 2M3 12a9 9 0 1018 0 9 9 0 10-18 0"></path></svg>{{b.asOf}}</div>
+        <div class="fx sm" style="gap: 8px; align-items: flex-start"><svg class="i s" aria-hidden="true" viewBox="0 0 24 24" style="flex: none; margin-top: 2px; color: #667085"><path d="M4 12a8 8 0 0114-5.3L20 9M20 4v5h-5M20 12a8 8 0 01-14 5.3L4 15M4 20v-5h5"></path></svg><span class="mut"><span class="sbd" style="color: #101828">What changed since last time.</span> {{b.changed}}</span></div>
+        <section class="card" style="gap: 16px">
+          <div class="sb"><h2 class="t">The case</h2><span class="chip blue">Written by the Research agent</span></div>
+          <div class="col" style="gap: 4px"><span class="lbl">The problem they may have</span><p style="max-width: 72ch">{{b.problem}}</p></div>
+          <div class="col" style="gap: 4px"><span class="lbl">Why CGS</span><p style="max-width: 72ch">{{b.why}}</p></div>
+          <div class="col" style="gap: 4px; padding: 12px 14px; border-radius: 10px; background: #FFFAF6; border: 1px solid #F1CDB8"><span class="lbl" style="color: #A8390F">Why this may be nothing</span><p style="max-width: 72ch">{{b.alt}}</p></div>
+        </section>
+        <section class="card" style="gap: 4px">
+          <div class="sb" style="padding-bottom: 8px"><h2 class="t">Evidence</h2><span class="dim sm">{{b.evNote}}</span></div>
+          <sc-for list="{{b.groups}}" as="g" hint-placeholder-count="2">
+            <span class="lbl" style="padding-top: 10px">{{g.cat}}</span>
+            <sc-for list="{{g.items}}" as="e" hint-placeholder-count="2">
+              <div class="ev">
+                <span class="md">{{e.fact}}</span>
+                <div class="quote">{{e.quote}}</div>
+                <span class="dim sm">{{e.src}}, {{e.date}}</span>
+              </div>
+            </sc-for>
+          </sc-for>
+        </section>
+      </div>
+      <div class="col" style="flex: 3 1 280px">
+        <section class="card">
+          <h2 class="t">The decision</h2>
+          <dl class="kv"><sc-for list="{{b.decision}}" as="f" hint-placeholder-count="4"><dt>{{f.k}}</dt><dd>{{f.v}}</dd></sc-for></dl>
+        </section>
+        <section class="card" style="gap: 6px">
+          <h2 class="t" style="padding-bottom: 6px">Contact</h2>
+          <div class="list">
+            <sc-for list="{{b.people}}" as="pp" hint-placeholder-count="1">
+              <div class="li" style="align-items: flex-start"><span class="av r" aria-hidden="true">{{pp.mono}}</span><span class="grow col" style="gap: 2px"><span class="sbd">{{pp.name}}</span><span class="mut">{{pp.role}}</span><span class="dim sm">{{pp.asOf}}</span></span></div>
+            </sc-for>
+          </div>
+        </section>
+        <section class="card" style="gap: 6px">
+          <div class="sb" style="padding-bottom: 6px; flex-wrap: wrap"><h2 class="t">Priority conditions</h2><span class="dim sm md">{{b.met}}</span></div>
+          <div class="list">
+            <sc-for list="{{b.comps}}" as="cp" hint-placeholder-count="4">
+              <div class="li"><span class="grow md">{{cp.k}}</span><span class="{{cp.chip}}">{{cp.v}}</span></div>
+            </sc-for>
+          </div>
+          <span class="dim sm rule">{{b.missing}} Set by rules, not by AI.</span>
+        </section>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isOutreach}}" hint-placeholder-val="{{ false }}">
+    <div class="row" style="align-items: flex-start">
+      <section class="card" style="flex: 3 1 250px; gap: 18px">
+        <div class="sb"><h2 class="t">Contact plan</h2><span class="dim sm">{{o.planNote}}</span></div>
+        <ol class="rl">
+          <sc-for list="{{o.steps}}" as="s" hint-placeholder-count="4">
+            <li class="{{s.li}}"><span class="{{s.d}}" aria-hidden="true"></span><div><span class="{{s.subCls}}">{{s.sub}}</span><br><span class="{{s.tCls}}">{{s.t}}</span></div></li>
+          </sc-for>
+        </ol>
+        <span class="mut rule">{{o.stopRule}}</span>
+      </section>
+
+      <sc-if value="{{o.hasDraft}}" hint-placeholder-val="{{ true }}">
+        <section class="card" style="flex: 6 1 420px; gap: 18px">
+          <div class="sb"><h2 class="t">Email draft</h2><span class="chip blue">Written by the Outreach agent</span></div>
+          <dl class="kv" style="padding-bottom: 16px; border-bottom: 1px solid #EEF0F3">
+            <dt>From</dt><dd>{{o.from}}</dd>
+            <dt>To</dt><dd>{{o.to}}</dd>
+            <dt>Subject</dt><dd class="sbd">{{o.subject}}</dd>
+          </dl>
+          <div class="col" style="gap: 14px; font-size: 15px; line-height: 1.7; max-width: 64ch">
+            <sc-for list="{{o.paras}}" as="pa" hint-placeholder-count="4">
+              <p><sc-for list="{{pa.segs}}" as="sg" hint-placeholder-count="1"><span class="{{sg.cls}}">{{sg.t}}</span><sc-if value="{{sg.hasSup}}" hint-placeholder-val="{{ false }}"><sup class="c-blue sbd"> {{sg.sup}}</sup></sc-if></sc-for></p>
+            </sc-for>
+          </div>
+          <div class="col sm mut rule" style="gap: 4px">
+            <sc-for list="{{o.cites}}" as="ci" hint-placeholder-count="2"><span><span class="c-blue sbd">{{ci.n}}</span>&nbsp; {{ci.t}}</span></sc-for>
+          </div>
+          <div class="fx rule" style="flex-wrap: wrap; gap: 10px 12px">
+            <span class="grow col" style="gap: 2px; flex-basis: 260px"><span class="sbd">With Alex Morgan for the second approval</span><span class="mut">Sent to him today at 08:30. It goes out from your Gmail once he approves.</span></span>
+            <a class="b bs" href="OutreachList.dc.html">Open in Outreach</a>
+          </div>
+        </section>
+
+        <div class="col" style="flex: 3 1 250px">
+          <section class="card">
+            <h2 class="t">CGS email standard</h2>
+            <div class="fx" style="align-items: baseline; gap: 8px"><span class="num n1">{{o.score}}</span><span class="mut">of 5</span></div>
+            <div class="bar" role="img" aria-label="{{o.scoreLabel}}"><span style="width: {{o.scorePct}}"></span></div>
+            <div class="list">
+              <div class="li" style="padding: 8px 0"><span class="grow">Purpose in line one</span><span class="c-grn md">Yes</span></div>
+              <div class="li" style="padding: 8px 0"><span class="grow">One clear ask</span><span class="c-grn md">Yes</span></div>
+              <div class="li" style="padding: 8px 0"><span class="grow">Current facts cited</span><span class="c-grn md">2</span></div>
+              <div class="li" style="padding: 8px 0"><span class="grow">Length</span><span class="c-grn md">{{o.words}} of 120 words</span></div>
+              <div class="li" style="padding: 8px 0"><span class="grow">Prices or promises</span><span class="c-grn md">None</span></div>
+              <sc-if value="{{o.formal}}" hint-placeholder-val="{{ true }}">
+                <div class="li" style="padding: 8px 0; flex-wrap: wrap; gap: 6px 12px"><span class="grow">Sounds like you</span><span class="c-org md">A little formal</span><button type="button" class="b bs xs" onClick="{{o.warm}}" style="flex-basis: 100%">Make it warmer</button></div>
+              </sc-if>
+              <sc-if value="{{o.warmed}}" hint-placeholder-val="{{ false }}">
+                <div class="li" style="padding: 8px 0; gap: 12px"><span class="grow">Sounds like you</span><span class="c-grn md">Yes</span><button type="button" class="b bg xs" onClick="{{o.unwarm}}">Undo</button></div>
+              </sc-if>
+            </div>
+          </section>
+          <section class="card" style="flex-direction: row; align-items: center; gap: 12px">
+            <span class="av r" aria-hidden="true">AM</span>
+            <span class="grow md">Alex Morgan approves before it goes</span>
+          </section>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{o.noDraft}}" hint-placeholder-val="{{ false }}">
+        <section class="card" style="flex: 9 1 460px">
+          <h2 class="t">How outreach went</h2>
+          <dl class="kv"><sc-for list="{{o.summary}}" as="f" hint-placeholder-count="5"><dt>{{f.k}}</dt><dd>{{f.v}}</dd></sc-for></dl>
+          <span class="mut rule">{{o.summaryNote}}</span>
+        </section>
+      </sc-if>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isConv}}" hint-placeholder-val="{{ false }}">
+    <div class="col" style="max-width: 920px">
+      <sc-if value="{{cv.idle}}" hint-placeholder-val="{{ true }}">
+        <div class="fx" style="flex-wrap: wrap"><span class="grow dim sm" style="flex-basis: 280px">Emails arrive from the owner's Gmail on their own. Calls and meetings need notes.</span><button type="button" class="b bs" onClick="{{cv.openNote}}"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>Add call notes</button></div>
+      </sc-if>
+      <sc-if value="{{cv.noting}}" hint-placeholder-val="{{ false }}">
+        <section class="card" style="gap: 12px">
+          <h2 class="t">Call notes</h2>
+          <label class="fld">What did they say? Use their own words where you can.<textarea class="inp" rows="4" placeholder="For example: “Let’s do a working session with our CFO on 12 November.”" value="{{cv.note}}" onChange="{{cv.setNote}}"></textarea></label>
+          <div class="fx" style="flex-wrap: wrap"><button type="button" class="b bp" onClick="{{cv.saveNote}}">Save notes</button><button type="button" class="b bg" onClick="{{cv.cancelNote}}">Cancel</button><span class="grow"></span><span class="dim sm">The Evidence agent reads the notes and proposes evidence for you to confirm.</span></div>
+        </section>
+      </sc-if>
+      <sc-if value="{{cv.noReply}}" hint-placeholder-val="{{ false }}">
+        <section class="card" style="flex-direction: row; align-items: flex-start; gap: 12px">
+          <svg class="i" aria-hidden="true" viewBox="0 0 24 24" style="color: #667085; margin-top: 2px"><path d="M6 3h12M6 21h12M7 3c0 5 5 5 5 9s-5 4-5 9M17 3c0 5-5 5-5 9s5 4 5 9"></path></svg>
+          <span class="grow col" style="gap: 2px"><span class="sbd">{{cv.emptyHead}}</span><span class="mut">{{cv.emptyBody}}</span></span>
+        </section>
+      </sc-if>
+      <section class="card flat">
+        <div class="list">
+          <sc-for list="{{cv.thread}}" as="m" hint-placeholder-count="4">
+            <div class="li" style="align-items: flex-start; padding: 14px 20px">
+              <span class="{{m.av}}" aria-hidden="true">{{m.mono}}</span>
+              <span class="grow col" style="gap: 4px">
+                <span class="fx" style="gap: 8px; flex-wrap: wrap"><span class="sbd">{{m.subject}}</span><span class="{{m.kindCls}}">{{m.kind}}</span></span>
+                <span class="mut">{{m.line}}</span>
+                <sc-if value="{{m.hasRead}}" hint-placeholder-val="{{ false }}"><span class="fx sm c-blue md" style="gap: 6px"><svg class="i s" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>{{m.read}}</span></sc-if>
+              </span>
+              <span class="dim sm" style="white-space: nowrap">{{m.date}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+      <span class="dim sm">Emails come from the owner's Gmail. Call notes are added by hand. The Evidence agent reads each reply and proposes evidence; a person confirms it.</span>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isQual}}" hint-placeholder-val="{{ false }}">
+    <div class="col">
+      <sc-if value="{{q.behind}}" hint-placeholder-val="{{ false }}">
+        <div class="card warn" style="flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 12px">
+          <svg class="i c-org" aria-hidden="true" viewBox="0 0 24 24" style="margin-top: 2px"><path d="M12 8v5M12 16.5v.5M10.3 3.9L2.6 17.5A2 2 0 004.3 20.5h15.4a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"></path></svg>
+          <div class="grow col" style="gap: 2px; flex-basis: 260px"><span class="sbd">This pack is one change behind</span><span class="mut">Alex changed the revenue estimate in Insightly on 24 Oct, a day after he sent the pack. The amount stays in Insightly and is not shown here.</span></div>
+          <button type="button" class="b bs xs" onClick="{{toActivity}}">See it in Activity</button>
+        </div>
+      </sc-if>
+      <sc-if value="{{q.hasPack}}" hint-placeholder-val="{{ false }}">
+        <div class="row">
+          <section class="card" style="flex: 2 1 220px">
+            <h2 class="t">Conditions</h2>
+            <div class="fx" style="align-items: baseline; gap: 8px"><span class="num n1">{{q.nMet}}</span><span class="mut">of 6 met</span></div>
+            <div class="bar" role="img" aria-label="{{q.scoreLabel}}"><span style="width: {{q.scorePct}}"></span></div>
+            <span class="dim sm">{{q.missing}}</span>
+          </section>
+          <section class="card" style="flex: 3 1 300px; justify-content: center">
+            <dl class="kv"><sc-for list="{{q.facts}}" as="f" hint-placeholder-count="5"><dt>{{f.k}}</dt><dd>{{f.v}}</dd></sc-for></dl>
+          </section>
+        </div>
+      </sc-if>
+      <sc-if value="{{q.ready}}" hint-placeholder-val="{{ false }}">
+        <div class="ok" role="status"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"></path></svg><span class="grow" style="flex-basis: 260px"><span class="sbd">All six conditions are confirmed.</span> The pack can go to a partner for approval.</span></div>
+      </sc-if>
+      <section class="card" style="gap: 6px">
+        <div class="sb" style="padding-bottom: 6px; flex-wrap: wrap"><h2 class="t">The six conditions</h2><span class="{{q.metCls}}">{{q.met}}</span></div>
+        <div class="list">
+          <sc-for list="{{q.conds}}" as="cd" hint-placeholder-count="6">
+            <div class="li" style="flex-wrap: wrap; align-items: flex-start; gap: 6px 20px">
+              <span class="sbd" style="flex: 1 1 190px">{{cd.name}}</span>
+              <span class="col" style="flex: 2 1 300px; gap: 2px; min-width: 0"><span class="{{cd.proofCls}}">{{cd.proof}}</span><span class="dim sm">{{cd.src}}</span></span>
+              <span class="fx" style="flex: 0 0 250px; justify-content: flex-end; flex-wrap: wrap">
+                <span class="{{cd.chip}}">{{cd.label}}</span>
+              </span>
+            </div>
+          </sc-for>
+        </div>
+        <span class="dim sm rule">{{q.note}}</span>
+      </section>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isActivity}}" hint-placeholder-val="{{ false }}">
+    <section class="card" style="max-width: 760px">
+      <ol class="rl">
+        <sc-for list="{{activity}}" as="a" hint-placeholder-count="5">
+          <li class="{{a.li}}"><span class="{{a.d}}" aria-hidden="true"></span><div><span class="dim sm">{{a.when}}</span><br><span class="md">{{a.what}}</span></div></li>
+        </sc-for>
+      </ol>
+    </section>
+  </sc-if>
+</main>
+
+<div class="act"><dc-import name="Activity" start-open="{{ false }}" hint-size="130px,40px"></dc-import></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"company":{"editor":"enum","options":["kessler","ardent","northstar"],"default":"kessler"},"tab":{"editor":"enum","options":["","brief","outreach","conv","qual","activity"],"default":""},"$preview":{"width":1440,"height":1240}}'>
+class Component extends DCLogic {
+renderVals() {
+  const st = this.state || {};
+  const self = this;
+  const id = ['northstar', 'ardent'].indexOf(this.props.company) >= 0 ? this.props.company : 'kessler';
+  const E = (fact, quote, src, date) => ({ fact, quote, src, date });
+  const CONDS = ['A specific client problem', 'Fits a CGS service', 'Open to outside help', 'An agreed next step', 'Funding and a path to the decision', 'No open conflicts'];
+  const STAGES = [
+    ['Found', 'Not in Insightly yet'], ['Researching', 'Not in Insightly yet'], ['Your decision', 'Lead created on Accept'],
+    ['Identified', 'Accepted, before the first email'], ['Contacted', 'Contact plan running'], ['Active', 'In conversation'], ['Awaiting approval', 'Insightly: Qualification'], ['Qualified', 'Insightly: Opportunity']
+  ];
+  const seg = (t, ct, sup) => ({ t, cls: ct ? 'ct' : '', sup: sup || '', hasSup: !!sup });
+
+  const D = {
+    kessler: {
+      mono: 'KI', name: 'Kessler Industrial', sub: 'Industrial equipment, Dayton, Ohio', owner: 'Quinn Harper (you)', ownerMono: 'QH',
+      chips: [{ t: 'Warm route via Sarah Patel', cls: 'chip grn' }],
+      rail: 'outreach', list: ['Outreach', 'OutreachList.dc.html'], stage: 3, defTab: 'outreach',
+      when: ['12 Oct', '18 Oct', '21 Oct', 'Since 21 Oct', '', '', '', ''],
+      brief: {
+        asOf: 'The brief as Quinn Harper accepted it on 21 Oct. Later facts are under Conversation and Qualification.',
+        problem: 'Kessler is moving its three Ohio plants onto one planning system in 2026. Its own September update says no one has settled who owns planning decisions once the plants share one plan.',
+        why: 'Operating model redesign answers exactly that question. Sarah Patel, a former CGS client, knows the VP Operations and offered an introduction.',
+        alt: 'The system vendor may settle decision rights as part of the rollout, leaving no open question for an adviser.',
+        evNote: '4 facts from 4 sources, each quoted word for word',
+        groups: [
+          { cat: 'The trigger', items: [
+            E('Moving three Ohio plants onto one planning system in 2026', '“Kessler will consolidate planning for its Dayton, Springfield and Lima plants onto a single system this year.”', 'Kessler press release', '4 Mar 2026'),
+            E('Named who owns planning decisions as the open question', '“The open question is who owns planning decisions once the plants share one plan.”', 'Operations update', '12 Sep 2026')] },
+          { cat: 'The buyer', items: [
+            E('Dana Whitfield is VP Operations', '“Dana Whitfield, Vice President, Operations”', 'Company website, leadership page', 'checked 20 Oct')] },
+          { cat: 'The route in', items: [
+            E('Sarah Patel, a former client, knows Dana Whitfield', '“Sarah and Dana worked together at Corbel for six years.”', 'CGS relationship notes, Quinn Harper', '18 Oct')] }
+        ],
+        decision: [{ k: 'Agent suggested', v: 'Accept' }, { k: 'Decided', v: 'Accepted by Quinn Harper, 21 Oct' }, { k: 'Rating', v: 'High' }, { k: 'Next step agreed', v: 'Introduction from Sarah Patel, then email' }],
+        people: [{ mono: 'DW', name: 'Dana Whitfield', role: 'VP Operations', asOf: 'Confirmed on the company website, 20 Oct' }],
+        score: '76', comps: [['Fit with CGS services', 'Strong', 'chip grn'], ['Timing', 'Strong', 'chip grn'], ['Buyer access', 'Warm route', 'chip grn'], ['Company size', 'Not estimated', 'chip']]
+      },
+      out: {
+        planNote: 'Day 3 of 12', stopRule: 'Stops the moment Dana replies',
+        steps: [['Day 0, done', 'Introduction from Sarah Patel', 'done'], ['Day 3, due today', 'Email Dana Whitfield', 'you'], ['Day 7', 'LinkedIn connection note', ''], ['Day 12', 'Share the operating model white paper', '']],
+        hasDraft: true, from: 'Quinn Harper, your Gmail', to: 'Dana Whitfield, VP Operations', subject: 'Sarah Patel suggested I write',
+        cites: [{ n: '1', t: 'Kessler press release, 4 March 2026' }, { n: '2', t: 'Operations update, 12 September 2026' }]
+      },
+      conv: {
+        noReply: true, emptyHead: 'No reply from Dana yet',
+        emptyBody: 'Her reply will appear here with the Evidence agent’s reading of it, and the contact plan stops on its own.',
+        thread: [
+          { mono: 'QH', av: 'av r k', subject: 'Sarah Patel suggested I write', kind: 'Draft, with Alex for approval', kindCls: 'chip', line: 'Day 3 email to Dana Whitfield', date: 'Today', read: '' },
+          { mono: 'SP', av: 'av r', subject: 'Introduction: Quinn Harper and Dana Whitfield', kind: 'Received', kindCls: 'chip', line: 'Sarah Patel introduced Quinn and copied Dana.', date: '23 Oct', read: '' }
+        ]
+      },
+      qual: { hasPack: false, behind: false, note: 'Evidence collects once Dana replies. Agents propose each piece; the owner confirms it.', conds: CONDS.map((n) => ({ name: n, state: 'm', proof: 'Nothing yet', src: 'Collects from replies and call notes', by: '' })) },
+      activity: [
+        ['Today, 08:02', 'Outreach agent drafted the day 3 email', 'done', 'd done'],
+        ['Today, 08:30', 'Quinn Harper sent the draft to Alex Morgan for approval', 'done', 'd done'],
+        ['23 Oct', 'Sarah Patel sent the introduction', 'done', 'd done'],
+        ['21 Oct', 'Quinn Harper accepted the brief. Lead created in Insightly as Identified', 'done', 'd done'],
+        ['20 Oct', 'Research agent finished the brief', '', 'd done']
+      ]
+    },
+    ardent: {
+      mono: 'AL', name: 'Ardent Logistics', sub: 'Logistics, Memphis, Tennessee', owner: 'Quinn Harper (you)', ownerMono: 'QH',
+      chips: [{ t: 'Priority 62', cls: 'chip' }],
+      rail: 'qualification', list: ['Qualification', 'Qualification-conv.dc.html'], stage: 5, defTab: 'qual',
+      when: ['5 Oct', '7 Oct', '9 Oct', '9 Oct', '12 Oct', '20 Oct', '', ''],
+      brief: {
+        asOf: 'The brief as Quinn Harper accepted it on 9 Oct. What the client said since is under Conversation and Qualification.',
+        problem: 'Ardent’s Memphis hub ran out of dock capacity in three peak weeks this year. A new VP Supply Chain started in June and is reviewing how volume is planned across the hub and its two feeder sites.',
+        why: 'Supply chain planning is the closest CGS service. The plant network case study shows the same pattern at a similar size.',
+        alt: 'Ardent may simply lease more dock space. A capacity fix would leave no planning question for an adviser.',
+        evNote: '2 facts from 2 sources, each quoted word for word',
+        groups: [
+          { cat: 'The trigger', items: [E('Dock capacity ran short in peak weeks', '“Peak-week volume exceeded dock capacity at Memphis on three occasions.”', 'Ardent quarterly update', '18 Aug 2026')] },
+          { cat: 'The buyer', items: [E('Priya Nair joined as VP Supply Chain', '“Ardent Logistics welcomes Priya Nair as Vice President, Supply Chain.”', 'Company press release', '9 Jun 2026')] }
+        ],
+        decision: [{ k: 'Agent suggested', v: 'Accept' }, { k: 'Decided', v: 'Accepted by Quinn Harper, 9 Oct' }, { k: 'Rating', v: 'Medium' }, { k: 'Next step agreed', v: 'Cold email to Priya Nair' }],
+        people: [{ mono: 'PN', name: 'Priya Nair', role: 'VP Supply Chain', asOf: 'Confirmed by her own reply, 20 Oct' }],
+        score: '62', comps: [['Fit with CGS services', 'Good', 'chip grn'], ['Timing', 'Strong', 'chip grn'], ['Buyer access', 'Replied', 'chip grn'], ['Revenue potential', 'Not estimated', 'chip']]
+      },
+      out: {
+        planNote: 'Stopped on day 8', stopRule: 'The plan stopped on 20 Oct when Priya replied. Later emails were written by Quinn.',
+        steps: [['Day 0, 12 Oct', 'First email', 'done'], ['Day 3, 15 Oct', 'Follow-up email', 'done'], ['Day 8, 20 Oct', 'Priya replied. Plan stopped', 'done'], ['Day 12', 'White paper, skipped', 'skip']],
+        hasDraft: false,
+        summary: [{ k: 'Route', v: 'Cold email' }, { k: 'Emails sent', v: '2 from the plan, 1 by hand' }, { k: 'Replies', v: '1 from Priya Nair' }, { k: 'First reply', v: 'Day 8, 20 Oct' }, { k: 'Email standard', v: '4.4 of 5 on the first email' }],
+        summaryNote: 'Cold emails get a reply about one time in five. This one did after the follow-up.'
+      },
+      conv: {
+        noReply: false, emptyHead: '', emptyBody: '',
+        thread: [
+          { mono: 'QH', av: 'av r k', subject: 'Planning peak weeks at Memphis: a short case study', kind: 'Sent', kindCls: 'chip', line: 'Quinn sent the plant network case study for her CFO. Reply due Thursday.', date: '22 Oct', read: '' },
+          { mono: 'PN', av: 'av r', subject: 'Re: Peak weeks at Memphis', kind: 'Reply', kindCls: 'chip grn', line: '“Interesting timing. Send me something I can share with our CFO.”', date: '20 Oct', read: 'Read as: wants material. Proposed 2 pieces of evidence for you to confirm.' },
+          { mono: 'QH', av: 'av r k', subject: 'Peak weeks at Memphis', kind: 'Sent', kindCls: 'chip', line: 'Day 3 follow-up, written by the Outreach agent and approved by Alex.', date: '15 Oct', read: '' },
+          { mono: 'QH', av: 'av r k', subject: 'A question about dock capacity', kind: 'Sent', kindCls: 'chip', line: 'First email, written by the Outreach agent and approved by Alex.', date: '12 Oct', read: '' }
+        ]
+      },
+      qual: {
+        hasPack: false, behind: false, note: 'The agent proposes; nothing counts until you confirm it. Confirm or reject each proposal on the reply screen in Qualification, next to her reply.',
+        conds: [
+          ['A specific client problem', '“Peak-week volume exceeded dock capacity at Memphis on three occasions.”', 'Ardent quarterly update, 18 Aug', 'Quinn Harper', 'c'],
+          ['Fits a CGS service', 'Supply chain planning covers peak-week volume planning.', 'CGS service list', 'Quinn Harper', 'c'],
+          ['Open to outside help', '“Interesting timing. Send me something I can share with our CFO.”', 'Email from Priya Nair, 20 Oct', '', 'p'],
+          ['An agreed next step', 'Nothing yet', 'She asked for material. No meeting or date is agreed.', '', 'm'],
+          ['Funding and a path to the decision', '“…something I can share with our CFO.” The agent reads this as the CFO being part of the decision.', 'Email from Priya Nair, 20 Oct', '', 'p'],
+          ['No open conflicts', 'No note or email contradicts the points above.', 'All emails so far', 'Evidence agent, checked by Quinn Harper', 'c']
+        ].map(([name, proof, src, by, state]) => ({ name, proof, src, by, state }))
+      },
+      activity: [
+        ['22 Oct', 'Quinn Harper sent the case study', 'done', 'd done'],
+        ['20 Oct, 16:20', 'Evidence agent read Priya Nair’s reply and proposed 2 conditions', 'done', 'd you'],
+        ['20 Oct, 16:05', 'Priya Nair replied. Contact plan stopped. Insightly: Active', 'done', 'd done'],
+        ['12 Oct', 'First email sent from Quinn Harper’s Gmail. Insightly: Contacted', 'done', 'd done'],
+        ['9 Oct', 'Quinn Harper accepted the brief. Lead created in Insightly as Identified', '', 'd done']
+      ]
+    },
+    northstar: {
+      mono: 'NH', name: 'Northstar Health', sub: 'Healthcare, Cincinnati, Ohio', owner: 'Alex Morgan', ownerMono: 'AM',
+      chips: [{ t: 'Score 80', cls: 'chip grn' }],
+      rail: 'qualification', list: ['Qualification', 'Qualification.dc.html'], stage: 6, defTab: 'qual',
+      when: ['28 Sep', '30 Sep', '2 Oct', '2 Oct', '10 Oct', '13 Oct', '23 Oct', ''],
+      brief: {
+        asOf: 'The brief as Alex Morgan accepted it on 2 Oct. What the client said since is under Conversation and Qualification.',
+        problem: 'Northstar bought two regional providers in 2025 and each site still schedules staff its own way. A new COO started in July with integration as his first priority.',
+        why: 'Operating model redesign covers scheduling and decision rights across sites. The regional health network case study is a close match.',
+        alt: 'The new COO may plan to fix scheduling with a software rollout alone, with no need for outside advice.',
+        evNote: '3 facts from 3 sources, each quoted word for word',
+        groups: [
+          { cat: 'The trigger', items: [
+            E('Acquired two regional providers in 2025', '“Northstar completes its acquisition of Valley Care and Riverside Clinics.”', 'Company press release', '14 Nov 2025'),
+            E('Integration named as the new COO’s first priority', '“My first priority is bringing our sites onto one way of working.”', 'Cincinnati Business Journal interview', '22 Aug 2026')] },
+          { cat: 'The buyer', items: [
+            E('James Walker joined as COO', '“Northstar Health names James Walker Chief Operating Officer.”', 'Company press release', '8 Jul 2026')] }
+        ],
+        decision: [{ k: 'Agent suggested', v: 'Accept' }, { k: 'Decided', v: 'Accepted by Alex Morgan, 2 Oct' }, { k: 'Rating', v: 'High' }, { k: 'Next step agreed', v: 'Cold email to James Walker' }],
+        people: [{ mono: 'JW', name: 'James Walker', role: 'Chief Operating Officer', asOf: 'Confirmed by his own replies, 13 and 20 Oct' }],
+        score: '80', comps: [['Fit with CGS services', 'Strong', 'chip grn'], ['Timing', 'Strong', 'chip grn'], ['Buyer access', 'Replied', 'chip grn'], ['Revenue potential', 'High', 'chip grn']]
+      },
+      out: {
+        planNote: 'Stopped on day 3', stopRule: 'The plan stopped on 13 Oct when James replied. Later emails were written by Alex.',
+        steps: [['Day 0, 10 Oct', 'First email', 'done'], ['Day 3, 13 Oct', 'James replied. Plan stopped', 'done'], ['Day 7', 'LinkedIn note, skipped', 'skip'], ['Day 12', 'White paper, skipped', 'skip']],
+        hasDraft: false,
+        summary: [{ k: 'Route', v: 'Cold email' }, { k: 'Emails sent', v: '2, both from Alex Morgan’s Gmail' }, { k: 'Replies', v: '2 from James Walker' }, { k: 'First reply', v: 'Day 3, 13 Oct' }, { k: 'Email standard', v: '4.5 of 5 on the first email' }],
+        summaryNote: 'Cold emails get a reply about one time in five. This one did on day 3.'
+      },
+      conv: {
+        noReply: false, emptyHead: '', emptyBody: '',
+        thread: [
+          { mono: 'AM', av: 'av r', subject: 'Call notes: James Walker and Alex Morgan', kind: 'Call', kindCls: 'chip', line: '“The board approved transformation funding in September.” Working session agreed for 3 Nov.', date: '21 Oct', read: 'Evidence agent proposed 3 conditions. Alex confirmed them.' },
+          { mono: 'JW', av: 'av r', subject: 'Re: Scheduling across your regional sites', kind: 'Reply', kindCls: 'chip grn', line: '“We don’t have the capacity to do this ourselves.”', date: '20 Oct', read: 'Read as: open to outside help. Confirmed by Alex.' },
+          { mono: 'AM', av: 'av r', subject: 'Scheduling across your regional sites', kind: 'Sent', kindCls: 'chip', line: 'Alex shared the regional health network case study.', date: '17 Oct', read: '' },
+          { mono: 'JW', av: 'av r', subject: 'Re: A question about your regional scheduling', kind: 'Reply', kindCls: 'chip grn', line: '“Interesting. Can you say more next week?”', date: '13 Oct', read: 'Read as: wants to talk. The contact plan stopped.' },
+          { mono: 'AM', av: 'av r', subject: 'A question about your regional scheduling', kind: 'Sent', kindCls: 'chip', line: 'First email, written by the Outreach agent and approved by Alex.', date: '10 Oct', read: '' }
+        ]
+      },
+      qual: {
+        hasPack: true, behind: true, score: '80', note: 'Every piece of evidence links to an email, a call note or a document. Agents propose; a person confirms.',
+        facts: [{ k: 'Contact', v: 'James Walker, Chief Operating Officer' }, { k: 'Service', v: 'Operating model redesign' }, { k: 'Revenue estimate', v: 'Kept in Insightly, changed 24 Oct' }, { k: 'Next step', v: 'Working session on 3 Nov' }, { k: 'Sent for approval', v: 'Alex Morgan, 23 Oct' }],
+        conds: [
+          ['A specific client problem', '“Our regional sites each run scheduling their own way.”', 'Call notes, 21 Oct', 'Alex Morgan', 'chip'],
+          ['Fits a CGS service', 'Operating model redesign covers scheduling across sites.', 'CGS service list', 'Alex Morgan', 'chip'],
+          ['Open to outside help', '“We don’t have the capacity to do this ourselves.”', 'Email from James Walker, 20 Oct', 'Evidence agent, confirmed', 'chip blue'],
+          ['An agreed next step', 'Working session on 3 Nov with the COO and the CFO.', 'Calendar invite, sent 21 Oct', 'Evidence agent, confirmed', 'chip blue'],
+          ['Funding and a path to the decision', '“The board approved transformation funding in September.”', 'Call notes, 21 Oct', 'Alex Morgan', 'chip'],
+          ['No open conflicts', 'No note or email contradicts the five points above.', 'All emails and call notes', 'Evidence agent, confirmed', 'chip blue']
+        ].map(([name, proof, src, by]) => ({ name, proof, src, by, state: 'c' }))
+      },
+      activity: [
+        ['24 Oct, 10:15', 'Alex Morgan changed the revenue estimate in Insightly', 'done', 'd you'],
+        ['23 Oct, 17:40', 'Alex Morgan sent the pack for approval. Insightly: Qualification', 'done', 'd done'],
+        ['21 Oct, 15:00', 'Call with James Walker. Three conditions confirmed', 'done', 'd done'],
+        ['20 Oct, 09:12', 'Evidence agent read a reply from James Walker and proposed one condition', 'done', 'd done'],
+        ['13 Oct', 'James Walker replied. Contact plan stopped. Insightly: Active', 'done', 'd done'],
+        ['10 Oct', 'First email sent from Alex Morgan’s Gmail. Insightly: Contacted', 'done', 'd done'],
+        ['2 Oct', 'Alex Morgan accepted the brief. Lead created in Insightly as Identified', '', 'd done']
+      ]
+    }
+  };
+  const c = D[id];
+  /* Evidence: c = confirmed, p = proposed by the agent, m = missing. Saved call notes turn the first missing one into a proposal. */
+  /* The record shows evidence; confirming it happens on the reply screen in Qualification. */
+  const notes = st.notes || [];
+  const firstMissing = c.qual.conds.findIndex((x) => x.state === 'm');
+  const conds = c.qual.conds.map((x, i) => {
+    let base = x;
+    if (notes.length && i === firstMissing) base = { ...x, state: 'p', proof: '“' + notes[0] + '”', src: 'Your call notes, today' };
+    const stt = base.state;
+    const o = { name: base.name, proof: base.proof, src: base.src, proofCls: 'mut', stt };
+    if (stt === 'c') return { ...o, label: base.by.indexOf('agent') >= 0 ? base.by : 'Confirmed by ' + base.by, chip: 'chip grn' };
+    if (stt === 'p') return { ...o, src: 'Proposed by the Evidence agent from: ' + base.src, label: 'Your call', chip: 'chip org' };
+    return { ...o, proofCls: 'dim', label: 'Missing', chip: 'chip' };
+  });
+  const nC = conds.filter((x) => x.stt === 'c' || x.stt === 'you').length;
+  const nP = conds.filter((x) => x.stt === 'p').length;
+  const missNames = conds.filter((x) => x.stt !== 'c' && x.stt !== 'you').map((x) => x.name.toLowerCase());
+  const missText = missNames.length ? 'Missing: ' + missNames.join(', ') + '.' : 'Nothing is missing.';
+  const tabWanted = st.tab || this.props.tab || c.defTab;
+  const tab = ['brief', 'outreach', 'conv', 'qual', 'activity'].indexOf(tabWanted) >= 0 ? tabWanted : c.defTab;
+
+  /* Next step, same place for every company. */
+  /* Decisions are made on the review screens; the record links there. */
+  const warm = !!st.warm;
+  const done = st.done || null;
+  const settle = (head, body) => () => self.setState({ done: { head, body } });
+  const toList = { linkLabel: 'Open in ' + c.list[0], linkHref: c.list[1], linkCls: 'b bg' };
+  let next;
+  if (id === 'kessler') {
+    next = { ...toList, tone: 'wait', label: 'Waiting on Alex Morgan', title: 'The day 3 email is with Alex for the second approval', body: 'It goes out from your Gmail once he approves. Nothing is sent before then.',
+      actions: [{ label: 'Remind Alex', cls: 'b bs', go: settle('Reminder sent to Alex.', 'He gets a nudge in his Inbox.') }] };
+  } else if (id === 'ardent') {
+    next = nP > 0
+      ? { tone: 'you', label: 'Waiting on you', title: 'Confirm ' + nP + (nP === 1 ? ' piece' : ' pieces') + ' of evidence the agent proposed', body: 'The Evidence agent read Priya Nair’s reply and proposed evidence. Confirm it on the reply screen, next to her reply and your draft.',
+          linkLabel: 'Review the evidence', linkHref: 'Qualification-conv.dc.html', linkCls: 'b bp', actions: [] }
+      : { ...toList, tone: 'wait', label: 'Waiting on Priya Nair', title: 'Her reply is due Thursday', body: nC + ' of 6 conditions are confirmed. Add call notes if you speak to her before then.',
+          actions: [{ label: 'Add call notes', cls: 'b bs', go: () => self.setState({ tab: 'conv', noting: true }) }] };
+  } else {
+    next = { tone: 'you', label: 'Waiting on you', title: 'Approve the qualification pack', body: 'All six conditions are met, but the revenue estimate changed after Alex sent the pack. Approve, ask him to resubmit, or return it with a comment on the review screen.',
+      linkLabel: 'Review the pack', linkHref: 'Qualification.dc.html', linkCls: 'b bp', actions: [] };
+  }
+  next = { ...next, cardCls: next.tone === 'you' ? 'card warn' : 'card', lblColor: next.tone === 'you' ? '#A8390F' : '#667085',
+    pending: !done, settled: !!done, doneHead: done ? done.head : '', doneBody: done ? done.body : '', undo: () => self.setState({ done: null }) };
+
+  const o = c.out;
+  const closing = warm
+    ? 'We’ve helped a few manufacturers your size sort this out before the new system goes live. Up for a 20-minute call next week to compare notes?'
+    : 'We have helped manufacturers of a similar size settle that before the system goes live. Would a 20-minute call next week be useful to compare notes?';
+  const out = {
+    planNote: o.planNote, stopRule: o.stopRule,
+    steps: o.steps.map(([sub, t, k]) => ({ sub, t, li: k === 'done' ? 'done' : '', d: k === 'done' ? 'd done' : k === 'you' ? 'd you' : 'd', subCls: k === 'you' ? 'c-org sm md' : 'dim sm', tCls: k === 'you' ? 'sbd' : k === 'skip' ? 'dim' : 'md' })),
+    hasDraft: !!o.hasDraft, noDraft: !o.hasDraft,
+    from: o.from || '', to: o.to || '', subject: o.subject || '', cites: o.cites || [],
+    paras: o.hasDraft ? [
+      { segs: [seg('Hi Dana,')] },
+      { segs: [seg('Sarah Patel suggested I get in touch. She mentioned that '), seg('Kessler is moving its three Ohio plants onto one planning system this year', true, '1'), seg(', and your September update named '), seg('who owns planning decisions', true, '2'), seg(' as the open question.')] },
+      { segs: [seg(closing)] },
+      { segs: [seg('Best, Quinn')] }
+    ] : [],
+    score: warm ? '4.6' : '4.3', scorePct: warm ? '92%' : '86%', scoreLabel: (warm ? '4.6' : '4.3') + ' of 5', words: warm ? 80 : 82,
+    formal: !warm, warmed: warm,
+    warm: () => self.setState({ warm: true }), unwarm: () => self.setState({ warm: false }),
+    summary: o.summary || [], summaryNote: o.summaryNote || ''
+  };
+
+  const thread = notes.map((t) => ({ mono: 'QH', av: 'av r k', subject: 'Call notes', kind: 'Call', kindCls: 'chip', line: '“' + t + '”', date: 'Today', read: firstMissing >= 0 ? 'Evidence agent proposed 1 condition from these notes. Confirm it under Qualification.' : 'Evidence agent found nothing new for the six conditions.' }))
+    .concat(c.conv.thread).map((m) => ({ ...m, hasRead: !!m.read }));
+  const replies = thread.filter((m) => m.kind === 'Reply').length;
+
+  return {
+    railActive: c.rail, listLabel: c.list[0], listHref: c.list[1],
+    c: { ...c, chips: id === 'kessler' ? c.chips : [{ t: nC + ' of 6 conditions met', cls: nC === 6 ? 'chip grn' : 'chip' }] },
+    journey: STAGES.map(([label, crm], i) => ({
+      label, crm, when: c.when[i] || '', hasWhen: !!c.when[i],
+      cls: i < c.stage ? 'done' : i === c.stage ? 'now' : '',
+      current: i === c.stage ? 'step' : 'false',
+      labelCls: i === c.stage ? 'sbd' : i < c.stage ? 'md' : 'dim md'
+    })),
+    next,
+    tabs: [['brief', 'Brief', ''], ['outreach', 'Outreach', ''], ['conv', 'Conversation', String(thread.length)], ['qual', 'Qualification', nC + ' of 6'], ['activity', 'Activity', '']].map(([tid, label, count]) => ({
+      label, count, selected: tid === tab ? 'true' : 'false', pick: () => self.setState({ tab: tid })
+    })),
+    isBrief: tab === 'brief', isOutreach: tab === 'outreach', isConv: tab === 'conv', isQual: tab === 'qual', isActivity: tab === 'activity',
+    b: { ...c.brief, comps: c.brief.comps.map(([k, v, chip]) => ({ k, v, chip })),
+      met: c.brief.comps.filter((x) => x[2] === 'chip grn').length + ' of ' + c.brief.comps.length + ' met',
+      missing: c.brief.comps.some((x) => x[2] !== 'chip grn') ? 'Missing: ' + c.brief.comps.filter((x) => x[2] !== 'chip grn').map((x) => x[0].toLowerCase()).join(', ') + '.' : 'Nothing is missing.',
+      changed: { kessler: 'Since you accepted it on 21 Oct: Sarah Patel sent the introduction on 23 Oct. No fact in the brief has changed.', ardent: 'Since you accepted it on 9 Oct: Priya Nair replied on 20 Oct, which confirms her as the contact. The case itself is unchanged.', northstar: 'Since Alex accepted it on 2 Oct: two replies and one call from James Walker, and the revenue estimate changed in Insightly on 24 Oct.' }[id] },
+    o: out,
+    cv: { noReply: c.conv.noReply && replies === 0, emptyHead: c.conv.emptyHead, emptyBody: c.conv.emptyBody, thread,
+      idle: !st.noting, noting: !!st.noting, note: st.note || '', setNote: (e) => self.setState({ note: e.target.value }),
+      openNote: () => self.setState({ noting: true }), cancelNote: () => self.setState({ noting: false }),
+      saveNote: () => { const t = (st.note || '').trim(); self.setState(t ? { noting: false, note: '', notes: [t].concat(notes) } : { noting: false }); } },
+    q: { ...c.qual, conds, nMet: String(nC), scorePct: Math.round((nC / 6) * 100) + '%', scoreLabel: nC + ' of 6 conditions met', missing: missText, facts: c.qual.facts || [],
+      met: nC + ' of 6 met' + (nP ? ', ' + nP + ' waiting for you' : '') + (nC < 6 ? '. ' + missText : ''), metCls: nP ? 'c-org md' : nC === 6 ? 'c-grn md' : 'dim md', ready: nC === 6 && !c.qual.hasPack },
+    toActivity: () => self.setState({ tab: 'activity' }),
+    activity: c.activity.map(([when, what, li, d]) => ({ when, what, li, d }))
+  };
+}
+}
+</script>
+</body>
+</html>

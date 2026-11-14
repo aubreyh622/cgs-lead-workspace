@@ -61,6 +61,15 @@ const PATHS = {
   fileCheck: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m9 15 2 2 4-4"/>',
   calendarCheck: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m9 16 2 2 4-4"/>',
   back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
+  // the side rail (design/redesign/Rail.dc.html)
+  overview: '<path d="M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z"/>',
+  building: '<path d="M5 21V4h9v17M14 9h5v12M3 21h18M8 8h3M8 12h3M8 16h3"/>',
+  target: '<path d="M3 12a9 9 0 1 0 18 0 9 9 0 1 0-18 0M8 12l3 3 5-6"/>',
+  hourglass: '<path d="M6 3h12M6 21h12M7 3c0 5 5 5 5 9s-5 4-5 9M17 3c0 5-5 5-5 9s5 4 5 9"/>',
+  sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16v4M17 18h4"/>',
+  sliders: '<path d="M4 6h8M16 6h4M4 12h2M10 12h10M4 18h10M18 18h2M12 6a2 2 0 1 0 4 0 2 2 0 1 0-4 0M6 12a2 2 0 1 0 4 0 2 2 0 1 0-4 0M14 18a2 2 0 1 0 4 0 2 2 0 1 0-4 0"/>',
+  collapse: '<path d="M11 6l-6 6 6 6M18 6l-6 6 6 6"/>',
+  expand: '<path d="M6 6l6 6-6 6M13 6l6 6-6 6"/>',
 };
 
 export function icon(name, size = 18) {
@@ -105,10 +114,13 @@ export function initials(name) {
 }
 
 // ---------- URL state: #/page?key=value ----------
+// Pages renamed in the redesign: old links (notifications, bookmarks) still open the right page.
+export const ROUTE_ALIASES = { home: "overview", sources: "find" };
+
 export function readRoute() {
   const h = location.hash.replace(/^#\/?/, "");
   const [path, query] = h.split("?");
-  return { page: path || "home", params: Object.fromEntries(new URLSearchParams(query || "")) };
+  return { page: ROUTE_ALIASES[path] || path || "overview", params: Object.fromEntries(new URLSearchParams(query || "")) };
 }
 
 export function href(page, params = {}) {

@@ -1,11 +1,10 @@
-// The Agents page as designed: six agent cards with what each is doing, the controls, suggestions from the agents,
-// and a page per agent. Everything shown is computed from the backend's jobs, inbox, runs, proposals and scorecard.
+// The Agent hub as designed: the agents by stage with what each is doing and its switch, the manager agent, the AI
+// requests and the proposals waiting in the Inbox, and a page per agent. Everything shown is computed from the backend's jobs, inbox, runs, proposals and scorecard.
 import { html, icon, day, addDays, href, plural, safeUrl } from "../lib.js";
 import { enc } from "../api.js";
 import { emptyState } from "../shell.js";
 import { tabBar, cancelButton, openButton } from "../forms.js";
 import { linkFor } from "./links.js";
-import { mayDecide } from "./sources.js";
 
 // What each agent does, in the words of the backend guide (docs/BACKEND_V2.md). Only facts the code implements.
 export const AGENTS = [
@@ -13,13 +12,13 @@ export const AGENTS = [
     slug: "research", name: "Research agent", icon: "search",
     job: "Researches one company on the public web: a brief with dated sources, flags for anything doubtful, a priority estimate and a contact only when a source names one.",
     when: ["A person picks a candidate or adds a company", "A person sends a company back with questions", "Another agent needs a missing person, such as who approves the budget", "A company is checked again for news"],
-    gives: ["A brief in Companies, Ready to decide; never a decision", "Contacts only when a source names them"],
+    gives: ["A brief in Companies, Your decision; never a decision", "Contacts only when a source names them"],
   },
   {
     slug: "outreach", name: "Outreach agent", icon: "outreach",
     job: "Writes the first email once a lead is accepted, follow-ups when a sent email has no reply, and reconnect notes that cite the company's latest news.",
     when: ["A company is accepted at Step 4", "A sent email has had no reply for the follow-up period", "A lead in nurture reaches its review date"],
-    gives: ["Email drafts in Outreach, To approve; nothing is sent until a person approves", "Citations of the research brief, checked by code"],
+    gives: ["Email drafts in Outreach, Needs you; nothing is sent until a person approves", "Citations of the research brief, checked by code"],
   },
   {
     slug: "evidence", name: "Evidence agent", icon: "fileCheck",
@@ -36,13 +35,13 @@ export const AGENTS = [
   {
     slug: "discovery", name: "Discovery agent", icon: "globe",
     job: "Finds companies in recent news that match what CGS looks for, on a schedule or when someone asks.",
-    when: ["Once a week", "A person asks on the Sources page"],
-    gives: ["Candidates in Companies, New candidates, each with the signal and its date"],
+    when: ["Once a week", "A person asks on the Find page"],
+    gives: ["Candidates in Companies, Found, each with the signal and its date"],
   },
   {
     slug: "direction", name: "Direction agent", icon: "compass",
     job: "Keeps what the agents look for up to date: learns from why people skip, accept or reject companies, and turns the CGS library into problems to watch for.",
-    when: ["Once a week", "A person asks on the Sources page"],
+    when: ["Once a week", "A person asks on the Find page"],
     gives: ["Proposed changes to the research direction; a person approves each one"],
   },
 ];
@@ -64,7 +63,8 @@ async function base(ctx) {
 }
 
 export async function loadOverview(ctx) {
-  return { mode: "overview", ...(await base(ctx)) };
+  const [b, todo] = await Promise.all([base(ctx), ctx.api.get("/todo").catch(() => null)]);
+  return { mode: "overview", ...b, todo };
 }
 
 export async function loadAgent(ctx, params) {
@@ -76,21 +76,6 @@ export async function loadAgent(ctx, params) {
 }
 
 // ---------- what waits for a person ----------
-// The suggestions the Agents page lists: direction changes, lessons, and inbox items that are not emails. The Agents
-// navigation count uses the same list, so the badge always equals what the page shows.
-export function suggestionLists(inbox, direction, lessons) {
-  return {
-    props: direction.proposals.filter((p) => p.status === "pending"),
-    lessons: lessons.filter((l) => l.status === "proposed"),
-    items: inbox.filter((i) => i.status === "new" && !["draft", "reply"].includes(i.kind)),
-  };
-}
-
-export function suggestionCount(inbox, direction, lessons) {
-  const s = suggestionLists(inbox, direction, lessons);
-  return s.props.length + s.lessons.length + s.items.length;
-}
-
 // How many items one agent prepared that wait for this person. The dock adds these up, so its "waiting for you" equals
 // the sum of the agent rows it opens.
 export function agentWaiting(a, inbox, direction, lessons) {
@@ -133,42 +118,104 @@ function monthStats(a, d, today) {
     used: judged ? `${Math.round((used / judged) * 100)}%` : null, judged };
 }
 
-// ---------- overview ----------
+// ---------- overview (design/redesign/Agents.dc.html) ----------
+// The agents by the stage of the work they serve, each with its state, what it is doing and its pause switch; then the
+// manager agent, today's AI requests and the agents' proposals waiting in the Inbox. The design's Workflows tab has no
+// backend (REDESIGN_PLAN G18).
+const STAGES = [
+  ["Find companies", ["discovery", "direction"]],
+  ["Research", ["research"]],
+  ["Reach out", ["outreach"]],
+  ["Qualify", ["evidence"]],
+];
+
+// How people received a stage's work (GET /api/manager/scorecard): results used of those judged, or for the Evidence
+// agent the proposals people confirmed of those decided.
+export function stageMetric(slugs, scorecard) {
+  if (!scorecard || scorecard.error) return null;
+  if (slugs.includes("evidence")) {
+    const t = scorecard.evidence && scorecard.evidence.totals;
+    return t && t.decided ? { label: "Proposals people confirmed", n: t.accepted, of: t.decided } : { label: "Proposals people confirmed", n: 0, of: 0 };
+  }
+  const names = slugs.map((s) => BY_SLUG[s].name);
+  const rows = (scorecard.work || []).filter((w) => names.includes(w.agent));
+  return { label: "Results people used", n: rows.reduce((n, w) => n + w.used, 0), of: rows.reduce((n, w) => n + w.judged, 0) };
+}
+
+function agentRow(a, d, ctx) {
+  const s = agentState(a, d, ctx.me);
+  const o = d.overview;
+  const pausable = PAUSABLE.includes(a.name);
+  const paused = (o.pausedAgents || []).includes(a.name);
+  return html`<li class="agent-row">
+    <span class="agent-row-text">
+      <span class="row-flex" style="gap:8px"><a class="md" href="${href("agents", { agent: a.slug })}">${a.name.replace(/ agent$/, "")}</a>
+        <span class="tag ${s.cls}">${s.dot === "run" ? html`<span class="dot run" aria-hidden="true"></span>` : ""}${s.label}</span></span>
+      <span class="${s.label === "Paused" ? "you-text" : "meta"}">${s.now}</span>
+    </span>
+    ${pausable ? html`<button type="button" class="switch" role="switch" aria-checked="${paused || o.paused ? "false" : "true"}" aria-label="${a.name}"
+        ${o.paused ? html`aria-disabled="true" title="Turned off with All agents"` : html`title="${paused ? "Turn it back on" : "Pause it"}"`}
+        data-act="pauseAgent" data-agent="${a.name}" data-paused="${paused ? "" : "1"}"><span></span></button>`
+      : html`<span class="meta-3" title="It runs when notes or a reply are saved, not from the task board">Runs on notes</span>`}
+  </li>`;
+}
+
 export function overview(d, ctx, st) {
   const o = d.overview;
+  const working = AGENTS.filter((a) => agentState(a, d, ctx.me).dot === "run").length;
   const pct = o.aiBudget ? Math.min(100, Math.round((o.aiCallsToday / o.aiBudget) * 100)) : 0;
+  const proposals = d.todo ? d.todo.groups.flatMap((g) => g.items).filter((r) => r.group === "steer" || r.group === "check").length : 0;
+  const manager = BY_SLUG.manager;
   return html`
   <div class="page-head">
     <div>
-      <h1>Agents</h1>
+      <h1>Agent hub <span class="tag ${o.paused ? "warn" : working ? "info" : ""}" style="vertical-align:middle;margin-left:8px">${working && !o.paused ? html`<span class="dot run" aria-hidden="true"></span>` : ""}${o.paused ? "All paused" : `${working} of ${AGENTS.length} working`}</span></h1>
       <p>Six agents prepare the work. People decide. Open an agent to see what it does, its work, its AI runs and its permissions.</p>
     </div>
-    <a class="btn ghost" href="${href("agents", { tab: "work" })}">Records</a>
+    <div class="head-side">
+      <a class="btn ghost" href="${href("agents", { tab: "work" })}">Records</a>
+      <span class="row-flex" style="gap:10px"><span class="meta">All agents</span>
+        <button type="button" class="switch" role="switch" aria-checked="${o.paused ? "false" : "true"}" aria-label="All agents" data-act="pause" data-paused="${o.paused ? "" : "1"}"><span></span></button></span>
+    </div>
   </div>
   ${st.err("top")}
   ${st.notices()}
-  <section class="card strip" aria-label="Controls">
-    <div class="strip-cell">
-      <div class="row-flex" style="justify-content:space-between;flex-wrap:nowrap">
-        <div><b>${o.paused ? "All agents paused" : "Pause all agents"}</b><p class="meta">${o.paused ? "Jobs wait. People can still work." : "Jobs wait, nothing new starts."}</p></div>
-        <button type="button" class="switch" role="switch" aria-checked="${o.paused ? "true" : "false"}" aria-label="Pause all agents" data-act="pause" data-paused="${o.paused ? "" : "1"}"><span></span></button>
-      </div>
-    </div>
-    <div class="strip-cell wide">
-      <div class="row-flex" style="justify-content:space-between"><b>AI requests today</b><b class="num">${o.aiCallsToday} of ${o.aiBudget}</b></div>
-      <div class="bar" aria-hidden="true"><span style="width:${pct}%"></span></div>
-      <p class="meta">One request is one call to the language model. The daily limit keeps costs predictable; when it runs out, agent jobs wait until tomorrow. ${st.ui.open === "settings" ? "" : html`<button type="button" class="link-btn" data-act="open" data-open="settings">Change the limit</button>`}</p>
-    </div>
-    <div class="strip-cell">
-      <b>Daily check</b>
-      <p class="meta">${String(o.patrolHour).padStart(2, "0")}:00 every day. ${o.managerMode === "on" ? "The manager agent looks at every open lead and plans the day." : o.managerMode === "shadow" ? "The manager agent decides in shadow mode; the rules queue the work." : "The rules queue the work; the manager agent is off."}
-        ${o.lastPatrol ? `Last run ${day(o.lastPatrol, ctx.today)}.` : "Not run yet."}</p>
-      <div class="actions" style="margin-top:8px">
-        <button type="button" class="btn small" data-act="patrol">Check now</button>
-        ${o.queued ? html`<button type="button" class="btn small" data-act="runQueue">Run ${plural(o.queued, "queued job")}</button>` : ""}
-      </div>
-    </div>
-  </section>
+  ${o.paused ? html`<div class="notice warn" role="status" style="margin-bottom:20px">${icon("alert")}<span><b>All agents are paused.</b> Nothing new is found, researched or drafted. Work already in your Inbox stays there.
+    <button type="button" class="btn primary small" style="margin-left:10px" data-act="pause" data-paused="">Turn agents back on</button></span></div>` : ""}
+  <div class="stage-cards">
+    ${STAGES.map(([name, slugs]) => {
+      const m = stageMetric(slugs, d.scorecard);
+      return html`<section class="card stage-card" aria-label="${name}">
+        <h2 class="ttl">${name}</h2>
+        ${m ? html`<div class="stack" style="gap:6px"><span class="meta-3">${m.label}, last ${(d.scorecard && d.scorecard.days) || 60} days</span>
+          <div class="row-flex" style="flex-wrap:nowrap;gap:10px"><span class="bar" style="flex:1;margin:0"><span style="width:${m.of ? Math.round((m.n / m.of) * 100) : 0}%"></span></span>
+            <span class="md num">${m.of ? `${m.n} of ${m.of}` : "None yet"}</span></div></div>` : ""}
+        <ul class="agent-rows">${slugs.map((s) => agentRow(BY_SLUG[s], d, ctx))}</ul>
+      </section>`;
+    })}
+  </div>
+  <div class="hub-row">
+    <section class="card hub-card wide" aria-labelledby="mgr-h">
+      <div class="sb"><h2 id="mgr-h" class="ttl">Manager agent <span class="tag">${o.managerMode === "on" ? "On" : o.managerMode === "shadow" ? "Shadow" : "Off"}</span></h2>
+        ${PAUSABLE.includes(manager.name) ? html`<button type="button" class="switch" role="switch" aria-checked="${(o.pausedAgents || []).includes(manager.name) || o.paused ? "false" : "true"}" aria-label="Manager agent"
+          ${o.paused ? html`aria-disabled="true"` : ""} data-act="pauseAgent" data-agent="${manager.name}" data-paused="${(o.pausedAgents || []).includes(manager.name) ? "" : "1"}"><span></span></button>` : ""}</div>
+      <p class="meta">${o.managerMode === "on" ? "Looks at every open lead at the daily check and plans the next action for each." : o.managerMode === "shadow" ? "Decides in shadow mode and compares; the rules queue the work." : "Off: the rules queue the work."} ${agentState(manager, d, ctx.me).now}.</p>
+      <dl class="dl"><dt>Daily check</dt><dd>${String(o.patrolHour).padStart(2, "0")}:00. ${o.lastPatrol ? `Last run ${day(o.lastPatrol, ctx.today)}.` : "Not run yet."}</dd></dl>
+      <div class="actions"><button type="button" class="btn small" data-act="patrol">Check now</button>
+        ${o.queued ? html`<button type="button" class="btn small" data-act="runQueue">Run ${plural(o.queued, "queued job")}</button>` : ""}</div>
+    </section>
+    <section class="card hub-card" aria-labelledby="ai-h">
+      <h2 id="ai-h" class="ttl">AI requests today</h2>
+      <div class="row-flex" style="align-items:baseline;gap:8px"><span class="n2">${o.aiCallsToday}</span><span class="meta">of ${o.aiBudget}</span></div>
+      <div class="bar" role="img" aria-label="${o.aiCallsToday} of ${o.aiBudget} used"><span style="width:${pct}%"></span></div>
+      ${st.ui.open === "settings" ? "" : html`<button type="button" class="link-btn" data-act="open" data-open="settings">Change the limit</button>`}
+    </section>
+    <section class="card hub-card" aria-labelledby="prop-h">
+      <h2 id="prop-h" class="ttl">Agent proposals</h2>
+      <div class="row-flex" style="align-items:baseline;gap:8px"><span class="n2">${proposals}</span><span class="meta">waiting in your Inbox</span></div>
+      <a class="btn small" href="${href("inbox", { tab: "proposal" })}" style="align-self:flex-start">Review in Inbox</a>
+    </section>
+  </div>
   ${st.ui.open === "settings" ? html`
   <section class="card card-body" style="margin-top:16px">
     <form class="panel-form" data-act="settingsForm" data-on="submit">
@@ -178,97 +225,12 @@ export function overview(d, ctx, st) {
         <label class="field">Manager agent<select name="manager_mode">${["off", "shadow", "on"].map((m) => html`<option ${m === o.managerMode ? "selected" : ""}>${m}</option>`)}</select>
           <span class="hint">Shadow: it decides and compares, but queues nothing.</span></label>
         <label class="field">First contact after Step 4<select name="first_contact">${[["email", "The first email"], ["plan", "A contact plan"]].map(([v, l]) => html`<option value="${v}" ${v === o.firstContact ? "selected" : ""}>${l}</option>`)}</select>
-          <span class="hint">A contact plan: the outreach agent proposes whom to approach and how; the owner approves it before any step.</span></label>
+          <span class="hint">A contact plan: the Outreach agent proposes whom to approach and how; the owner approves it before any step.</span></label>
       </div>
       <div class="actions"><button type="submit" class="btn primary">Save</button>${cancelButton}</div>
       ${st.err("settings")}
     </form>
-  </section>` : ""}
-  <div class="agent-grid">
-    ${AGENTS.map((a) => {
-      const s = agentState(a, d, ctx.me);
-      const m = monthStats(a, d, ctx.today);
-      return html`
-      <a class="agent-card" href="${href("agents", { agent: a.slug })}">
-        <span class="row-flex" style="flex-wrap:nowrap">
-          <span class="agent-icon" aria-hidden="true">${icon(a.icon, 20)}</span>
-          <b class="agent-name">${a.name}</b>
-          <span class="tag ${s.cls} with-dot ${s.dot}">${s.label}</span>
-        </span>
-        <span class="meta">${a.job}</span>
-        <span class="agent-now">${s.now}</span>
-        <span class="meta"><b class="num">${m.jobs}</b> ${m.jobs === 1 ? "job" : "jobs"} in the last 30 days${m.used ? html`. <b class="num">${m.used}</b> used as is${m.judged < 5 ? " (small sample)" : ""}` : ""}</span>
-      </a>`;
-    })}
-  </div>
-  ${suggestions(d, ctx, st)}`;
-}
-
-// ---------- suggestions from agents ----------
-function proposalTitle(p) {
-  if (p.type === "exclude") return `Leave ${p.target} out of future searches`;
-  return p.title || `Change ${p.field}`;
-}
-
-function suggestions(d, ctx, st) {
-  const byId = Object.fromEntries(d.opps.map((o) => [o.id, o]));
-  const { props, lessons, items } = suggestionLists(d.inbox, d.direction, d.lessons);
-  const drafts = d.inbox.filter((i) => ["draft", "reply"].includes(i.kind)).length;
-  const total = props.length + lessons.length + items.length;
-  return html`
-  <section aria-labelledby="sug-h" style="margin-top:32px">
-    <div class="row-flex" style="justify-content:space-between;margin-bottom:12px">
-      <h2 id="sug-h" class="section-title" style="margin:0">Suggestions from agents</h2>
-      ${drafts ? html`<a href="${href("outreach")}">${plural(drafts, "email draft or reply", "email drafts or replies")} on the Outreach page</a>` : ""}
-    </div>
-    ${total ? html`<div class="sug-grid">
-      ${props.map((p) => html`
-      <div class="suggestion">${icon("bulb", 20)}<div style="flex:1;min-width:0">
-        <b>${proposalTitle(p)}</b>
-        <p class="meta-3">${p.origin === "manual" ? `Proposed by ${p.proposedBy}` : p.origin === "ai" ? "From the direction agent's review" : "From feedback"}, ${day(p.createdOn, ctx.today)}</p>
-        <p class="meta" style="margin-top:6px">${p.rationale}</p>
-        <div class="actions" style="margin-top:12px">
-          ${mayDecide(p, ctx) ? html`<button type="button" class="btn primary small" data-act="decideProposal" data-id="${p.id}" data-verdict="approve">Apply</button>` : ""}
-          <a class="btn small" href="${href("sources", { tab: "direction" })}">See the change</a>
-          ${mayDecide(p, ctx) ? html`<button type="button" class="btn ghost small" data-act="decideProposal" data-id="${p.id}" data-verdict="reject">Dismiss</button>`
-            : html`<span class="meta-3">An admin decides.</span>`}
-        </div>
-        ${st.err(`prop:${p.id}`)}
-      </div></div>`)}
-      ${lessons.map((l) => html`
-      <div class="suggestion">${icon("bulb", 20)}<div style="flex:1;min-width:0">
-        <b>${l.text}</b>
-        <p class="meta-3">A lesson for the ${l.agent.toLowerCase()}, proposed by ${l.proposedBy}</p>
-        <p class="meta" style="margin-top:6px">${l.why}</p>
-        ${st.ui.open === `lesson:${l.id}` ? html`
-        <form class="panel-form" style="margin-top:10px" data-act="lessonDecide" data-on="submit" data-id="${l.id}" data-status="proposed">
-          <label class="field">Why reject it <span class="hint">The manager agent reads this before it proposes again.</span><textarea name="reason" rows="2"></textarea></label>
-          <div class="actions"><button type="submit" class="btn primary small" name="decision" value="reject">Reject lesson</button>${cancelButton}</div>
-          ${st.err(`lesson:${l.id}`)}
-        </form>` : html`
-        <div class="actions" style="margin-top:12px">
-          <button type="button" class="btn primary small" data-act="approveLesson" data-id="${l.id}">Approve lesson</button>
-          ${openButton(`lesson:${l.id}`, "Reject…", "btn ghost small", `Reject lesson ${l.label}`)}
-        </div>
-        ${st.err(`lesson:${l.id}`)}`}
-      </div></div>`)}
-      ${items.map((i) => {
-        const o = byId[i.opportunityId];
-        return html`
-      <div class="suggestion">${icon("bulb", 20)}<div style="flex:1;min-width:0">
-        <b>${i.title}</b>
-        <p class="meta-3">${i.agent}, ${day(i.on, ctx.today)}${o ? html`. <a href="${linkFor(o)}">${o.company}</a>` : ""}</p>
-        ${i.body ? html`<p class="meta" style="margin-top:6px;white-space:pre-wrap">${i.body}</p>` : ""}
-        <div class="actions" style="margin-top:12px">
-          ${["facts", "contact", "nurture"].includes(i.kind) ? html`<button type="button" class="btn primary small" data-act="item" data-do="apply" data-id="${i.id}" data-hash="${i.payloadHash || ""}">Apply</button>`
-            : html`<button type="button" class="btn primary small" data-act="item" data-do="done" data-id="${i.id}">Done</button>`}
-          <button type="button" class="btn ghost small" data-act="item" data-do="dismiss" data-id="${i.id}">Dismiss</button>
-        </div>
-        ${st.err(`item:${i.id}`)}
-      </div></div>`;
-      })}
-    </div>` : html`<section class="card">${emptyState("No suggestions waiting", "Direction changes, lessons for the agents and other prepared items appear here when an agent has one.")}</section>`}
-  </section>`;
+  </section>` : ""}`;
 }
 
 // ---------- one agent ----------

@@ -50,7 +50,7 @@ export function waitingNotice(w, me = "") {
     return html`<div class="block"><div class="notice ${mine ? "warn" : ""}" role="status">${icon("clock")}<div style="flex:1;min-width:0">
       <b>${mine ? `${w.by} asks you to approve this email to ${w.to}.` : `Approved by ${w.by}. It waits for ${w.approver}'s approval before it goes to ${w.to}.`}</b>
       <p class="meta">${mine ? `It goes out as ${w.by}, from ${w.by}'s mailbox, once you approve it. Nothing is sent before.`
-        : `${w.approver} sees it on their Home page. You can withdraw it until then: nothing is sent and the draft stays as it is.`}</p>
+        : `${w.approver} sees it in Outreach, under Needs you. You can withdraw it until then: nothing is sent and the draft stays as it is.`}</p>
       ${mine ? html`
       <div class="email-plain" style="margin-top:10px"><b>${w.subject}</b>\n\n${w.body || ""}</div>
       <form class="panel-form" data-act="secondForm" data-on="submit" data-out="${w.id}" style="margin-top:10px">

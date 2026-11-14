@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Library, CGS Lead Workspace</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="app">
+<div style="flex: none"><dc-import name="Rail" active="library" hint-size="232px,1040px"></dc-import></div>
+
+<main class="main">
+  <header class="top">
+    <h1 class="h1">Library</h1>
+    <span class="grow"></span>
+    <label class="fx" style="width: 260px; max-width: 100%; height: 32px; padding: 0 10px; background: #fff; border: 1px solid #D0D5DD; border-radius: 8px">
+      <svg class="i dim" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 11a7 7 0 1014 0 7 7 0 10-14 0M20 20l-3.5-3.5"></path></svg>
+      <input type="search" placeholder="Search what agents can quote" aria-label="Search the library" style="border: 0; outline: 0; background: transparent; flex: 1; min-width: 0">
+    </label>
+    <button type="button" class="b bs">Sync from Drive</button>
+  </header>
+
+  <div class="row">
+    <section class="card" style="flex: 1 1 180px; gap: 10px"><span class="mut md">Documents</span><span class="num n2">21</span></section>
+    <section class="card" style="flex: 1 1 180px; gap: 10px"><span class="mut md">Passages agents can quote</span><span class="num n2">126</span></section>
+    <section class="card" style="flex: 1 1 180px; gap: 10px"><span class="mut md">Quoted in emails, 30 days</span><span class="num n2">17</span></section>
+    <section class="card" style="flex: 2 1 320px; gap: 10px">
+      <span class="mut md">Where it comes from</span>
+      <div role="img" aria-label="15 documents from the public website, 6 from the demo library, none from Drive" style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; gap: 2px"><span style="flex: 15; background: #101828"></span><span style="flex: 6; background: #5B4FE0"></span></div>
+      <div class="fx sm mut" style="gap: 16px; flex-wrap: wrap"><span class="fx" style="gap: 6px"><span class="dot" aria-hidden="true" style="color: #101828"></span>Public website 15</span><span class="fx" style="gap: 6px"><span class="dot c-blue" aria-hidden="true"></span>Demo library 6</span><span class="fx" style="gap: 6px"><span class="dot" aria-hidden="true" style="color: #C8CDD6"></span>Drive 0</span></div>
+    </section>
+  </div>
+
+  <section class="card" style="gap: 16px">
+    <div role="tablist" class="tabs">
+      <button type="button" role="tab" class="tab" aria-selected="true">Documents<span class="cnt">21</span></button>
+      <button type="button" role="tab" class="tab" aria-selected="false">Passages<span class="cnt">126</span></button>
+      <button type="button" role="tab" class="tab" aria-selected="false">Sources<span class="cnt">3</span></button>
+    </div>
+    <div class="scroll">
+      <table class="tbl" style="min-width: 720px">
+        <thead><tr><th scope="col">Document</th><th scope="col">Type</th><th scope="col">Source</th><th scope="col" style="text-align: right">Passages</th><th scope="col" style="text-align: right">Quoted</th><th scope="col">Updated</th><th scope="col">Agents may quote</th></tr></thead>
+        <tbody>
+          <sc-for list="{{docs}}" as="d" hint-placeholder-count="8">
+            <tr>
+              <td class="sbd">{{d.name}}</td>
+              <td><span class="chip">{{d.type}}</span></td>
+              <td class="mut">{{d.source}}</td>
+              <td class="tn" style="text-align: right">{{d.passages}}</td>
+              <td class="tn" style="text-align: right">{{d.quoted}}</td>
+              <td class="mut">{{d.updated}}</td>
+              <td><button type="button" class="sw" role="switch" aria-checked="{{d.checked}}" aria-label="{{d.name}}" onClick="{{d.flip}}"><span></span></button></td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+    </div>
+    <span class="dim sm">Agents can only quote passages listed here. Documents from Drive stay inside CGS and are never sent to an outside indexing service.</span>
+  </section>
+</main>
+
+<div class="act"><dc-import name="Activity" start-open="{{ false }}" hint-size="130px,40px"></dc-import></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1040}}'>
+class Component extends DCLogic {
+renderVals() {
+  const off = (this.state && this.state.off) || {};
+  const mk = (name, type, source, passages, quoted, updated) => ({
+    name, type, source, passages, quoted, updated,
+    checked: off[name] ? 'false' : 'true',
+    flip: () => this.setState({ off: { ...off, [name]: !off[name] } })
+  });
+  return { docs: [
+    mk('Operating model white paper', 'White paper', 'Demo library', 14, 6, '12 Oct'),
+    mk('Services overview', 'Web page', 'Public website', 11, 4, '30 Oct'),
+    mk('Plant network redesign case', 'Case study', 'Demo library', 9, 3, '12 Oct'),
+    mk('Resiliency assessment overview', 'Web page', 'Public website', 8, 2, '30 Oct'),
+    mk('Podcast episode list', 'Web page', 'Public website', 12, 1, '30 Oct'),
+    mk('Supply chain planning primer', 'White paper', 'Demo library', 10, 1, '12 Oct'),
+    mk('About the firm', 'Web page', 'Public website', 6, 0, '30 Oct'),
+    mk('Leadership team', 'Web page', 'Public website', 7, 0, '30 Oct')
+  ] };
+}
+}
+</script>
+</body>
+</html>

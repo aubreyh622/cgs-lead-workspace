@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Find, CGS Lead Workspace</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap">
+<style>
+body{margin:0}
+.srow{display:grid;grid-template-columns:minmax(260px,3fr) 170px 120px minmax(170px,1.4fr) 96px 44px;align-items:center;column-gap:16px;padding:14px 20px;border-top:1px solid #EEF0F3}
+.srow.h{border-top:0;padding-top:12px;padding-bottom:10px;font-size:12px;font-weight:500;color:#667085}
+</style>
+</helmet>
+<div class="app">
+<div style="flex: none; display: flex"><dc-import name="Rail" active="find" hint-size="244px,1012px"></dc-import></div>
+
+<main class="main">
+  <header class="top" style="align-items: flex-end">
+    <div class="col" style="gap: 4px"><h1 class="h1">Find</h1><span class="mut">Tell the Discovery agent what to look for, once or on a schedule. What it finds lands in Companies.</span></div>
+    <span class="grow"></span>
+    <a class="b bs" href="Companies-found.dc.html">20 candidates to pick from</a>
+  </header>
+
+  <section class="card" style="gap: 14px">
+    <label class="t" for="ask">What kind of company should the agent look for?</label>
+    <div class="ask">
+      <svg class="i dim" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16v4M17 18h4"></path></svg>
+      <input id="ask" type="text" placeholder="Describe it in plain words, for example: Ohio manufacturers that changed their COO this year" value="{{q}}" onChange="{{onQ}}" onKeyDown="{{askKey}}">
+      <select class="inp" aria-label="How many" value="{{count}}" onChange="{{onCount}}" style="width: 130px; flex: none"><option value="5">Up to 5</option><option value="10">Up to 10</option><option value="20">Up to 20</option></select>
+      <button type="button" class="b bp" onClick="{{ask}}" style="height: 38px; padding: 0 16px">Ask</button>
+    </div>
+    <sc-if value="{{idle}}" hint-placeholder-val="{{ true }}">
+      <div class="fx" style="flex-wrap: wrap; gap: 8px">
+        <span class="dim sm">Try</span>
+        <sc-for list="{{examples}}" as="ex" hint-placeholder-count="3"><button type="button" class="b bs xs" onClick="{{ex.use}}">{{ex.text}}</button></sc-for>
+        <span class="grow"></span>
+        <button type="button" class="b bg xs" onClick="{{toAdd}}">Already have a company in mind?</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{adding}}" hint-placeholder-val="{{ false }}">
+      <div class="fx rule" style="flex-wrap: wrap">
+        <label class="fld grow" style="flex-basis: 280px">Company name or website<input class="inp" type="text" placeholder="Acme Castings or acmecastings.com" value="{{addName}}" onChange="{{onAdd}}"></label>
+        <button type="button" class="b bp" onClick="{{research}}" style="align-self: flex-end">Research it</button>
+        <button type="button" class="b bg" onClick="{{reset}}" style="align-self: flex-end">Cancel</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{confirming}}" hint-placeholder-val="{{ false }}">
+      <div class="card agent" style="gap: 14px; box-shadow: none">
+        <div class="sb" style="flex-wrap: wrap"><span class="sbd">Here is how the Discovery agent reads that</span><span class="chip blue">Check before it runs</span></div>
+        <dl class="kv">
+          <dt>Looking for</dt><dd>{{q}}</dd>
+          <dt>Kept from the research direction</dt><dd>Manufacturers with US operations. No resellers, no consulting competitors.</dd>
+          <dt>Where it looks</dt><dd>News and company announcements from the last 6 months</dd>
+          <dt>How many</dt><dd>Up to {{count}} companies, checked against Insightly for duplicates</dd>
+          <dt>Cost</dt><dd>About 4 of today's 46 remaining AI requests</dd>
+        </dl>
+        <div class="fx" style="flex-wrap: wrap">
+          <button type="button" class="b bp" onClick="{{runOnce}}">Run once</button>
+          <button type="button" class="b bs" onClick="{{runSave}}">Run and repeat every Monday</button>
+          <button type="button" class="b bg" onClick="{{reset}}">Change the wording</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ran}}" hint-placeholder-val="{{ false }}">
+      <div class="ok" role="status"><span class="d live" aria-hidden="true" style="margin: 0"></span><span class="grow" style="display: flex; flex-direction: column; flex-basis: 280px"><span class="sbd">{{ranHead}}</span><span>{{ranBody}}</span></span><a class="b bs" href="Companies-found.dc.html">See candidates</a><button type="button" class="b bg" onClick="{{reset}}">Ask again</button></div>
+    </sc-if>
+  </section>
+
+  <div role="tablist" class="tabs">
+    <sc-for list="{{tabs}}" as="t" hint-placeholder-count="3">
+      <button type="button" role="tab" class="tab" aria-selected="{{t.selected}}" onClick="{{t.pick}}">{{t.label}}<span class="cnt">{{t.count}}</span></button>
+    </sc-for>
+  </div>
+
+  <sc-if value="{{isSearches}}" hint-placeholder-val="{{ true }}">
+    <section class="card flat">
+      <div class="scroll"><div style="min-width: 940px">
+        <div class="srow h"><span>Search</span><span>Runs</span><span>Each run</span><span>Last run</span><span></span><span>On</span></div>
+        <sc-for list="{{searches}}" as="s" hint-placeholder-count="3">
+          <div class="srow">
+            <span class="col" style="gap: 2px"><span class="sbd">{{s.name}}</span><span class="mut sm">{{s.query}}</span></span>
+            <select class="inp" aria-label="{{s.schedLabel}}" value="{{s.sched}}" onChange="{{s.setSched}}"><option value="Every day at 07:00">Every day at 07:00</option><option value="Every Monday at 07:00">Every Monday at 07:00</option><option value="First of the month">First of the month</option><option value="Only when I run it">Only when I run it</option></select>
+            <select class="inp" aria-label="{{s.countLabel}}" value="{{s.count}}" onChange="{{s.setCount}}"><option value="5">Up to 5</option><option value="10">Up to 10</option><option value="20">Up to 20</option></select>
+            <span class="col" style="gap: 2px"><span class="{{s.lastCls}}">{{s.last}}</span><span class="dim sm">{{s.result}}</span></span>
+            <button type="button" class="b bs xs" onClick="{{s.run}}">{{s.runLabel}}</button>
+            <button type="button" class="sw" role="switch" aria-checked="{{s.checked}}" aria-label="{{s.name}}" onClick="{{s.flip}}"><span></span></button>
+          </div>
+        </sc-for>
+      </div></div>
+      <div class="fx sm dim" style="padding: 12px 20px; border-top: 1px solid #EEF0F3; background: #FAFAFC; flex-wrap: wrap">Scheduled searches use the day's AI requests (14 of 60 used today). <a href="Agents.dc.html">Change the limit or pause all agents</a></div>
+    </section>
+  </sc-if>
+
+  <sc-if value="{{isDirection}}" hint-placeholder-val="{{ false }}">
+    <div class="row" style="align-items: flex-start">
+      <section class="card" style="flex: 3 1 480px; gap: 16px">
+        <div class="sb" style="flex-wrap: wrap"><div class="col" style="gap: 2px"><h2 class="t">Research direction</h2><span class="mut sm">The standing brief every search and every research brief follows.</span></div><span class="fx"><span class="chip">Version 0.3</span><button type="button" class="b bs">Edit</button></span></div>
+        <div class="col" style="gap: 4px"><span class="lbl">What CGS is looking for</span><p style="max-width: 72ch">Manufacturers with a recent business event that may create AI, digital strategy or operating model planning work. A merger, a product expansion or a leadership change is enough to look closer. That they need outside advice stays a guess until someone talks to them.</p></div>
+        <dl class="kv rule">
+          <dt>Industry</dt><dd>Manufacturing</dd>
+          <dt>Where</dt><dd>Operations in the United States. Headquarters may be elsewhere.</dd>
+          <dt>Signals</dt><dd class="fx" style="flex-wrap: wrap; gap: 6px"><span class="chip">AI pilots that will not scale</span><span class="chip">Scattered digital projects</span><span class="chip">New transformation leader</span><span class="chip">Merger or product expansion</span></dd>
+          <dt>Buyers</dt><dd class="fx" style="flex-wrap: wrap; gap: 6px"><span class="chip">Chief Information Officer</span><span class="chip">Chief Digital Officer</span><span class="chip">Chief Strategy Officer</span><span class="chip">Head of Transformation</span></dd>
+          <dt>Leave out</dt><dd>Pure resellers, consulting competitors</dd>
+          <dt>Sources it may use</dt><dd>Company pages and dated announcements, regulatory filings, credible business press</dd>
+          <dt>How fresh</dt><dd>Signals under 12 months old. Job titles confirmed in the last 6 months.</dd>
+        </dl>
+        <span class="dim sm rule">Approved by Quinn Harper on 20 Oct. Every change makes a new version, and old briefs keep the version they were written under.</span>
+      </section>
+      <div class="col" style="flex: 2 1 300px">
+        <section class="card agent" style="gap: 10px">
+          <span class="chip blue" style="align-self: flex-start">Direction agent proposes</span>
+          <h3 class="t">Drop Manager-level roles from the buyer list</h3>
+          <span class="mut">4 of the last 5 contacts at Manager level were rejected at Your decision.</span>
+          <a class="b bs" href="Inbox.dc.html" style="align-self: flex-start">Review in Inbox</a>
+        </section>
+        <section class="card" style="gap: 6px">
+          <h3 class="t" style="padding-bottom: 6px">Earlier versions</h3>
+          <div class="list">
+            <div class="li"><span class="grow col" style="gap: 1px"><span class="md">0.3, current</span><span class="dim sm">Added mergers and product expansion as signals</span></span><span class="dim sm">20 Oct</span></div>
+            <div class="li"><span class="grow col" style="gap: 1px"><span class="md">0.2</span><span class="dim sm">Narrowed to manufacturers with US operations</span></span><span class="dim sm">6 Oct</span></div>
+            <div class="li"><span class="grow col" style="gap: 1px"><span class="md">0.1</span><span class="dim sm">First version</span></span><span class="dim sm">22 Sep</span></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isTaught}}" hint-placeholder-val="{{ false }}">
+    <section class="card flat">
+      <div style="padding: 16px 20px; border-bottom: 1px solid #EEF0F3" class="col"><h2 class="t">Which signals lead to accepted leads</h2><span class="mut sm" style="margin-top: -12px">Counted from your decisions over the last 8 weeks. The Direction agent uses this to propose changes; nothing changes without your approval.</span></div>
+      <div class="scroll"><div style="min-width: 760px">
+        <div class="srow h" style="grid-template-columns: minmax(240px,2fr) 90px 90px minmax(200px,2fr) minmax(200px,1.6fr)"><span>Signal</span><span>Found</span><span>Accepted</span><span>Acceptance</span><span>What the agent does with it</span></div>
+        <sc-for list="{{taught}}" as="g" hint-placeholder-count="5">
+          <div class="srow" style="grid-template-columns: minmax(240px,2fr) 90px 90px minmax(200px,2fr) minmax(200px,1.6fr)">
+            <span class="sbd">{{g.signal}}</span><span class="tn">{{g.found}}</span><span class="tn">{{g.accepted}}</span>
+            <span class="fx" style="gap: 10px"><span class="bar {{g.bar}} grow" role="img" aria-label="{{g.rate}}"><span style="width: {{g.rate}}"></span></span><span class="tn sm mut" style="width: 36px; text-align: right">{{g.rate}}</span></span>
+            <span class="{{g.noteCls}}">{{g.note}}</span>
+          </div>
+        </sc-for>
+      </div></div>
+    </section>
+  </sc-if>
+</main>
+
+<div class="act"><dc-import name="Activity" start-open="{{ false }}" hint-size="130px,40px"></dc-import></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1040}}'>
+class Component extends DCLogic {
+renderVals() {
+  const st = this.state || {};
+  const tab = st.tab || 'searches';
+  const phase = st.phase || 'idle';
+  const q = st.q || '';
+  const count = st.count || '10';
+  const edits = st.edits || {};
+  const base = [
+    { id: 'main', name: 'Main search', query: 'Manufacturers with a recent event that may create AI or operating model planning work', sched: 'Every Monday at 07:00', count: '10', last: 'Today 07:00, round 4', result: '10 found, 3 accepted so far', on: true },
+    { id: 'coo', name: 'New operations leaders', query: 'Manufacturers that named a new COO or Head of Operations', sched: 'Every day at 07:00', count: '5', last: 'Today 07:00', result: '2 found, both already in Companies', on: true },
+    { id: 'merger', name: 'Mergers in the Midwest', query: 'Midwest manufacturers that completed an acquisition this year', sched: 'First of the month', count: '10', last: '1 Oct', result: '6 found, 1 accepted', on: false }
+  ];
+  const extra = st.extra || [];
+  const list = extra.concat(base);
+  const running = st.running || {};
+  const searches = list.map((s) => {
+    const e = edits[s.id] || {};
+    const on = e.on == null ? s.on : e.on;
+    const set = (k) => (ev) => this.setState({ edits: { ...edits, [s.id]: { ...e, [k]: ev.target.value } } });
+    const isRun = !!running[s.id];
+    return {
+      name: s.name, query: s.query,
+      sched: e.sched || s.sched, count: e.count || s.count, setSched: set('sched'), setCount: set('count'),
+      schedLabel: 'When ' + s.name + ' runs', countLabel: 'How many per run for ' + s.name,
+      last: isRun ? 'Running now' : (on ? s.last : 'Paused'), lastCls: isRun ? 'c-blue md' : (on ? 'md' : 'c-org md'),
+      result: isRun ? 'New candidates appear in Companies' : s.result,
+      runLabel: isRun ? 'Running' : 'Run now',
+      run: () => this.setState({ running: { ...running, [s.id]: true } }),
+      checked: on ? 'true' : 'false',
+      flip: () => this.setState({ edits: { ...edits, [s.id]: { ...e, on: !on } } })
+    };
+  });
+  const ask = () => { if (q.trim()) this.setState({ phase: 'confirm' }); };
+  const T = (signal, found, accepted, note, tone) => {
+    const rate = Math.round((accepted / found) * 100);
+    return { signal, found, accepted, rate: rate + '%', bar: rate >= 30 ? 'grn' : rate > 0 ? 'lite' : 'org', note, noteCls: tone ? 'sm md ' + tone : 'sm mut' };
+  };
+  return {
+    q, count,
+    onQ: (e) => this.setState({ q: e.target.value }),
+    onCount: (e) => this.setState({ count: e.target.value }),
+    ask, askKey: (e) => { if (e.key === 'Enter') ask(); },
+    idle: phase === 'idle', confirming: phase === 'confirm', ran: phase === 'ran', adding: phase === 'add',
+    examples: ['Ohio manufacturers that changed their COO this year', 'Food producers merging plants or warehouses', 'Companies hiring a first Head of Transformation'].map((text) => ({ text, use: () => this.setState({ q: text, phase: 'confirm' }) })),
+    toAdd: () => this.setState({ phase: 'add' }),
+    addName: st.addName || '', onAdd: (e) => this.setState({ addName: e.target.value }),
+    research: () => this.setState({ phase: 'ran', ranHead: 'Researching ' + ((st.addName || '').trim() || 'that company'), ranBody: 'It skips Found and goes straight to Researching. The brief comes to your Inbox, usually within a day.' }),
+    runOnce: () => this.setState({ phase: 'ran', ranHead: 'The Discovery agent is searching', ranBody: 'Up to ' + count + ' companies, usually within 10 minutes. They appear in Companies under Found, and you get a notice.' }),
+    runSave: () => this.setState({ phase: 'ran', ranHead: 'Searching now, and saved to run every Monday', ranBody: 'It is the first row under Searches below. Change the schedule or switch it off there.',
+      extra: [{ id: 'x' + extra.length, name: 'New search', query: q, sched: 'Every Monday at 07:00', count, last: 'Running now', result: 'First run', on: true }].concat(extra) }),
+    ranHead: st.ranHead || '', ranBody: st.ranBody || '',
+    reset: () => this.setState({ phase: 'idle' }),
+    tabs: [['searches', 'Searches', String(list.length)], ['direction', 'Research direction', ''], ['taught', 'What searches taught', '']].map(([id, label, c]) => ({
+      label, count: c, selected: id === tab ? 'true' : 'false', pick: () => this.setState({ tab: id })
+    })),
+    isSearches: tab === 'searches', isDirection: tab === 'direction', isTaught: tab === 'taught',
+    searches,
+    taught: [
+      T('New operations leadership', 12, 5, 'Searches for it first'),
+      T('Merger or acquisition', 9, 3, 'No change'),
+      T('Plant automation program', 8, 2, 'No change'),
+      T('ERP or warehouse system replacement', 9, 1, 'Ranks these lower'),
+      T('Union contract renewal', 4, 0, 'Proposes dropping it', 'c-org')
+    ]
+  };
+}
+}
+</script>
+</body>
+</html>

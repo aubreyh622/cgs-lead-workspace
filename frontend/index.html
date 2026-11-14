@@ -6,16 +6,21 @@
 <meta name="description" content="CGS Lead Workspace: review what the agents prepared and decide.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/app/styles.css">
 <script type="module" src="/app/main.js"></script>
 </head>
 <body>
 <button type="button" class="skip" data-shell="skip">Skip to the page</button>
-<header id="top" class="top"></header>
-<main id="main" class="page" tabindex="-1">
-  <noscript>The CGS Lead Workspace needs JavaScript.</noscript>
-</main>
+<div class="shell">
+  <nav id="rail" class="rail" aria-label="Main"></nav>
+  <div class="content">
+    <main id="main" class="page" tabindex="-1">
+      <noscript>The CGS Lead Workspace needs JavaScript.</noscript>
+    </main>
+  </div>
+</div>
+<dialog id="palette" class="palette" aria-label="Search"></dialog>
 <div id="dock" class="dock"></div>
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
 </body>

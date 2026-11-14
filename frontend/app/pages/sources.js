@@ -1,4 +1,4 @@
-// Sources: where companies come from. Find candidates now, add a company by hand, the research direction the agents
+// Find (route #/find; the old #/sources still opens it): where companies come from. Find candidates now, add a company by hand, the research direction the agents
 // follow, changes proposed to it (a person approves each one), and what earlier searches taught.
 import { html, icon, day, href, plural } from "../lib.js";
 import { enc } from "../api.js";
@@ -15,9 +15,10 @@ function approval(cur) {
   return `, approved by ${cur.approvedBy}`;
 }
 
-export const title = "Sources";
+export const title = "Find";
 
-const TABS = [["find", "Find companies"], ["direction", "Research direction"], ["learned", "What searches taught"]];
+const TABS = [["searches", "Searches"], ["direction", "Research direction"], ["learned", "What searches taught"]];
+const TAB_ALIAS = { find: "searches" };  // the tab's name before the redesign
 const FIELDS = [
   ["problem", "Problem CGS looks for"],
   ["signals", "Signals"],
@@ -38,10 +39,13 @@ const st = pageState();
 let field = "signals"; // the field chosen in the "propose a change" form
 
 export async function load(ctx, params) {
-  const tab = TABS.some(([t]) => t === params.tab) ? params.tab : "find";
-  const [direction, search] = await Promise.all([ctx.api.get("/direction"), ctx.api.get("/search/settings").catch(() => null)]);
-  const data = { tab, direction, search };
-  if (tab === "find") data.searches = await ctx.api.get("/discovery/searches").catch((e) => ({ error: e.message }));
+  const asked = TAB_ALIAS[params.tab] || params.tab;
+  const tab = TABS.some(([t]) => t === asked) ? asked : "searches";
+  if (params.tab !== tab) ctx.replace("find", { tab });
+  const [direction, search, searches, cands, agents] = await Promise.all([ctx.api.get("/direction"), ctx.api.get("/search/settings").catch(() => null),
+    ctx.api.get("/discovery/searches").catch((e) => ({ error: e.message })), ctx.api.get("/candidates?status=new").catch(() => []),
+    ctx.api.get("/agents").catch(() => ({}))]);
+  const data = { tab, direction, search, searches, found: cands.length, agents };
   if (tab === "learned") {
     [data.memory, data.feedback] = await Promise.all([ctx.api.get("/discovery/memory"), ctx.api.get("/feedback")]);
   }
@@ -51,43 +55,69 @@ export async function load(ctx, params) {
 export function view(d, ctx) {
   const pending = d.direction.proposals.filter((p) => p.status === "pending").length;
   return html`
-  <a class="back" href="${href("companies")}">${icon("back", 16)}Companies</a>
-  <div class="page-head" style="margin-top:12px">
+  <div class="page-head">
     <div>
-      <h1>Where companies come from</h1>
-      <p>Ask the discovery agent for companies now, add one yourself, and set what the agents look for. Anyone may propose a change to the direction; an admin approves changes to the team's direction.</p>
+      <h1>Find</h1>
+      <p>Tell the Discovery agent what to look for, once or on a schedule. What it finds lands in Companies.</p>
     </div>
+    <div class="head-side"><a class="btn" href="${href("companies", { tab: "found" })}">${d.found ? `${plural(d.found, "candidate")} to pick from` : "No candidates waiting"}</a></div>
   </div>
   ${st.notices()}
-  ${tabBar("Sources", TABS, d.tab, { direction: pending || undefined })}
+  ${askCard(d, ctx)}
+  ${tabBar("Find", TABS, d.tab, { searches: Array.isArray(d.searches) ? d.searches.length : undefined, direction: pending || undefined })}
   <div id="panel" role="tabpanel" aria-labelledby="tab-${d.tab}">
-    ${d.tab === "find" ? findView(d, ctx) : d.tab === "direction" ? directionView(d, ctx) : learnedView(d, ctx)}
+    ${d.tab === "searches" ? searchesCard(d, ctx) : d.tab === "direction" ? directionView(d, ctx) : learnedView(d, ctx)}
   </div>`;
 }
 
-// ----- find -----
-function findView(d, ctx) {
+// ----- ask: one search now, or saved to repeat -----
+// The design shows how the Discovery agent reads the request, and its cost, before it runs. The backend has no dry run
+// (REDESIGN_PLAN G17), so the page repeats what will be asked and how many, and runs it on a click.
+// "Try": one request per signal of the approved direction, so the examples always fit what CGS looks for. A click
+// goes to the confirm step, as Ask does; nothing runs without Run once.
+function tryLine(d) {
+  const signals = ((d.direction && d.direction.current && d.direction.current.signals) || []).slice(0, 3);
+  if (!signals.length) return "";
+  return html`<span class="meta-3">Try</span>${signals.map((x) => html`<button type="button" class="btn small" data-act="tryAsk" data-intent="Companies with: ${x}">${x}</button>`)}`;
+}
+
+function askCard(d, ctx) {
   const s = d.search;
+  const c = st.ui.confirm;
+  const a = d.agents || {};
   return html`
-  <div class="two-col">
-    <div class="main stack">
-      <section class="card" aria-labelledby="rec-h">
-        <div class="card-head"><div><h2 id="rec-h">Ask the discovery agent</h2>
-          <p class="meta">It searches recent news for companies that match the research direction and checks every result before you see it.</p></div></div>
-        <form class="card-body panel-form" data-act="recommendForm" data-on="submit">
-          <label class="field">What to look for, in your own words <span class="hint">Optional. Empty means the research direction alone.</span>
-            <textarea name="intent" rows="3" placeholder="For example: mid-size food manufacturers opening a new plant this year"></textarea></label>
-          ${countPicker("count", 10, "How many companies, at most")}
-          <div class="actions"><button type="submit" class="btn primary">Find candidates</button>
-            ${s ? html`<span class="meta-3">Searches ${SEARCH_NAMES[s.provider] || s.provider}, news from the last ${s.recency_days} days.</span>` : ""}</div>
-          ${st.err("recommend")}
-        </form>
-      </section>
-      ${searchesCard(d, ctx)}
-      <section class="card" aria-labelledby="add-h">
-        <div class="card-head"><div><h2 id="add-h">Add a company yourself</h2>
-          <p class="meta">For a referral, a conference contact or an inbound enquiry. Research starts at once, and the company then waits for a decision like any other.</p></div></div>
-        <form class="card-body panel-form" data-act="addForm" data-on="submit input">
+  <section class="card ask-card" aria-labelledby="ask-h">
+    <form class="ask" data-act="askForm" data-on="submit">
+      <label id="ask-h" class="ttl" for="ask-q">What kind of company should the agent look for?</label>
+      <div class="ask-line">
+        ${icon("sparkle", 16)}
+        <input id="ask-q" name="intent" value="${c ? c.intent : st.ui.draft || ""}" placeholder="Describe it in plain words, for example: manufacturers that changed their COO this year">
+        <label class="sr-only" for="ask-n">How many</label>
+        <select id="ask-n" name="count">${[5, 10].map((n) => html`<option value="${n}" ${(c ? c.count : 10) === n ? "selected" : ""}>Up to ${n}</option>`)}</select>
+        <button type="submit" class="btn primary">Ask</button>
+      </div>
+    </form>
+    ${c ? html`<div class="confirm-box">
+      <b>Check before it runs</b>
+      <dl class="dl">
+        <dt>Looking for</dt><dd>${c.intent || "What the research direction describes"}</dd>
+        <dt>Kept from the direction</dt><dd>${d.direction.current ? `Direction ${d.direction.current.version}` : "No direction yet"}: its signals, buyers and what it leaves out</dd>
+        <dt>Where it looks</dt><dd>${s ? `In ${SEARCH_NAMES[s.provider] || s.provider}, news from the last ${s.recency_days} days` : "Recent news"}</dd>
+        <dt>How many</dt><dd>Up to ${c.count} companies, checked for duplicates before you see them</dd>
+        <dt>Cost</dt><dd>A few of today's AI requests (${a.aiCallsToday !== undefined ? `${a.aiCallsToday} of ${a.aiBudget} used` : "the daily limit applies"})</dd>
+      </dl>
+      <div class="actions">
+        <button type="button" class="btn primary" data-act="runOnce">Run once</button>
+        <button type="button" class="btn" data-act="runSave" ${c.intent.length >= 10 ? "" : "disabled title=\"Describe it in at least 10 characters to save it\""}>Run and repeat every Monday</button>
+        <button type="button" class="btn ghost" data-act="changeAsk">Change the wording</button>
+      </div>
+      ${st.err("recommend")}
+    </div>` : st.ui.open === "add" ? "" : html`<div class="row-flex">${tryLine(d)}<span class="meta-3" style="flex:1">Empty means the research direction alone.</span>
+      ${openButton("add", "Already have a company in mind?", "btn ghost small")}</div>`}
+    ${st.ui.open === "add" ? html`
+        <form class="panel-form" data-act="addForm" data-on="submit input">
+          <h2 class="sub-title" style="margin:0">Add a company yourself</h2>
+          <p class="meta">For a referral, a conference contact or an inbound enquiry. Research starts at once; it skips Found.</p>
           <div class="form-grid">
             <label class="field">Company<input name="company" required></label>
             <label class="field">Website <span class="hint">For example company.com</span><input name="domain"></label>
@@ -98,20 +128,10 @@ function findView(d, ctx) {
             <label class="field">Where it came from<select name="source">${SOURCES.map((x) => html`<option>${x}</option>`)}</select></label>
           </div>
           <label class="field">Notes <span class="hint">What you know: why now, who introduced you.</span><textarea name="notes" rows="3"></textarea></label>
-          <div class="actions"><button type="submit" class="btn primary" disabled>Add and research</button><span class="missing" data-missing>Give the company name.</span></div>
+          <div class="actions"><button type="submit" class="btn primary" disabled>Research it</button>${cancelButton}<span class="missing" data-missing>Give the company name.</span></div>
           ${st.err("add")}
-        </form>
-      </section>
-    </div>
-    <aside class="side">
-      <section class="card card-body">
-        <h2 class="section-title">The direction in use</h2>
-        <p class="meta">Version ${d.direction.current ? d.direction.current.version : "none"}${approval(d.direction.current)}.</p>
-        ${d.direction.current ? html`<p style="margin-top:8px">${d.direction.current.problem}</p>` : ""}
-        <p style="margin-top:12px"><a href="${href("sources", { tab: "direction" })}">See or change the direction</a></p>
-      </section>
-    </aside>
-  </div>`;
+        </form>` : ""}
+  </section>`;
 }
 
 function countPicker(name, current, legend) {
@@ -125,12 +145,14 @@ function searchesCard(d, ctx) {
   return html`
   <section class="card" aria-labelledby="auto-h">
     <div class="card-head"><div><h2 id="auto-h">Automatic searches</h2>
-      <p class="meta">The discovery agent runs these on its own, at the daily check. Results wait in Companies, New candidates, for you to pick or skip.</p></div>
+      <p class="meta">The discovery agent runs these on its own, at the daily check. Results wait in Companies, Found, for you to pick or set aside.</p></div>
       ${st.ui.open === "search:new" ? "" : openButton("search:new", "New automatic search", "btn small")}</div>
     ${st.ui.open === "search:new" ? html`<div class="card-body">${searchForm(null)}</div>` : ""}
     ${list.error ? html`<div class="card-body"><div class="notice bad">${icon("alert")}<span>${list.error}</span></div></div>`
       : html`<ul class="rows">${list.map((x) => searchRow(x, ctx))}</ul>`}
     ${st.err("searches")}
+    <p class="meta-3 card-foot">Searches use the day's AI requests${d.agents && d.agents.aiBudget !== undefined ? ` (${d.agents.aiCallsToday} of ${d.agents.aiBudget} used today)` : ""}.
+      <a href="${href("agents")}">Change the limit or pause all agents</a></p>
   </section>`;
 }
 
@@ -294,8 +316,13 @@ function learnedView(d, ctx) {
       <div class="card-head"><div><h2 id="sig-h">Signals that led to leads</h2>
         <p class="meta">Counted from ${plural(m.decided, "decided candidate")}. The discovery agent sees these numbers as hints, not rules.</p></div></div>
       ${m.signals.length ? html`<div class="table-wrap"><table class="list">
-        <thead><tr><th scope="col">Signal</th><th scope="col">Found</th><th scope="col">Picked</th><th scope="col">Accepted</th><th scope="col">Rejected at Step 4</th><th scope="col">Skipped</th></tr></thead>
-        <tbody>${m.signals.map((x) => html`<tr><td><b>${x.signal}</b></td><td class="num">${x.nominated}</td><td class="num">${x.picked}</td><td class="num">${x.accepted}</td><td class="num">${x.rejected_at_step_4}</td><td class="num">${x.skipped}</td></tr>`)}</tbody>
+        <thead><tr><th scope="col">Signal</th><th scope="col">Found</th><th scope="col">Picked</th><th scope="col">Accepted</th><th scope="col">Acceptance</th><th scope="col">Rejected at Step 4</th><th scope="col">Skipped</th></tr></thead>
+        <tbody>${m.signals.map((x) => {
+          const rate = x.nominated ? Math.round((x.accepted / x.nominated) * 100) : 0;
+          return html`<tr><td><b>${x.signal}</b></td><td class="num">${x.nominated}</td><td class="num">${x.picked}</td><td class="num">${x.accepted}</td>
+            <td><span class="rate-cell"><span class="bar ${rate >= 30 ? "done" : rate ? "agent" : "you"}"><span style="width:${rate}%"></span></span><span class="meta-3 num">${rate}%</span></span></td>
+            <td class="num">${x.rejected_at_step_4}</td><td class="num">${x.skipped}</td></tr>`;
+        })}</tbody>
       </table></div>` : emptyState("Nothing counted yet", "Signals appear once people pick or skip candidates.")}
     </section>
     <div class="form-grid">
@@ -328,16 +355,52 @@ function queryList(list) {
 
 // ---------- actions ----------
 export const actions = {
-  tab(t, e, ctx) { st.reset(); ctx.go("sources", { tab: t.dataset.tab }); },
-  tabkeys(t, e, ctx) { tabKeys(t, e, ctx, (tab) => { st.reset(); ctx.go("sources", { tab }); }); },
+  tab(t, e, ctx) { st.reset(); ctx.go("find", { tab: t.dataset.tab }); },
+  tabkeys(t, e, ctx) { tabKeys(t, e, ctx, (tab) => { st.reset(); ctx.go("find", { tab }); }); },
   open(t, e, ctx) { st.ui.open = t.dataset.open || null; st.ui.error = null; ctx.refresh(); },
   pickField(t, e, ctx) { field = t.value; ctx.refresh(); },
 
-  recommendForm(form, e, ctx) {
-    const count = Number(form.elements.count.value) || 10;
-    st.write("recommend", form.querySelector("[type=submit]"), ctx, () => ctx.api.post("/candidates/recommend", { intent: form.elements.intent.value.trim(), count }), (res) => {
-      st.ui.notice = [{ text: `Search round ${res.round}: ${plural(res.candidates, "new candidate")}.`, cls: res.candidates ? "good" : "" }];
-      if (res.candidates) ctx.toast(`${plural(res.candidates, "new candidate")} to pick from.`, { link: { href: href("companies", { tab: "new" }), label: "Open them" } });
+  // Ask: show what will be asked, then run it on a click.
+  askForm(form, e, ctx) {
+    st.ui.confirm = { intent: form.elements.intent.value.trim(), count: Number(form.elements.count.value) || 10 };
+    st.ui.draft = null;
+    st.ui.error = null;
+    st.ui.open = null;
+    ctx.focusAfter = "[data-act=runOnce]";
+    ctx.refresh();
+  },
+  tryAsk(t, e, ctx) {
+    st.ui.confirm = { intent: t.dataset.intent, count: 10 };
+    st.ui.draft = null;
+    st.ui.error = null;
+    ctx.focusAfter = "[data-act=runOnce]";
+    ctx.refresh();
+  },
+  changeAsk(t, e, ctx) {
+    st.ui.draft = st.ui.confirm ? st.ui.confirm.intent : "";
+    st.ui.confirm = null;
+    ctx.focusAfter = "#ask-q";
+    ctx.refresh();
+  },
+  runOnce(t, e, ctx) {
+    const c = st.ui.confirm;
+    st.write("recommend", t, ctx, () => ctx.api.post("/candidates/recommend", { intent: c.intent, count: c.count }), (res) => {
+      st.ui.confirm = null;
+      st.ui.notice = [{ text: `Search round ${res.round}: ${plural(res.candidates, "new candidate")}. They are in Companies, under Found.`, cls: res.candidates ? "good" : "" }];
+      if (res.candidates) ctx.toast(`${plural(res.candidates, "new candidate")} to pick from.`, { link: { href: href("companies", { tab: "found" }), label: "Open them" } });
+    });
+  },
+  // Saved as an automatic search every Monday (POST /api/discovery/searches), and run once now.
+  runSave(t, e, ctx) {
+    const c = st.ui.confirm;
+    const name = c.intent.length > 48 ? `${c.intent.slice(0, 45).trim()}…` : c.intent;
+    st.write("recommend", t, ctx, async () => {
+      const saved = await ctx.api.post("/discovery/searches", { name, query: c.intent, freq: "week", weekday: 0, per_run: c.count });
+      const res = await ctx.api.post("/candidates/recommend", { intent: c.intent, count: c.count });
+      return { saved, res };
+    }, ({ saved, res }) => {
+      st.ui.confirm = null;
+      st.ui.notice = [{ text: `Searched now (${plural(res.candidates, "new candidate")}), and saved as “${saved.name}” to run every Monday. Change it under Searches.`, cls: "good" }];
     });
   },
   searchForm(form, e, ctx) {
