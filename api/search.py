@@ -6,7 +6,8 @@ returning up to N results, each {"title", "url", "content", "published"} ("publi
 
 Built in:
     mock    a synthetic internet (api/seed/mock_web.json): invented companies, no key, no cost
-    tavily  real web search (needs TAVILY_API_KEY)
+    google  Google Search through Gemini (GEMINI_API_KEY, or the service account on Google Cloud); pages read from the site
+    tavily  real web search (needs TAVILY_API_KEY); kept for comparison
 To add another service, write a class with search() and add it to PROVIDERS. Settings live in config/search.json;
 WEB_MODE in .env overrides the provider. See docs/SEARCH_INTEGRATION.md.
 """
@@ -17,6 +18,7 @@ from email.utils import parsedate_to_datetime
 import json
 import os
 from pathlib import Path
+import re
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -115,6 +117,118 @@ class TavilySearch:
         return {"url": url, "title": "", "content": (r.get("raw_content") or "")[:8000], "published": ""} if r else None
 
 
+_DATE = re.compile(r"\b(20\d\d-[01]\d-[0-3]\d)\b")
+_REDIRECT_HOSTS = ("vertexaisearch.cloud.google.com",)
+
+
+def _resolve(url: str) -> str:
+    """Google Search grounding hands out redirect links; the page itself is where the redirect points."""
+    try:
+        r = httpx.get(url, follow_redirects=False, timeout=httpx.Timeout(10, connect=5), headers={"User-Agent": USER_AGENT})
+    except httpx.HTTPError:
+        return ""
+    return r.headers.get("location", "") if r.is_redirect else ""
+
+
+def fetch_page(url: str) -> dict | None:
+    """The readable text of one web page (headings, paragraphs, list items), fetched directly. None when it cannot be read."""
+    from api.fetch_cgs_site import TextBlocks
+    try:
+        r = httpx.get(url, follow_redirects=True, timeout=httpx.Timeout(20, connect=10), headers={"User-Agent": USER_AGENT})
+    except httpx.HTTPError:
+        return None
+    if r.status_code >= 400 or "html" not in r.headers.get("content-type", "html"):
+        return None
+    p = TextBlocks()
+    try:
+        p.feed(r.text)
+        p.close()
+    except Exception:  # noqa: BLE001 - a broken page is a page that cannot be read
+        return None
+    text = "\n".join(t for _, t in p.blocks)
+    return {"url": url, "title": p.title.strip(), "content": text[:8000], "published": ""} if text else None
+
+
+USER_AGENT = "CGS-Workspace/2.0 (lead research)"
+
+
+class GoogleSearch:
+    """Real web search through Google Search, as a tool of Gemini (grounding). Signed like every Gemini request
+    (api/google_cloud.py: an API key on AI Studio, the service account on Google Cloud). The pages are the ones Google
+    returned (grounding chunks), never URLs the model wrote; the preview is what the model said each page supports.
+    Pages are then read directly from the site (read). Cost: one Gemini request per search, billed as grounded."""
+    name = "google"
+
+    def __init__(self, key: str | None = None, transport=post, results: int = 5, model: str | None = None, resolver=_resolve,
+                 reader=fetch_page):
+        from api.google_cloud import CloudConfigError, express_key, gemini_backend
+        try:
+            self.backend = gemini_backend()
+        except CloudConfigError as e:
+            raise LLMError(str(e), "config") from None
+        if key is None:
+            key = "" if self.backend == "agent_platform" else express_key() if self.backend == "express" else os.environ.get("GEMINI_API_KEY", "")
+        self.key = key.strip()
+        if self.backend != "agent_platform" and not self.key:
+            raise LLMError("Google Search runs through Gemini: add your GEMINI_API_KEY to the .env file, then restart.", "auth")
+        from api.llm import DEFAULT_MODELS
+        self.model = (model or os.environ.get("SEARCH_MODEL") or os.environ.get("GEMINI_MODEL") or DEFAULT_MODELS["gemini"]).strip()
+        self.transport, self.results, self.resolver, self.reader = transport, results, resolver, reader
+        self._urls: dict[str, str] = {}
+
+    def _prompt(self, query: str, start_date: date | None, news: bool) -> str:
+        return (f"Use Google Search to find up to {self.results} web pages for this query: {query!r}."
+                + (" Only news articles." if news else "")
+                + (f" Prefer pages published on or after {start_date.isoformat()}." if start_date else "")
+                + " For every page you use, write one sentence that starts with the page's publication date as YYYY-MM-DD "
+                  "(or 'undated') and then says what the page reports. Report only what the pages say; add nothing of your own.")
+
+    def _real(self, uri: str) -> str:
+        host = (urlparse(uri).hostname or "").lower()
+        if not host.endswith(_REDIRECT_HOSTS):
+            return real_url(uri)
+        if uri not in self._urls:
+            self._urls[uri] = real_url(self.resolver(uri) or "")
+        return self._urls[uri]
+
+    def search(self, query: str, start_date: date | None = None, news: bool = False) -> list[dict]:
+        from api.google_cloud import auth_headers, model_url
+        body = {"contents": [{"role": "user", "parts": [{"text": self._prompt(query, start_date, news)}]}],
+                "tools": [{"google_search": {}}], "generationConfig": {"temperature": 0}}
+        try:
+            data = self.transport(model_url(self.model, "generateContent", self.backend), auth_headers(self.key, self.backend), body)
+        except ProviderError as e:
+            raise LLMError("Web search failed: " + redact(str(e), [self.key]), e.kind) from None
+        except httpx.HTTPError as e:
+            raise LLMError(f"Could not reach Google Search ({type(e).__name__}).", "temporary") from None
+        cand = next(iter(data.get("candidates") or []), {})
+        meta = cand.get("groundingMetadata") or {}
+        said: dict[int, list[str]] = {}
+        for sup in meta.get("groundingSupports") or []:
+            text = ((sup.get("segment") or {}).get("text") or "").strip()
+            for i in sup.get("groundingChunkIndices") or []:
+                if text and text not in said.setdefault(i, []):
+                    said[i].append(text)
+        out, seen = [], set()
+        for i, chunk in enumerate(meta.get("groundingChunks") or []):
+            web = chunk.get("web") or {}
+            url = self._real(web.get("uri") or "")
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            content = " ".join(said.get(i, []))
+            found = _DATE.search(content)
+            out.append({"title": web.get("title") or (urlparse(url).hostname or ""), "url": url,
+                        "content": content[:1500], "published": found.group(1) if found else ""})
+            if len(out) >= self.results:
+                break
+        return out
+
+    def read(self, url: str) -> dict | None:
+        """The full text of one page, read from the site itself (no search cost)."""
+        return self.reader(url)
+
+
 class MockSearch:
     """A synthetic internet: keyword search over invented pages. Free, offline, repeatable."""
     name = "mock"
@@ -153,7 +267,7 @@ class MockSearch:
         return [dict(p) for p in self.pages if (domain and domain in p["url"]) or name in (p["title"] + " " + p["content"]).lower()]
 
 
-PROVIDERS = {"mock": MockSearch, "tavily": TavilySearch}
+PROVIDERS = {"mock": MockSearch, "google": GoogleSearch, "tavily": TavilySearch}
 
 
 def make_search(provider: str | None = None, as_of: date | None = None, local: bool = False):

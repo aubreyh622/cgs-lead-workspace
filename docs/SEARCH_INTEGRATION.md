@@ -10,7 +10,7 @@ Which search service sits behind the plug, and what it searches for, is set in `
 
 | Setting | What it does |
 |---|---|
-| `provider` | `mock` = synthetic internet with invented companies (default, free, for demos and tests). `tavily` = real web through Tavily. Or the name of your own provider (see below). `WEB_MODE` in `.env` overrides this. |
+| `provider` | `mock` = synthetic internet with invented companies (default, free, for demos and tests). `google` = real web through Google Search, as a tool of Gemini (grounding; `GEMINI_API_KEY`, or the service account on Google Cloud). `tavily` = real web through Tavily (kept for comparison). Or the name of your own provider (see below). `WEB_MODE` in `.env` overrides this. |
 | `custom_queries` | Your own search queries, for example `["manufacturer completes acquisition Ohio", "appoints Chief Digital Officer manufacturer"]`. Leave empty to let the AI write 4 news queries from the current research direction. |
 | `recency_days` | Only consider results published in the last N days (default 183). |
 | `news_only` | Search news only (default true). |
@@ -48,11 +48,33 @@ Raise `api.llm.LLMError` with a short message when the service fails. The worksp
 - Research facts must quote a page word for word.
 - Excluded domains are removed, and a person picks every candidate before research spends anything.
 
+## Google Search (the real web, default for CGS)
+
+`provider: google` (or `WEB_MODE=google`) searches through **Google Search as a tool of Gemini** (grounding), so the
+workspace needs no separate search account: the same `GEMINI_API_KEY` signs it, or on Google Cloud the service account
+(`GEMINI_BACKEND=agent_platform`, no key).
+
+- One search = one Gemini request with the `google_search` tool (`SEARCH_MODEL`, default `GEMINI_MODEL`). It is billed
+  as a grounded request; see Google's pricing for the model.
+- The results are the pages Google returned (the grounding chunks), never addresses the model wrote. Google hands out
+  redirect links; the workspace follows each one to the page's own address.
+- A result's preview is what the model said that page supports; its date is the date the model gave for it (or
+  `undated`). The agents still read the page itself before they use it.
+- `read_page` fetches the page straight from the site and keeps its headings, paragraphs and list items. That costs no
+  search. A site that refuses automated readers gives "That page could not be read".
+- The agent model is separate: agents can run on Claude, OpenAI or Gemini while searches go through Gemini.
+- Terms: Google sets rules for showing grounded results to people (Gemini API terms, "Grounding with Google Search").
+  The workspace shows facts with their source pages, not Google's answer; CGS should confirm this use with its own
+  Google Cloud agreement before production.
+
+`provider: tavily` is kept for comparison (`TAVILY_API_KEY`).
+
 ## Research on the real web
 
-- With `provider: mock`, research runs a short AI reading of the company's synthetic pages (`api/mock_research.py`).
-- With `provider: tavily`, research runs Aubrey's research v2 pipeline on the real web (`api/research_bridge.py`). It is Gemini-only and capped per company at 10 searches, 12 page reads, 18 model calls and 8 minutes.
-- To use another provider for research on the real web, the pipeline's `LiveProviders` class (`lead_agent/providers.py`) needs the same search method. This is a follow-up task.
+- The research agent (`RESEARCH_ENGINE=agent`, the default) reaches the web only through this plug, so it works with any
+  provider: `mock`, `google` or `tavily`.
+- `RESEARCH_ENGINE=pipeline` runs the older research v2 pipeline (`api/research_bridge.py`), which is Gemini + Tavily
+  only and capped per company at 10 searches, 12 page reads, 18 model calls and 8 minutes.
 
 ## The synthetic internet (for demos)
 

@@ -8,9 +8,9 @@ if not defined WORKSPACE_PYTHON (
   pause
   exit /b 1
 )
-echo Finds REAL companies on the public web (Tavily) and researches a few of them into Step 4 briefs.
+echo Finds REAL companies on the public web (Google Search through Gemini) and researches a few of them into Step 4 briefs.
 echo Separate database runtime\real-public.sqlite3; the synthetic demo is not touched. Email and CRM are off.
-echo Uses Tavily credits (about 10 + up to 22 per company) and AI calls.
+echo Uses web searches (about 10 + up to 22 per company) and AI calls.
 echo.
 set /p "REQ=What should the agent look for? (Enter = the default request) "
 set /p "N=How many companies to research? (Enter = 3) "

@@ -3,7 +3,7 @@
 Fills a separate workspace database with REAL companies found on the public web, so the prototype can be shown on
 something other than invented companies. The synthetic demo database is not touched.
 
-1. The discovery agent searches the real web (Tavily) for what the request says, in plain words, within the research
+1. The discovery agent searches the real web (Google Search through Gemini; WEB_MODE=tavily for Tavily) for what the request says, in plain words, within the research
    direction (config/problem_brief.json), and nominates companies. Code checks every nomination as usual.
 2. The first --pick candidates (those with a website first) are picked; the research agent researches them in parallel
    and writes Step 4 briefs from public pages only: dated, quoted facts with sources.
@@ -12,7 +12,8 @@ something other than invented companies. The synthetic demo database is not touc
 Safety: public web only, no client data. Email and the CRM are off in that database (MAIL_PROVIDER=off, CRM_MODE=disabled):
 these are real people, so nothing can be sent to them and no address is guessed. The background agents start paused so
 they spend no search credits on their own; a person can resume them (PATCH /api/agents).
-Cost: about 10 Tavily credits for discovery and up to 22 per company researched, plus the AI calls (AI_PROVIDER in .env).
+Cost: about 10 searches for discovery and up to 22 per company researched (Google: one grounded Gemini request each;
+Tavily: one credit each), plus the AI calls (AI_PROVIDER in .env).
 """
 from __future__ import annotations
 
@@ -25,6 +26,7 @@ import warnings
 
 warnings.filterwarnings("ignore", message=".*httpx.*")
 
+from api.llm import LLMError
 from api.settings import ROOT, Settings, load_settings  # noqa: E402
 
 DEFAULT_DB = "runtime/real-public.sqlite3"
@@ -40,9 +42,15 @@ def say(text: str = "") -> None:
     LINES.append(text)
 
 
+def real_web() -> str:
+    """The real web: WEB_MODE when it names a real provider, otherwise Google Search."""
+    mode = os.environ.get("WEB_MODE", "").strip().lower()
+    return mode if mode in ("google", "tavily") else "google"
+
+
 def real_settings(db: Path) -> Settings:
     """Live AI on the real web, email and CRM off, research in background threads (so companies run in parallel)."""
-    os.environ["WEB_MODE"] = "tavily"
+    os.environ["WEB_MODE"] = real_web()
     s = load_settings()
     return Settings(app_mode="live", db_path=db, ai_provider=s.ai_provider, ai_model=s.ai_model, agent_worker=True,
                     research_engine="agent", mail_provider="off", crm_mode="disabled", users=s.users,
@@ -52,13 +60,16 @@ def real_settings(db: Path) -> Settings:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--request", default=DEFAULT_REQUEST, help="What to look for, in plain words")
-    ap.add_argument("--pick", type=int, default=3, help="How many candidates to research (each up to 22 Tavily credits)")
+    ap.add_argument("--pick", type=int, default=3, help="How many candidates to research (each up to 22 searches)")
     ap.add_argument("--db", default=DEFAULT_DB, help="The separate database for real data")
     a = ap.parse_args(argv)
-    if not os.environ.get("TAVILY_API_KEY"):
-        load_settings()  # reads .env
-    if not os.environ.get("TAVILY_API_KEY"):
-        say("TAVILY_API_KEY is not set in .env: real web search is not possible.")
+    load_settings()  # reads .env
+    web = real_web()
+    from api.search import make_search
+    try:
+        make_search(web, local=True)
+    except LLMError as e:
+        say(f"Real web search ({web}) is not possible: {e}")
         return 1
 
     from fastapi.testclient import TestClient
@@ -72,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
         s.commit()
     api = TestClient(app)
     say(f"Real public company data  {datetime.now():%Y-%m-%d %H:%M}   database: {a.db}")
-    say(f"AI: {app.state.settings.ai_provider}  web: Tavily (real)  email: off  CRM: off\n")
+    say(f"AI: {app.state.settings.ai_provider}  web: {web} (real)  email: off  CRM: off\n")
 
     say(f"[1/2] Discovery agent, request: {a.request}")
     r = api.post("/api/candidates/recommend", json={"intent": a.request}, headers=ME)

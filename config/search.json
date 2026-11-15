@@ -3,7 +3,8 @@
   "provider": "mock",
   "provider_options": {
     "mock": "Synthetic internet in api/seed/mock_web.json. Invented companies, no API key, no cost. Use for demos and testing.",
-    "tavily": "Real web search through Tavily. Needs TAVILY_API_KEY in .env. Research then uses Aubrey's research pipeline on the real web.",
+    "google": "Real web search: Google Search through Gemini (grounding). Uses GEMINI_API_KEY, or the service account on Google Cloud (GEMINI_BACKEND=agent_platform). Pages are then read straight from the site. The default for the real web.",
+    "tavily": "Real web search through Tavily. Needs TAVILY_API_KEY in .env. Kept for comparison.",
     "your_own": "Add a class in api/search.py with a search() method and register it in PROVIDERS. See docs/SEARCH_INTEGRATION.md."
   },
   "custom_queries": [],

@@ -14,7 +14,7 @@ if not exist "runtime\real-public.sqlite3" (
   exit /b 1
 )
 set "APP_MODE=live"
-set "WEB_MODE=tavily"
+if not defined WEB_MODE set "WEB_MODE=google"
 set "CGS_V2_DB_PATH=runtime/real-public.sqlite3"
 set "CGS_V2_PORT=8801"
 set "MAIL_PROVIDER=off"
