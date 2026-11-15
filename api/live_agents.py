@@ -138,7 +138,8 @@ def check_proposals(raw: list[dict], note_text: str, library: dict[str, dict] | 
             if passage is None or p["kind"] != "cond" or p["key"] != "fit" or p["evidence_type"] != "approved_research":
                 dropped["library_misuse"] += 1
                 continue
-        if not quote_in_text(p.get("quote", ""), passage["text"] if passage else note_text):
+        quote = p.get("quote") or ""  # a model may leave out a field; the tool then passes None
+        if not isinstance(quote, str) or not quote_in_text(quote, passage["text"] if passage else note_text):
             dropped["quote_not_found"] += 1
             continue
         if p["evidence_type"] == "inference" and p["kind"] == "cond" and value is True:
@@ -151,10 +152,10 @@ def check_proposals(raw: list[dict], note_text: str, library: dict[str, dict] | 
             dropped["over_limit"] += 1
             continue
         seen.add((p["kind"], p["key"]))
-        why = p.get("why", "").strip()
+        why = str(p.get("why") or "").strip()
         if passage:
             why = f"From the CGS library: {passage['title']}{' (synthetic demo document)' if passage.get('synthetic') else ''}. {why}"
-        kept.append({"kind": p["kind"], "key": p["key"], "value": value, "quote": p["quote"].strip(), "why": why,
+        kept.append({"kind": p["kind"], "key": p["key"], "value": value, "quote": quote.strip(), "why": why,
                      "type": p["evidence_type"], "source": source})
     return kept, {k: v for k, v in dropped.items() if v}
 
@@ -226,6 +227,11 @@ _PLANTED = re.compile(r"\b(?:ignore|disregard|forget)\b[^.]{0,40}\binstructions?
 def planted_instruction(text: str) -> bool:
     """True when the text speaks to AI tools instead of describing the company (see _PLANTED)."""
     return bool(_PLANTED.search(text or ""))
+
+
+def without_planted(text: str) -> str:
+    """The text without its sentences that speak to AI tools, so nothing in them (a name, a title) counts as a source."""
+    return " ".join(x for x in re.split(r"(?<=[.!?])\s+", text or "") if not planted_instruction(x))
 
 
 def check_draft(subject: str, body: str, fact_ids: set[str], facts_text: str) -> None:

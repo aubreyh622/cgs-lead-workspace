@@ -116,6 +116,16 @@ def test_checks_keep_only_valid_grounded_proposals():
     assert dropped == {"quote_not_found": 2, "inference_condition": 1, "invalid": 2, "duplicate": 1}
 
 
+def test_checks_accept_fields_the_model_left_out():
+    """The propose tool passes None for a field the model did not send (seen live with gpt-5-mini, 15 Nov 2026):
+    a missing reason is kept as empty, a missing quote is dropped, and neither crashes the run."""
+    no_why = {**prop("cond", "problem", "true", "Our month-end close takes twelve days because of manual reconciliations."), "why": None}
+    no_quote = {**prop("score", "B", "2", "x"), "quote": None}
+    kept, dropped = check_proposals([no_why, no_quote], NOTE)
+    assert [(p["key"], p["why"]) for p in kept] == [("problem", "")]
+    assert dropped == {"quote_not_found": 1}
+
+
 # ---------- the agents inside the workflow ----------
 def test_live_evidence_agent_end_to_end(tmp_path):
     good = {**prop("cond", "problem", "true", "Our month-end close takes twelve days because of manual reconciliations."), "source": "notes"}
