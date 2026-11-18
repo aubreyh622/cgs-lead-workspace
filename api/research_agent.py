@@ -31,7 +31,7 @@ from api.agent_tools import Pages, web_tools
 from api.demo_agents import quote_in_text
 from api.llm import LLMError
 
-VERSION = "research-agent-1.3"  # 1.3: up to 3 contacts, and its own recommendation (code checks can overrule an accept)
+VERSION = "research-agent-1.4"  # 1.4: several tools per step, at most two looks for size; 1.3: up to 3 contacts, own recommendation
 MAX_FACTS = 8
 MAX_CONTACTS = 3
 VERDICTS = ("accept", "send_back", "not_now")
@@ -52,7 +52,10 @@ How to work:
   Facts that matter: recent events (acquisitions, new plants, leadership changes, programs), problems the company has
   stated, timing, and who leads what. Up to 8 facts; dated, recent ones are worth most.
 - Record the company's size with record_size when a page states it (employees and/or annual revenue), with the sentence
-  that says so. The direction may set a size range; code compares the size with it.
+  that says so. The direction may set a size range; code compares the size with it. Spend at most two searches or reads
+  on size; if they do not state it, leave it as an open question.
+- You have a limited number of steps. Call several tools in one step when you can, for example all your add_fact calls
+  at once.
 - Record up to 3 possible contacts with add_contact, best first, only people a page you read names, with their title and
   why they matter (what they lead): people for digital, operations, finance or transformation work. Never guess a name.
 - When you are done, call finish: whether the pages confirm which company this is, a hypothesis of what CGS might help with

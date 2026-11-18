@@ -262,7 +262,17 @@ def run_legacy(spec: AgentSpec, provider: Provider, task: str, may_call: Callabl
             else:
                 trace.append({"type": "tool", "tool": call.name, "args": call.args, "result": _short(content)})
             results.append((call, fit(content), isinstance(content, dict) and "error" in content))
-        last = step == spec.max_steps - 1
-        messages.append({"role": "tool", "results": results,
-                         **({"note": f"This is your last step. Call {spec.finish.name} now with what you have."} if last else {})})
+        messages.append({"role": "tool", "results": results, **step_note(spec, step)})
     return outcome("incomplete", reason=f"Stopped after {spec.max_steps} steps without an accepted answer.")
+
+
+def step_note(spec: AgentSpec, step: int) -> dict:
+    """The note sent with the results of a step when few steps are left. A model that calls one tool per step (gpt-5-mini
+    does) otherwise spends its last steps recording and never reaches the finish tool."""
+    left = spec.max_steps - step
+    if left == 1:
+        return {"note": f"This is your last step. Call {spec.finish.name} now with what you have."}
+    if 1 < left <= 3:
+        return {"note": f"{left} steps left, then the run stops without an answer. Several tools can be called in one step: "
+                        f"record what matters in the next step, then call {spec.finish.name}."}
+    return {}

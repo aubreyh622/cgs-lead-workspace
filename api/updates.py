@@ -45,7 +45,9 @@ def feed(s, me: str, since: datetime) -> list[dict]:
         text = (f"Brief ready: {name}" + ("" if name.endswith(".") else ".") if t.status == "done"
                 else f"Research on {name} paused: {t.error or 'it reached a limit.'}" if t.status == "paused"
                 else f"Research on {name} stopped: {t.error or 'no brief was produced.'}")
-        items.append({"id": f"research:{t.id}", "at": _iso(t.ended_at), "kind": "research", "status": t.status,
+        # Try again reuses the task: its end time is part of the id, so the brief after a stop is a new notice, not one
+        # the page already has
+        items.append({"id": f"research:{t.id}:{_iso(t.ended_at)}", "at": _iso(t.ended_at), "kind": "research", "status": t.status,
                       "opportunityId": o.id, "stage": o.stage, "company": name, "agent": "Research agent", "text": text})
 
     rows = s.scalars(select(m.OutboundEmail).where(m.OutboundEmail.ended_at > since, m.OutboundEmail.by == me,

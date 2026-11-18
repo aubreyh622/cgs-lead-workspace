@@ -110,10 +110,12 @@ export async function load(ctx, params) {
     return { moved: true };
   }
   const team = params.team === "1";
-  const [opps, inbox, toolkit] = await Promise.all([
+  const [opps, inbox, toolkit, running, queued] = await Promise.all([
     ctx.api.get(`/opportunities?${STAGES.map((s) => `stage=${s}`).join("&")}`),
     ctx.api.get("/inbox"),
     ctx.api.get("/toolkit").catch(() => ({ mail: { provider: "off", ready: false } })),
+    ctx.api.get("/agents/jobs?status=running&limit=50").catch(() => []),
+    ctx.api.get("/agents/jobs?status=queued&limit=50").catch(() => []),
   ]);
   if (!rubric) rubric = await ctx.api.get("/email-rubric").then((x) => x.current).catch(() => null);
   if (!people) people = await ctx.api.get("/people").then((x) => x.people).catch(() => []);
@@ -133,7 +135,8 @@ export async function load(ctx, params) {
   if (tab === "you" && !id && lists.you.length) id = lists.you[0].key;
   if (params.tab !== tab || params.id !== id || params.item) ctx.replace("outreach", { tab, id, team: team ? "1" : undefined });
 
-  const data = { tab, team, lists, inbox, id, mail: toolkit.mail || { provider: "off", ready: false } };
+  const data = { tab, team, lists, inbox, id, mail: toolkit.mail || { provider: "off", ready: false },
+    writing: writingFor([...running, ...queued]) };
   const cur = id && lists[tab].find((x) => x.key === id);
   if (cur) {
     if (ui.key !== cur.key) resetUi(cur.key);
@@ -141,6 +144,13 @@ export async function load(ctx, params) {
     Object.assign(data, await itemData(ctx, cur));
   }
   return data;
+}
+// Leads the Outreach agent is writing for right now (a job running or queued): opportunity id -> job. Without it the
+// page says "No draft yet, ask for one" while the draft is on its way, and a second request would only queue again.
+export function writingFor(jobs) {
+  const out = {};
+  for (const j of jobs || []) if (j.agent === "Outreach agent" && j.opportunityId && !out[j.opportunityId]) out[j.opportunityId] = j;
+  return out;
 }
 const ORDER = ["reply", "approve2", "draft", "step", "plan", "first"];
 const order = (x) => ORDER.indexOf(x.kind);
@@ -184,7 +194,8 @@ export function instant(ctx, params, last) {
 }
 
 export function changed(early, d) {
-  const pick = (x) => JSON.stringify([x.tab, x.cur && x.cur.key, x.cur && x.cur.kind, x.detail, x.preview, TABS.map(([t]) => ((x.lists || {})[t] || []).map((i) => `${i.key}:${i.kind}`))]);
+  const pick = (x) => JSON.stringify([x.tab, x.cur && x.cur.key, x.cur && x.cur.kind, x.detail, x.preview, Object.keys(x.writing || {}),
+    TABS.map(([t]) => ((x.lists || {})[t] || []).map((i) => `${i.key}:${i.kind}`))]);
   return pick(early) !== pick(d);
 }
 
@@ -680,6 +691,7 @@ function firstEmail(d, ctx) {
   const m = ui.mode;
   const mine = o.owner === ctx.me;
   const waits = emailWaits(r.waiting);
+  const writing = !hasDraft && (d.writing || {})[o.id];
   return {
     main: html`
       ${leadHead(o, `First email to ${o.contact.name || "the contact"}`)}
@@ -688,7 +700,9 @@ function firstEmail(d, ctx) {
       ${relatedBlock(d.related)}
       ${hasDraft && m !== "edit" ? draftBody(r.subject, r.body, facts, { to: (d.preview && d.preview.to) || "", confirmed: !!o.contact.confirmedBy, checks: true,
         blocked: d.preview && d.preview.blocked, from: d.preview && d.preview.from ? d.preview.from.address || "" : "", canEdit: mine && !waits, editMode: "edit" }) : ""}
-      ${!hasDraft && m !== "edit" ? html`<div class="block">${emptyState("No draft yet",
+      ${writing && m !== "edit" ? html`<div class="block" role="status">${emptyState("The Outreach agent is writing it now",
+        `${writing.status === "queued" ? "Queued" : "Started"}: ${writing.reason || "the first email"}. It appears here when it is ready, usually within a minute or two; you get a notice too.`)}</div>` : ""}
+      ${!hasDraft && !writing && m !== "edit" ? html`<div class="block">${emptyState("No draft yet",
         "The Outreach agent writes one when the lead is accepted, or a contact plan first. If none arrived, ask for one, or write it yourself.")}</div>` : ""}
       ${m === "send" ? sendPanel(d) : ""}
       ${m === "revise" ? revisePanel(o, hasDraft) : ""}
@@ -703,7 +717,7 @@ function firstEmail(d, ctx) {
       ${planSide(o, ctx)}
       ${!m && !waits ? sideActions(approverLine(o.owner, ctx), html`
         ${hasDraft ? html`<button type="button" class="btn primary" data-act="mode" data-mode="send">Approve and send…</button>` : ""}
-        <button type="button" class="btn ${hasDraft ? "" : "primary"}" data-act="mode" data-mode="revise">${hasDraft ? "Ask the agent to revise…" : "Ask the agent for a draft…"}</button>
+        ${writing ? "" : html`<button type="button" class="btn ${hasDraft ? "" : "primary"}" data-act="mode" data-mode="revise">${hasDraft ? "Ask the agent to revise…" : "Ask the agent for a draft…"}</button>`}
         ${hasDraft ? "" : html`<button type="button" class="btn" data-act="mode" data-mode="edit">Write it myself</button>`}
         <button type="button" class="btn ghost" data-act="mode" data-mode="record">Record as sent…</button>
         <button type="button" class="btn ghost" data-act="mode" data-mode="nurture">Park the lead…</button>`) : ""}`,

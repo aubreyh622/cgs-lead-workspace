@@ -7,6 +7,7 @@ import { href } from "./lib.js";
 import { linkFor } from "./pages/links.js";
 
 const POLL_MS = 20000;
+const OVERLAP_MS = 5 * 60 * 1000;
 const KEEP_MS = 7 * 24 * 3600 * 1000;
 const LOCAL_MAX = 50;
 
@@ -100,7 +101,10 @@ export async function check() {
   if (state.busy || document.hidden || !state.api || !state.cursor) return;
   state.busy = true;
   try {
-    const res = await state.api.get(`/updates?since=${encodeURIComponent(state.cursor)}`);
+    // Read again from a little before the last check: an agent's item is stamped when it is made but readable only once
+    // its work commits, which can fall after a check. Items already shown are skipped by id.
+    const since = new Date(Date.parse(state.cursor) - OVERLAP_MS).toISOString();
+    const res = await state.api.get(`/updates?since=${encodeURIComponent(since)}`);
     const known = new Set(state.server.map((x) => x.id));
     const fresh = res.items.filter((x) => !known.has(x.id));
     state.cursor = res.now;
