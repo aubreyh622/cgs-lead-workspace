@@ -1,5 +1,5 @@
 // Starts the workspace page: who is acting, the side rail, and the page the URL names.
-import { api, person, actAs, writeCount } from "./api.js";
+import { api, person, actAs, writeCount, writesInFlight } from "./api.js";
 import { readRoute, href, ROUTE_ALIASES } from "./lib.js";
 import { rail, railClosed, setRailClosed, chooser, toast, loadingCard, errorCard, problems } from "./shell.js";
 import { initSearch, openSearch, forgetSearch } from "./search.js";
@@ -92,7 +92,9 @@ export async function refreshCounts({ fresh = true } = {}) {
     ctx.health = { health: todo.health || [], rows: ((todo.groups || []).find((g) => g.id === "problem") || {}).items || [],
       ai: { used: overview.aiCallsToday, budget: overview.aiBudget } };
     // The dock counts agent work waiting for this person: the sum of the agent rows its panel lists.
-    ctx.dock = { running: running.length + ((overview.research && overview.research.running.length) || 0), queued: overview.queued, paused: overview.paused,
+    // runs in progress: board jobs and research threads, or every agent run on the server (a click's run has no job)
+    const live = ((overview.live && overview.live.running) || []).length;
+    ctx.dock = { running: Math.max(live, running.length + ((overview.research && overview.research.running.length) || 0)), queued: overview.queued, paused: overview.paused,
       waiting: team.AGENTS.reduce((n, a) => n + team.agentWaiting(a, inbox, direction, lessons), 0) };
   } catch {
     ctx.counts = {};
@@ -169,6 +171,22 @@ document.addEventListener("click", async (event) => {
     drawDock();
   }
 });
+
+// While an agent works, or a click that may start one waits for its answer, the dock checks every few seconds instead of
+// every 20: it shows the run start, says how long it has run, and shows Done the moment it ends. The open panel follows.
+const AGENTS_FAST_MS = 4000;
+let agentsBusy = false; // the last check saw work; one more check after it ends draws the Done state
+setInterval(async () => {
+  if (!ctx.me || document.hidden) return;
+  const busy = writesInFlight() > 0 || !!(ctx.dock && ctx.dock.running);
+  if (!busy && !agentsBusy) return;
+  agentsBusy = busy;
+  await refreshCounts();
+  if (dockOpen === "agents") {
+    try { dockData = await team.loadOverview(ctx); } catch { /* keep what is shown */ }
+    drawDock();
+  }
+}, AGENTS_FAST_MS);
 
 // What the agents and the workspace finished in the background (updates.js calls this after every check): show it,
 // bring the counts up to date, and draw the page again when it is safe (nothing typed that would be lost).

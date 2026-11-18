@@ -401,8 +401,9 @@ function researchPanel(o, d, ctx) {
         { aside: html`<span class="tag info">Research agent</span>` })}
       ${block("What happens next", html`<p class="meta">When the brief is ready, the company moves to Your decision and appears in your Inbox.</p>`)}
       ${needsSite ? html`<form class="skip-form" data-act="siteForm" data-on="submit" data-id="${o.id}">
-        <label class="field">Company website for ${o.company}<input class="input" name="domain" placeholder="company.com" value="${(det.company && det.company.domain) || ""}" required></label>
-        <div class="actions"><button type="submit" class="btn primary">Save and try again</button></div></form>` : ""}
+        <label class="field">Company website for ${o.company} <span class="meta">(optional)</span><input class="input" name="domain" placeholder="company.com" value="${(det.company && det.company.domain) || ""}"></label>
+        <p class="meta">Leave it empty and the Research agent searches for the website again; type it if you know it.</p>
+        <div class="actions"><button type="submit" class="btn primary">Try again</button></div></form>` : ""}
       ${inlineError(err)}`,
     foot: html`<div class="actions">
       ${r.status === "failed" && !needsSite ? html`<button type="button" class="btn primary" data-act="research" data-do="retry" data-id="${o.id}">Try again</button>` : ""}
@@ -1108,7 +1109,9 @@ export const actions = {
     const button = form.querySelector("[type=submit]");
     try {
       await busy(button, async () => {
-        await ctx.api.patch(`/opportunities/${enc(id)}/company`, { domain: form.elements.domain.value });
+        // empty: research looks the website up again (api/discovery_agent.py resolve_domain) before it starts
+        const domain = form.elements.domain.value.trim();
+        if (domain) await ctx.api.patch(`/opportunities/${enc(id)}/company`, { domain });
         await ctx.api.post(`/opportunities/${enc(id)}/research/retry`);
       });
       ui.error = null;

@@ -1,6 +1,6 @@
 // The Agent hub as designed: the agents by stage with what each is doing and its switch, the manager agent, the AI
 // requests and the proposals waiting in the Inbox, and a page per agent. Everything shown is computed from the backend's jobs, inbox, runs, proposals and scorecard.
-import { html, icon, day, addDays, href, plural, safeUrl } from "../lib.js";
+import { html, icon, day, addDays, href, plural, safeUrl, since } from "../lib.js";
 import { enc } from "../api.js";
 import { emptyState } from "../shell.js";
 import { tabBar, cancelButton, openButton } from "../forms.js";
@@ -86,27 +86,57 @@ export function agentWaiting(a, inbox, direction, lessons) {
 }
 
 // ---------- what each agent is doing now ----------
-export function agentState(a, d, me) {
+const RECENT_MS = 10 * 60 * 1000; // a run that ended this recently shows as Done (or Stopped), not as Idle
+
+// The agent's last finished work: a board job, or a run a person's click started (GET /api/agents, live.last).
+function lastRun(a, mine, d) {
+  const job = mine.find((j) => ["done", "failed"].includes(j.status));
+  const fromJob = job && { what: job.status === "done" ? (job.result || job.reason) : (job.error || job.reason), ok: job.status === "done", ended: job.finishedAt };
+  const click = ((d.overview.live || {}).last || {})[a.name];
+  const fromClick = click && { what: click.what, ok: click.ok, ended: click.ended };
+  if (!fromJob) return fromClick || null;
+  if (!fromClick) return fromJob;
+  return Date.parse(fromClick.ended || "") > Date.parse(fromJob.ended || "") ? fromClick : fromJob;
+}
+
+export function agentState(a, d, me, now = Date.now()) {
   const mine = d.jobs.filter((j) => j.agent === a.name);
   const running = mine.filter((j) => j.status === "running");
   const queued = mine.filter((j) => j.status === "queued");
   const waiting = agentWaiting(a, d.inbox, d.direction, d.lessons);
-  const lastDone = mine.find((j) => j.status === "done");
+  const live = ((d.overview.live || {}).running || []).filter((x) => x.agent === a.name);
+  const last = lastRun(a, mine, d);
+  const recent = last && last.ended && now - Date.parse(last.ended) < RECENT_MS;
   if (d.overview.paused) return { label: "Paused", cls: "", dot: "", now: queued.length ? `${plural(queued.length, "job")} waiting until the agents resume` : "Nothing new starts while paused" };
   if ((d.overview.pausedAgents || []).includes(a.name)) {
     return { label: "Paused", cls: "", dot: "", now: queued.length ? `${plural(queued.length, "job")} waiting until a person resumes it` : "Paused by a person; the other agents keep working" };
   }
-  if (running.length) return { label: "Working", cls: "info", dot: "run", now: running[0].reason };
+  // How long it has been at it: the oldest run in progress (a board job's start, or the run itself)
+  const started = [...live.map((x) => x.since), ...running.map((j) => j.createdAt)].filter(Boolean).sort()[0];
+  const forHow = started ? ` · for ${since(started, now)}` : "";
+  if (running.length) return { label: "Working", cls: "info", dot: "run", now: `${running[0].reason}${forHow}` };
   // research runs on its own threads, not as board jobs (GET /api/agents, research)
   const research = a.name === "Research agent" && d.overview.research;
   if (research && research.running.length) {
-    return { label: "Working", cls: "info", dot: "run", now: `Researching ${research.running.slice(0, 3).join(", ")}${research.running.length > 3 ? ` and ${research.running.length - 3} more` : ""}` };
+    return { label: "Working", cls: "info", dot: "run", now: `Researching ${research.running.slice(0, 3).join(", ")}${research.running.length > 3 ? ` and ${research.running.length - 3} more` : ""}${forHow}` };
   }
+  // a person's click ("Run once", "Ask the agent for a draft") runs at once, without a board job
+  if (live.length) return { label: "Working", cls: "info", dot: "run", now: `${live[0].what}${forHow}` };
   if (waiting) return { label: "Waiting for you", cls: "warn", dot: "wait", now: `${plural(waiting, "item")} waiting for ${me}` };
-  if (queued.length) return { label: "Queued", cls: "", dot: "", now: `Next: ${queued[0].reason}` };
+  if (queued.length) {
+    // After an accept the agent waits out the undo window (api/undo.py); after an AI error it waits to retry
+    const wait = queued[0].notBefore ? Math.ceil((Date.parse(queued[0].notBefore) - now) / 1000) : 0;
+    const why = /^Accepted/.test(queued[0].reason || "") ? "while the accept can still be undone" : "before it tries again";
+    return { label: "Queued", cls: "", dot: "", now: wait > 0 ? `Starts in ${wait < 60 ? `${wait} s` : since(new Date(now - wait * 1000).toISOString(), now)}, ${why}: ${queued[0].reason}`
+      : `Starting now: ${queued[0].reason}` };
+  }
+  if (recent) {
+    return last.ok ? { label: "Done", cls: "good", dot: "done", now: `Finished ${since(last.ended, now)} ago: ${last.what}` }
+      : { label: "Stopped", cls: "bad", dot: "fail", now: `Stopped ${since(last.ended, now)} ago: ${last.what}` };
+  }
   const lastResearch = research && research.last
     ? `Last: ${research.last.status === "done" ? "brief ready for" : "research stopped for"} ${research.last.company}` : "";
-  return { label: "Idle", cls: "", dot: "", now: lastDone ? `Last: ${lastDone.result || lastDone.reason}` : lastResearch || "No work yet" };
+  return { label: "Idle", cls: "", dot: "", now: last ? `Last${last.ended ? `, ${since(last.ended, now)} ago` : ""}: ${last.what}` : lastResearch || "No work yet" };
 }
 
 function monthStats(a, d, today) {

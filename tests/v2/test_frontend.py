@@ -476,3 +476,79 @@ console.log(Object.keys(w).join(","), w.a.status, Object.keys(writingFor(undefin
     assert "The Outreach agent is writing it now" in page and "${writing ? \"\" : html`<button" in page
     upd = (APP / "updates.js").read_text(encoding="utf-8")
     assert "Date.parse(state.cursor) - OVERLAP_MS" in upd  # late-committed agent items are read again, deduplicated by id
+
+
+def test_the_agent_panel_says_working_done_or_stopped_and_for_how_long(tmp_path):
+    """17 Nov 2026: in the agent panel every agent looked the same, grey "Idle" or "Working", and "Last: ..." had no time, so
+    a person could not tell whether an agent was still running or had finished."""
+    out = run_module_script(tmp_path, """
+import { agentState, AGENTS } from "./pages/team.js";
+import { since } from "./lib.js";
+const now = Date.parse("2026-11-17T20:10:00Z");
+const base = { jobs: [], inbox: [], direction: { proposals: [] }, lessons: [], overview: { live: { running: [], last: {} } } };
+const A = (name) => AGENTS.find((a) => a.name === name);
+const run = { ...base, overview: { live: { running: [{ agent: "Discovery agent", what: "Find companies that match the request.", since: "2026-11-17T20:08:00Z" }], last: {} } } };
+const s1 = agentState(A("Discovery agent"), run, "Ann", now);
+const done = { ...base, overview: { live: { running: [], last: { "Outreach agent": { what: "Write the first email.", ok: true, ended: "2026-11-17T20:07:00Z" } } } } };
+const s2 = agentState(A("Outreach agent"), done, "Ann", now);
+const failed = { ...base, jobs: [{ agent: "Research agent", status: "failed", error: "Stopped after 16 steps.", reason: "r", finishedAt: "2026-11-17T20:09:30Z" }] };
+const s3 = agentState(A("Research agent"), failed, "Ann", now);
+const old = { ...base, jobs: [{ agent: "Manager agent", status: "done", result: "Reviewed the board.", reason: "r", finishedAt: "2026-11-17T18:10:00Z" }] };
+const s4 = agentState(A("Manager agent"), old, "Ann", now);
+console.log(JSON.stringify([s1.label, s1.cls, s1.now, s2.label, s2.cls, s2.now, s3.label, s3.now, s4.label, s4.now, since("2026-11-17T20:09:50Z", now)]).split(String.fromCharCode(183)).join("MIDDOT"));
+""")
+    import json
+    assert json.loads(out) == [
+        "Working", "info", "Find companies that match the request. MIDDOT for 2 min",
+        "Done", "good", "Finished 3 min ago: Write the first email.",
+        "Stopped", "Stopped a few seconds ago: Stopped after 16 steps.",
+        "Idle", "Last, 2 h ago: Reviewed the board.", "a few seconds"]
+    shell = (APP / "shell.js").read_text(encoding="utf-8")
+    assert '<span class="tag ${s.cls}" style="margin-left:auto">${s.label}</span>' in shell  # the state is a coloured tag
+    main = (APP / "main.js").read_text(encoding="utf-8")
+    assert "AGENTS_FAST_MS = 4000" in main and "writesInFlight() > 0" in main
+
+
+def test_a_research_stopped_for_its_website_can_be_tried_again_without_typing_one():
+    """17 Nov 2026: the website field was required, so a person could not just try again once the agent's own search could
+    find the site (General Motors, gm.com)."""
+    page = (APP / "pages" / "companies.js").read_text(encoding="utf-8")
+    form = page[page.index('data-act="siteForm"'):page.index("</form>", page.index('data-act="siteForm"'))]
+    assert 'name="domain"' in form and "required" not in form and ">Try again</button>" in form
+    start = page.index("async siteForm(")
+    handler = page[start:page.index("// Your decision", start)]
+    assert "if (domain) await ctx.api.patch(" in handler and "/research/retry" in handler
+
+
+def test_a_draft_is_edited_as_plain_text_and_keeps_its_citations(tmp_path):
+    """17 Nov 2026: the edit box showed the raw marks ([[f3|AI team will now report ...]]). The person now edits plain text;
+    each citation goes back where its phrase still stands word for word, and one whose phrase was changed is dropped."""
+    out = run_module_script(tmp_path, """
+import { plainDraft, withCitations } from "./pages/outreach.js";
+const NL = String.fromCharCode(10);
+const body = "Hi Sam," + NL + NL + "GM moved [[f3|its AI team]] and uses [[f1|AI on the shop floor]] for [[f8|leak detection]]. Also [[f1|AI on the shop floor]].";
+const { text, cites } = plainDraft(body);
+const kept = withCitations(text, cites);
+const edited = withCitations(text.replace("for leak detection", "for quality checks").replace("Hi Sam", "Hello Sam"), cites);
+console.log(JSON.stringify([text, kept === body, edited]));
+""")
+    import json
+    text, same, edited = json.loads(out)
+    assert "[[" not in text and text.startswith("Hi Sam,") and same is True
+    assert edited == ("Hello Sam,\n\nGM moved [[f3|its AI team]] and uses [[f1|AI on the shop floor]] for quality checks. "
+                      "Also [[f1|AI on the shop floor]].")
+    page = (APP / "pages" / "outreach.js").read_text(encoding="utf-8")
+    assert "marks a citation" not in page and page.count("withCitations(f.body.value") == 2
+
+
+def test_a_queued_job_says_when_it_starts_and_dots_keep_their_place(tmp_path):
+    out = run_module_script(tmp_path, """
+import { agentState, AGENTS } from "./pages/team.js";
+const now = Date.parse("2026-11-17T20:10:00Z");
+const d = { inbox: [], direction: { proposals: [] }, lessons: [], overview: {},
+  jobs: [{ agent: "Outreach agent", status: "queued", reason: "Accepted at Step 4 by Ann: write the first email", notBefore: "2026-11-17T20:10:08Z" }] };
+console.log(agentState(AGENTS.find((a) => a.name === "Outreach agent"), d, "Ann", now).now);
+""")
+    assert out == "Starts in 8 s, while the accept can still be undone: Accepted at Step 4 by Ann: write the first email"
+    css = (APP / "styles.css").read_text(encoding="utf-8")
+    assert "span.dot { position: static; display: inline-block; width: 6px;" in css  # an extension's .dot cannot move it

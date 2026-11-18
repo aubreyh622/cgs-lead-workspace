@@ -227,3 +227,16 @@ def test_the_reviewer_sees_the_cgs_passages_the_draft_cites(monkeypatch):
     system, ask = asked[0]
     assert ask["brief"]["cgs_library"] == ["We helped a regional president sequence digital pilots."]
     assert ask["brief"]["consultant_request"] == "Make it shorter." and "cgs_library passages" in system
+
+
+def test_a_mark_that_repeats_its_sentence_like_a_footnote_goes_back():
+    """Live run of 17 Nov 2026 (outreach-agent-1.3): "you will report to the CEO [[f2|report to the CEO]]" reads the phrase
+    twice once the marks are taken away for sending."""
+    from api.outreach_agent import repeated_citation, wording_problem
+    bad = ("Hi Dana,\n\nI saw Acme appointed you as Chief Digital, AI and Information Officer "
+           "[[f1|appointed as Chief Digital, AI and Information Officer]], that you will report to the CEO [[f2|report to the CEO]].")
+    assert repeated_citation(bad) == ("f1", "appointed as Chief Digital, AI and Information Officer")
+    assert "twice" in wording_problem(bad, "Dana Reyes")
+    good = ("Hi Dana,\n\nSince [[f1|Acme appointed you as Chief Digital, AI and Information Officer]] [[f1|effective October 16]], "
+            "and you will [[f2|report to the CEO]], the first choices matter.\n\nAlex Morgan\nCGS Advisors")
+    assert repeated_citation(good) is None and wording_problem(good, "Dana Reyes") is None

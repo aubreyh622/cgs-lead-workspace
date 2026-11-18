@@ -33,9 +33,21 @@ function messageFrom(body, status) {
 // Counts the person's changes, so a page drawn from data held from before a change is never shown as current.
 let writes = 0;
 export const writeCount = () => writes;
+// Changes sent and not yet answered. A click that runs an agent at once ("Run once", "Ask the agent for a draft") waits
+// here for minutes; while it does, the agent dock checks the agents every few seconds (main.js).
+let inFlight = 0;
+export const writesInFlight = () => inFlight;
 
 async function call(method, path, body) {
-  if (method !== "GET") writes += 1;
+  if (method !== "GET") {
+    writes += 1;
+    inFlight += 1;
+    try { return await send(method, path, body); } finally { inFlight -= 1; }
+  }
+  return send(method, path, body);
+}
+
+async function send(method, path, body) {
   const headers = { Accept: "application/json" };
   const who = person.get();
   if (who) headers["X-User"] = who;
