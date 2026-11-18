@@ -12,9 +12,12 @@ Every step is kept in the trace, so a person can see how the agent reached its a
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+import itertools
 import json
 import os
 import re
+import threading
 from typing import Any, Callable
 
 from api.llm import LLMError, Provider, Usage
@@ -177,10 +180,54 @@ def runtime() -> str:
 
 def run(spec: AgentSpec, provider: Provider, task: str, may_call: Callable[[], bool] = lambda: True) -> Outcome:
     """Run one agent on one task. may_call() is asked before every AI request (the daily budget)."""
-    if runtime() == "adk":
-        from api import adk_runtime
-        return adk_runtime.run(spec, provider, task, may_call)
-    return run_legacy(spec, provider, task, may_call)
+    key = _started(spec.name, task)
+    ok = False
+    try:
+        if runtime() == "adk":
+            from api import adk_runtime
+            out = adk_runtime.run(spec, provider, task, may_call)
+        else:
+            out = run_legacy(spec, provider, task, may_call)
+        ok = out.status == "done"
+        return out
+    finally:
+        _ended(key, ok)
+
+
+# ---------- what is running right now (GET /api/agents, live) ----------
+# Every agent run passes through run(), whether the task board started it or a person's click did ("Run once" on Find,
+# "Ask the agent for a draft"). Those clicks never become board jobs, so without this the agent panel said Idle while
+# the agent worked. Kept in memory: it describes this server's threads, not history.
+_LIVE: dict[int, dict] = {}
+_LAST: dict[str, dict] = {}
+_LIVE_LOCK = threading.Lock()
+_LIVE_SEQ = itertools.count(1)
+
+
+def _what(task: str) -> str:
+    first = re.split(r"(?<=[.!?])\s", (task or "").strip(), maxsplit=1)[0]
+    return first[:160]
+
+
+def _started(agent: str, task: str) -> int:
+    key = next(_LIVE_SEQ)
+    with _LIVE_LOCK:
+        _LIVE[key] = {"agent": agent, "what": _what(task), "since": datetime.now(timezone.utc).isoformat()}
+    return key
+
+
+def _ended(key: int, ok: bool) -> None:
+    with _LIVE_LOCK:
+        x = _LIVE.pop(key, None)
+        if x:
+            _LAST[x["agent"]] = {"what": x["what"], "ok": ok, "since": x["since"], "ended": datetime.now(timezone.utc).isoformat()}
+
+
+def live() -> dict:
+    """{"running": [{agent, what, since}], "last": {agent: {what, ok, since, ended}}}: the agent runs in progress on this
+    server, oldest first, and each agent's last finished run."""
+    with _LIVE_LOCK:
+        return {"running": [dict(x) for _, x in sorted(_LIVE.items())], "last": {k: dict(v) for k, v in _LAST.items()}}
 
 
 def ask(provider: Provider, system: str, user: str, schema: dict, name: str) -> tuple[dict, Usage]:

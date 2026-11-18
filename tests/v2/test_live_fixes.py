@@ -185,3 +185,19 @@ def test_the_new_candidates_notice_closes_when_its_round_is_decided(tmp_path):
     last = same[-1]
     assert api.post(f"/api/candidates/{last['id']}/pick", headers=ME).status_code == 200
     assert status() == "done"
+
+
+def test_a_company_known_by_its_initials_gets_its_website():
+    """Live run of 17 Nov 2026: General Motors stopped in research for want of a website. gm.com carries no word of the name
+    and the search did not return it; the first result was a company profile titled with the name that says the site."""
+    card = ("https://tavily.example/knowledge/company/x", "General Motors",
+            "# General Motors\nWebsite: www.gm.com\nLegal name: General Motors Co\nLinkedIn: www.linkedin.com/company/general-motors")
+    assert D.resolve_domain(Pages(card, ("https://en.wikipedia.org/wiki/General_Motors", "General Motors - Wikipedia", "")),
+                            "General Motors") == "gm.com"
+    assert D.resolve_domain(Pages(("https://www.gm.com/", "General Motors | Official site", "")), "General Motors Company") == "gm.com"
+    # an article that mentions the company is not its profile; a profile of another company, or one pointing at a social
+    # or university site, is not taken; initials alone without the page naming the company are not enough
+    assert D.resolve_domain(Pages(("https://news.example/gm", "General Motors cuts jobs", "Website: www.gm.com")), "General Motors") == ""
+    assert D.resolve_domain(Pages(("https://t.example/c/y", "General Mills", "Website: www.generalmills.com")), "General Motors") == ""
+    assert D.resolve_domain(Pages(("https://t.example/c/z", "Olin", "Website: www.olin.edu")), "Olin") == ""
+    assert D.resolve_domain(Pages(("https://www.gm.com/", "Home", "")), "General Motors") == ""

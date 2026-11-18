@@ -357,7 +357,7 @@ export function dock(state, open, data, me, notes = { list: [], unread: 0 }) {
       : data.error ? html`<p class="meta" style="padding:12px 18px">The agents could not be loaded.</p>`
       : html`<ul>${AGENTS.map((a) => {
         const s = agentState(a, data, me);
-        return html`<li><a href="${href("agents", { agent: a.slug })}"><span class="row-flex" style="gap:10px;flex-wrap:nowrap"><b class="with-dot ${s.dot}">${a.name}</b><span class="meta-3" style="margin-left:auto">${s.label}</span></span>
+        return html`<li><a href="${href("agents", { agent: a.slug })}"><span class="row-flex" style="gap:10px;flex-wrap:nowrap"><b class="with-dot ${s.dot}">${a.name}</b><span class="tag ${s.cls}" style="margin-left:auto">${s.label}</span></span>
           <span class="meta dock-now">${s.now}</span></a></li>`;
       })}</ul>`}
   </section>` : ""}

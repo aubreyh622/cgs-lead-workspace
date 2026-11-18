@@ -1092,4 +1092,13 @@ def item_view(i: m.InboxItem) -> dict:
 def job_view(j: m.AgentJob) -> dict:
     return {"id": j.id, "agent": j.agent, "kind": j.kind, "opportunityId": j.opportunity_id, "trigger": j.trigger, "reason": j.reason,
             "requestedBy": j.requested_by, "status": j.status, "result": j.result, "error": j.error, "parentId": j.parent_id,
-            "depth": j.depth, "attempts": j.attempts, "on": j.created_on.isoformat()}
+            "depth": j.depth, "attempts": j.attempts, "on": j.created_on.isoformat(),
+            # UTC with its offset (SQLite hands times back without one); the agent panel says "for 2 min", "5 min ago"
+            "createdAt": _utc(j.created_at), "finishedAt": _utc(j.finished_at),
+            # a queued job does not start before this: the undo window of a Step 4 accept, or a retry after an AI error
+            "notBefore": _utc(j.retry_at)}
+
+
+def _utc(t) -> str | None:
+    from api.undo import aware
+    return aware(t).isoformat() if t else None

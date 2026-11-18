@@ -85,6 +85,17 @@ export function parseDay(iso) {
   return new Date(Date.UTC(y, m - 1, d));
 }
 
+// How long since an ISO time, in plain words: "a few seconds", "1 min", "12 min", "2 h", "3 days". now: ms, for tests.
+export function since(iso, now = Date.now()) {
+  const t = Date.parse(iso || "");
+  if (Number.isNaN(t)) return "";
+  const s = Math.max(0, Math.round((now - t) / 1000));
+  if (s < 45) return "a few seconds";
+  if (s < 3600) return `${Math.max(1, Math.round(s / 60))} min`;
+  if (s < 86400) return `${Math.round(s / 3600)} h`;
+  return plural(Math.round(s / 86400), "day");
+}
+
 // "3 Nov" in the workspace year, "3 Nov 2025" otherwise. Text that is not an ISO date is shown as it is.
 export function day(iso, workspaceToday) {
   const d = parseDay(iso);

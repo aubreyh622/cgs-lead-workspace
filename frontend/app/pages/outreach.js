@@ -882,15 +882,45 @@ function wordLine(body, tone = "standard") {
   return html`<span class="${range && (n < range[0] || n > range[1]) ? "warn-text md" : "meta-3"}" data-words data-min="${range ? range[0] : ""}" data-max="${range ? range[1] : ""}">${n} words${range ? ` (${range[0]}-${range[1]} for this standard)` : ""}</span>`;
 }
 
+// The draft as a person reads it, without the [[id|phrase]] citation marks, and the marks it had. 17 Nov 2026: editing
+// showed the raw marks ("[[f3|AI team will now report ...]]") in the text box.
+const CITE = /\[\[([\w#:.-]+)\|([^\]]+)\]\]/g;
+export function plainDraft(body) {
+  const cites = [];
+  const text = String(body || "").replace(CITE, (_, id, phrase) => { cites.push({ id, phrase }); return phrase; });
+  return { text, cites };
+}
+
+// The edited text with each citation put back where its phrase still stands word for word (in order, the first free
+// place); a citation whose phrase the person changed or deleted is dropped, as deleting a mark with its phrase was before.
+export function withCitations(text, cites) {
+  let out = String(text || "");
+  let from = 0;
+  const free = (at) => at >= 0 && !/\[\[[^\]]*$/.test(out.slice(0, at)); // not inside a mark already put back
+  for (const { id, phrase } of cites || []) {
+    let at = out.indexOf(phrase, from);
+    if (!free(at)) { at = out.indexOf(phrase); while (at >= 0 && !free(at)) at = out.indexOf(phrase, at + 1); }
+    if (at < 0) continue;
+    const mark = `[[${id}|${phrase}]]`;
+    out = out.slice(0, at) + mark + out.slice(at + phrase.length);
+    from = at + mark.length;
+  }
+  return out;
+}
+
+const EDIT_NOTE = (cites) => cites.length
+  ? `The ${plural(cites.length, "phrase")} the agent took from the research brief stay linked to their sources while their words are unchanged.` : "";
+
 function editPanel(o) {
   const r = o.outreach;
+  const { text, cites } = plainDraft(r.body);
   return html`
   <div class="block">
-    <form class="panel-form" data-act="editForm" data-on="submit input" data-id="${o.id}">
+    <form class="panel-form" data-act="editForm" data-on="submit input" data-id="${o.id}" data-cites="${JSON.stringify(cites)}">
       <h3 class="sub-title">Edit the draft</h3>
-      <p class="meta">Text in [[f1|...]] marks a citation of the research brief. Keep the mark, or delete it with its phrase. The client never sees the marks.</p>
+      <p class="meta">Change anything. ${EDIT_NOTE(cites)}</p>
       <label class="field">Subject<input name="subject" value="${r.subject || ""}" required></label>
-      <label class="field">Message<textarea name="body" rows="12" required>${r.body || ""}</textarea></label>
+      <label class="field">Message<textarea name="body" rows="12" required>${text}</textarea></label>
       <div class="actions">
         <button type="submit" class="btn primary" ${r.subject && r.body ? "" : "disabled"}>Done editing</button>
         <button type="button" class="btn ghost" data-act="mode" data-mode="">Cancel</button>
@@ -947,13 +977,14 @@ function agentDraft(d, ctx) {
 }
 
 function itemEditPanel(it) {
+  const { text, cites } = plainDraft(it.data.body);
   return html`
   <div class="block">
-    <form class="panel-form" data-act="itemEditForm" data-on="submit input" data-item="${it.id}" data-hash="${it.payloadHash}">
+    <form class="panel-form" data-act="itemEditForm" data-on="submit input" data-item="${it.id}" data-hash="${it.payloadHash}" data-cites="${JSON.stringify(cites)}">
       <h3 class="sub-title">Edit the draft</h3>
-      <p class="meta">Your version is the one you approve. The agent's text is kept, so it can learn from what you change, and you can restore it. Text in [[f1|...]] marks a citation of the research brief: keep the mark, or delete it with its phrase. The client never sees the marks.</p>
+      <p class="meta">Your version is the one you approve. The agent's text is kept, so it can learn from what you change, and you can restore it. ${EDIT_NOTE(cites)}</p>
       <label class="field">Subject<input name="subject" value="${it.data.subject || ""}" required></label>
-      <label class="field">Message<textarea name="body" rows="12" required>${it.data.body || ""}</textarea></label>
+      <label class="field">Message<textarea name="body" rows="12" required>${text}</textarea></label>
       <div class="actions">
         <button type="submit" class="btn primary">Done editing</button>
         <button type="button" class="btn ghost" data-act="mode" data-mode="">Cancel</button>
@@ -1235,7 +1266,8 @@ export const actions = {
     if (e.type !== "submit") return missing(form, why);
     if (why) return;
     attempt("edit", form.querySelector("[type=submit]"), ctx, () =>
-      ctx.api.put(`/opportunities/${enc(form.dataset.id)}/outreach/draft`, { subject: f.subject.value.trim(), body: f.body.value }))
+      ctx.api.put(`/opportunities/${enc(form.dataset.id)}/outreach/draft`, {
+        subject: f.subject.value.trim(), body: withCitations(f.body.value, JSON.parse(form.dataset.cites || "[]")) }))
       .then((ok) => { if (ok) { ui.mode = null; ctx.refresh(); } });
   },
   async sendForm(form, e, ctx) {
@@ -1408,7 +1440,8 @@ export const actions = {
     if (e.type !== "submit") return missing(form, why);
     if (why) return;
     const ok = await attempt("itemEdit", form.querySelector("[type=submit]"), ctx, () =>
-      ctx.api.put(`/inbox/${enc(form.dataset.item)}/draft`, { subject: f.subject.value.trim(), body: f.body.value.trim(), payload_hash: form.dataset.hash }));
+      ctx.api.put(`/inbox/${enc(form.dataset.item)}/draft`, { subject: f.subject.value.trim(),
+        body: withCitations(f.body.value.trim(), JSON.parse(form.dataset.cites || "[]")), payload_hash: form.dataset.hash }));
     if (!ok) return;
     ui.mode = null;
     ui.notice = [{ text: "Saved your version. Approve and send it when it is ready.", cls: "good" }];

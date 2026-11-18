@@ -350,3 +350,20 @@ def test_every_provider_waits_long_enough_for_a_reasoning_model(monkeypatch):
         except LLMError:
             pass
     assert waits == [L.LONG_WAIT] * 3 and L.LONG_WAIT >= 120
+
+
+def test_a_run_in_progress_is_visible_and_its_end_is_remembered():
+    """17 Nov 2026: "Run once" and "Ask the agent for a draft" run at once, without a board job, so the agent panel said
+    Idle while the agent worked. Every run now shows in GET /api/agents (live) until it ends."""
+    seen = []
+    probe = R.Tool("echo", "Look.", R.params({"word": {"type": "string"}}), lambda a: seen.append(R.live()) or {"ok": True})
+    ai = Script(gemini(call("echo", {"word": "x"})), gemini(call("finish", {"answer": "done"})))
+    out = R.run(R.AgentSpec(name="Probe agent", version="t", system="s", tools=[probe],
+                            finish=R.Tool("finish", "Answer.", R.params({"answer": {"type": "string"}}), lambda a: a)),
+                make_provider("gemini", "m", key="k", transport=ai), "Write the first email for Acme. Start with brief.")
+    assert out.status == "done"
+    [during] = [x for x in seen[0]["running"] if x["agent"] == "Probe agent"]
+    assert during["what"] == "Write the first email for Acme." and during["since"].endswith("+00:00")
+    after = R.live()
+    assert not [x for x in after["running"] if x["agent"] == "Probe agent"]
+    assert after["last"]["Probe agent"]["ok"] is True and after["last"]["Probe agent"]["ended"] >= during["since"]

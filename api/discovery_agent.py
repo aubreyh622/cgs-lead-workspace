@@ -180,21 +180,57 @@ def resolve_domain(search, company: str) -> str:
     company in full (silverlinemed for Silverline Medical Devices; see abbreviates). Seen live on 5 Nov 2026: the first word
     alone took "Second Nature Brands" to secondnature.com, another company, and "Olin" to a college. Colleges, government
     sites and social or data sites are never taken. Returns "" when nothing fits: research then asks a person for the
-    website instead of guessing."""
+    website instead of guessing.
+    Seen live on 17 Nov 2026: "General Motors" was never resolved. Its site gm.com carries no word of the name, and the
+    search did not even return it; the first result was a company profile whose own title is "General Motors" and whose
+    text says "Website: www.gm.com". A profile like that now gives the website (profile_site), and a host made of the
+    name's initials counts when the page names the company in full."""
     words = [w for w in re.findall(r"[a-z0-9]+", company.lower()) if len(w) > 3 and w not in GENERIC_NAME_WORDS]
-    if not words:
-        return ""
     full = " ".join(re.findall(r"[a-z0-9]+", company.lower()))
+    if not full:
+        return ""
     for r in search.search(f"{company} official website"):
+        site = profile_site(r, company)
+        if site:
+            return site
+        if not words:
+            continue
         host = re.sub(r"^www\.", "", re.sub(r"^https?://", "", r["url"]).split("/")[0].lower())
         flat = host.replace("-", "")
         if any(x in host for x in NOT_COMPANY_SITES) or host.endswith(NOT_COMPANY_ENDINGS):
             continue
         hits = sum(w in flat for w in words)
         named = full in " ".join(re.findall(r"[a-z0-9]+", f"{r.get('title', '')} {r.get('content', '')}".lower()))
-        if hits == len(words) or (hits >= len(words) - 1 and hits >= 1 and named) or (named and abbreviates(host, words)):
+        bare = _bare_name(company)
+        named_bare = " ".join(bare) in " ".join(_bare_name(f"{r.get('title', '')} {r.get('content', '')}"))
+        initials = "".join(w[0] for w in bare)
+        if (hits == len(words) or (hits >= len(words) - 1 and hits >= 1 and named) or (named and abbreviates(host, words))
+                or (named_bare and len(initials) >= 2 and host.split(".")[0] == initials)):
             return ".".join(host.split(".")[-3:]) if host.count(".") >= 3 else host
     return ""
+
+
+LEGAL_SUFFIXES = {"inc", "co", "corp", "corporation", "company", "ltd", "limited", "llc", "plc", "lp", "llp", "sa", "ag", "nv",
+                  "gmbh", "holdings", "group", "the"}
+
+
+def _bare_name(text: str) -> list[str]:
+    """The name's words without legal endings: "General Motors Co" -> ["general", "motors"]."""
+    return [w for w in re.findall(r"[a-z0-9]+", (text or "").lower()) if w not in LEGAL_SUFFIXES]
+
+
+def profile_site(result: dict, company: str) -> str:
+    """The website a company profile states ("Website: www.gm.com"), when the result's own title is this company's name and
+    nothing more (a profile page, not an article that mentions it). Never a social, data, university or government site."""
+    if not _bare_name(company) or _bare_name(result.get("title", "")) != _bare_name(company):
+        return ""
+    m = re.search(r"(?i)\bwebsite:\s*(?:https?://)?(?:www\.)?([a-z0-9][a-z0-9.-]*\.[a-z]{2,})", result.get("content") or "")
+    if not m:
+        return ""
+    dom = m.group(1).lower().rstrip(".")
+    if any(x in dom for x in NOT_COMPANY_SITES) or dom.endswith(NOT_COMPANY_ENDINGS):
+        return ""
+    return dom
 
 
 def abbreviates(host: str, words: list[str]) -> bool:

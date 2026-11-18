@@ -244,7 +244,9 @@ a.user:hover { background: var(--nav-current); color: var(--ink); }
 .tag.warn { background: var(--you-surface); color: var(--you-ink); }
 .tag.bad { background: var(--danger-chip); color: var(--danger-ink); }
 .tag.info { background: var(--agent-surface); color: var(--agent-ink); }
-.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-4); flex-shrink: 0; }
+/* span.dot, and position and size stated: a browser extension seen on 17 Nov 2026 injects its own ".dot" (absolute, 3px,
+   white), which laid every status dot over the first letter of its label */
+span.dot { position: static; display: inline-block; width: 6px; height: 6px; min-width: 6px; border-radius: 50%; background: var(--ink-4); flex-shrink: 0; }
 .dot.run { background: var(--agent); animation: pulse 1800ms ease-out infinite; }
 .dot.wait { background: var(--you-bright); }
 .dot.fail { background: var(--danger-ink); }
