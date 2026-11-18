@@ -456,3 +456,23 @@ console.log([done.includes('href="https://news.example/a"'), done.includes('href
              done.includes("Integration after an acquisition"), running.includes("Running"), running.includes("checks again")].join(","));
 """)
     assert out == "true,false,true,true,true,true"
+
+
+def test_outreach_knows_which_leads_the_agent_is_writing_for(tmp_path):
+    """Found in the live run of 17 Nov 2026: while the Outreach agent wrote the first email, the page said "No draft yet,
+    ask for one". A running or queued Outreach agent job now marks its lead; other agents' jobs do not."""
+    out = run_module_script(tmp_path, """
+import { writingFor } from "./pages/outreach.js";
+const w = writingFor([
+  { agent: "Outreach agent", opportunityId: "a", status: "running" },
+  { agent: "Outreach agent", opportunityId: "a", status: "queued" },
+  { agent: "Research agent", opportunityId: "b", status: "running" },
+  { agent: "Outreach agent", opportunityId: null, status: "running" },
+]);
+console.log(Object.keys(w).join(","), w.a.status, Object.keys(writingFor(undefined)).length);
+""")
+    assert out == "a running 0"
+    page = (APP / "pages" / "outreach.js").read_text(encoding="utf-8")
+    assert "The Outreach agent is writing it now" in page and "${writing ? \"\" : html`<button" in page
+    upd = (APP / "updates.js").read_text(encoding="utf-8")
+    assert "Date.parse(state.cursor) - OVERLAP_MS" in upd  # late-committed agent items are read again, deduplicated by id

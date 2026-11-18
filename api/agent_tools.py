@@ -34,13 +34,27 @@ class Pages:
         for p in pages[:MAX_RESULTS]:
             if not p.get("url"):
                 continue
-            self.found.setdefault(p["url"], p)
+            self.add(p)
             out.append({"url": p["url"], "title": p.get("title", ""), "published": p.get("published") or "undated",
                         "preview": (p.get("content") or "")[:PREVIEW]})
         return out
 
+    def add(self, p: dict) -> None:
+        """Keep a page; a page found again keeps every passage the search showed of it. Each search shows the part of a
+        long page (a 10-K, an annual report) that matches its query, so a quote seen in any preview stays checkable."""
+        old = self.found.get(p["url"])
+        if old is None:
+            self.found[p["url"]] = dict(p)
+        else:
+            old["content"] = with_passage(old.get("content") or "", p.get("content") or "")
+
     def text(self, url: str) -> str:
         return (self.found.get(url) or {}).get("content", "")
+
+
+def with_passage(text: str, passage: str) -> str:
+    """text with passage added at the end, unless text already holds it."""
+    return text if not passage or passage in text else (text + "\n\n" + passage if text else passage)
 
 
 def _host(url: str) -> str:
@@ -76,7 +90,9 @@ def web_tools(c, pages: Pages, company: str, domain: str, w=None) -> list[Tool]:
             # a search result holds only a snippet on the real web: fetch the whole page once
             full = w.read(url)
             if full and len(full.get("content") or "") >= len((page or {}).get("content") or ""):
-                page = {**(page or {}), "url": url, "content": full["content"], "full_text": True,
+                # the fetched text is capped, so the passages searches showed of a long page are kept after it
+                page = {**(page or {}), "url": url, "content": with_passage(full["content"], (page or {}).get("content") or ""),
+                        "full_text": True,
                         "title": (page or {}).get("title") or full.get("title", ""),
                         "published": (page or {}).get("published") or full.get("published", "")}
             if page is None:

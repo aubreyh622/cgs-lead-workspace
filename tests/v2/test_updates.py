@@ -76,3 +76,24 @@ def test_a_bad_since_reads_the_last_days():
     assert datetime.now(timezone.utc) - t > timedelta(hours=47)
     assert since_from("2026-11-05T10:00:00+00:00", 7) == datetime(2026, 11, 5, 10, tzinfo=timezone.utc)
     assert since_from("2026-11-05T10:00:00 00:00", 7) == datetime(2026, 11, 5, 10, tzinfo=timezone.utc)  # "+" decoded as a space
+
+
+def test_research_tried_again_is_a_new_notice(tmp_path):
+    """Try again reuses the research task. Found in the live run of 17 Nov 2026: the stop notice and the brief after the
+    retry had the same id, so the page skipped the brief as already shown and did not draw itself again."""
+    app = create_app(Settings(db_path=tmp_path / "u.sqlite3"))
+    api = TestClient(app)
+    start = feed(api)["now"]
+    with app.state.db.session() as s:
+        o = s.scalars(select(m.Opportunity).where(m.Opportunity.owner == "Alex Morgan")).first()
+        t = m.ResearchTask(id="rt-retry", opportunity_id=o.id, status="failed", error="Stopped after 16 steps.",
+                           ended_at=datetime.now(timezone.utc))
+        s.add(t)
+        s.commit()
+    [stopped] = [x for x in feed(api, start)["items"] if x["kind"] == "research"]
+    with app.state.db.session() as s:
+        t = s.get(m.ResearchTask, "rt-retry")
+        t.status, t.error, t.ended_at = "done", None, datetime.now(timezone.utc) + timedelta(seconds=5)
+        s.commit()
+    [ready] = [x for x in feed(api, start)["items"] if x["kind"] == "research"]
+    assert stopped["status"] == "failed" and ready["status"] == "done" and ready["id"] != stopped["id"]

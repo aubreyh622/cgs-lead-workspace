@@ -291,3 +291,62 @@ def test_a_long_result_stays_whole_json_and_says_what_was_cut():
     ai = Script(claude_use("page", {}), claude_use("finish", {"answer": "ok"}, "toolu_2"))
     R.run(spec(tools=(big,)), make_provider("claude", key="k", transport=ai), "Go.")
     assert json.loads(ai.requests[1]["messages"][2]["content"][0]["content"])["truncated"] is True
+
+
+# ---------- found in the live run of 17 Nov 2026 (gpt-5-mini, Tavily) ----------
+def test_the_last_steps_are_announced_before_the_run_stops():
+    """gpt-5-mini calls one tool per step; told only on the very last step, it spent the run recording and never finished."""
+    loop = [gemini(call("echo", {"word": str(i)})) for i in range(6)]
+    ai = Script(*loop)
+    out = R.run(spec(max_steps=6), make_provider("gemini", "m", key="k", transport=ai), "Loop.")
+    assert out.status == "incomplete"
+    notes = [next((p["text"] for p in r["contents"][-1]["parts"] if "text" in p), "") for r in ai.requests[1:]]
+    assert notes[0] == notes[1] == ""                              # after steps 1 and 2: plenty left
+    assert "3 steps left" in notes[2] and "Several tools" in notes[2]
+    assert "2 steps left" in notes[3] and "last step" in notes[4]
+    assert R.step_note(spec(max_steps=16), 10) == {}
+
+
+def test_a_passage_a_search_showed_of_a_long_page_stays_checkable_after_reading_it():
+    """A 10-K is read only up to its first few thousand characters; the employee count a later search showed lies far
+    beyond that. The quote from that search preview must still be found on the page."""
+    from api.agent_tools import Pages, web_tools
+    from api.demo_agents import quote_in_text
+    import types as T
+    url = "https://example.com/10-K.pdf"
+    head = "UNITED STATES SECURITIES AND EXCHANGE COMMISSION. " * 200
+
+    class Web:
+        def search(self, query):
+            if "employees" in query:
+                return [{"url": url, "title": "Form 10-K", "content": "Employees At March 31, 2025, we had approximately 10,858 employees."}]
+            return [{"url": url, "title": "Form 10-K", "content": "Annual report on Form 10-K."}]
+
+        def read(self, u):
+            return {"url": u, "title": "Form 10-K", "content": head[:8000]}
+
+    pages = Pages()
+    tools = {t.name: t for t in web_tools(T.SimpleNamespace(search_factory=None, today=None), pages, "EnerSys", "enersys.com", w=Web())}
+    tools["search_web"].run({"query": "EnerSys annual report"})
+    tools["read_page"].run({"url": url})                                   # the capped full text replaces the snippet
+    tools["search_web"].run({"query": "EnerSys employees 10-K"})           # found again: this passage is kept as well
+    text = pages.text(url)
+    assert quote_in_text("At March 31, 2025, we had approximately 10,858 employees.", text)
+    assert text.startswith("UNITED STATES") and "Annual report on Form 10-K." in text
+    tools["search_web"].run({"query": "EnerSys employees 10-K"})
+    assert pages.text(url).count("10,858") == 1                            # the same passage is not added twice
+
+
+def test_every_provider_waits_long_enough_for_a_reasoning_model(monkeypatch):
+    """Live run of 17 Nov 2026: gpt-5-mini took more than the plain 45 seconds to write an email draft, so every
+    request to draft one failed with "Provider connection failed or timed out"."""
+    import api.llm as L
+    waits = []
+    providers = [make_provider(name, "m", key="k") for name in ("openai", "claude", "gemini")]  # built with the real post
+    monkeypatch.setattr(L, "post", lambda url, headers, payload, read_timeout=45: waits.append(read_timeout) or {"output": [], "usage": {}})
+    for p in providers:
+        try:
+            p.chat("s", [{"role": "user", "text": "hi"}], [])
+        except LLMError:
+            pass
+    assert waits == [L.LONG_WAIT] * 3 and L.LONG_WAIT >= 120

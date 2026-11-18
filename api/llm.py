@@ -76,11 +76,18 @@ class Turn:
     cut_off: bool = False  # the answer hit the length limit before it finished: nothing in it may be used
 
 
+LONG_WAIT = 150  # seconds to wait for one AI answer
+
+
 class Provider:
     name = "base"
 
     def __init__(self, model: str, key: str, transport=post):
-        self.model, self.key, self.transport = model, key, transport
+        # A reasoning model writing a long answer (a brief, a full email draft) can take more than a minute; the plain
+        # 45-second wait failed every draft request on gpt-5-mini in the live run of 17 Nov 2026.
+        self.model, self.key = model, key
+        self.transport = transport if transport is not post else (
+            lambda url, headers, payload, read_timeout=LONG_WAIT: post(url, headers, payload, read_timeout=read_timeout))
         self.calls = 0  # requests sent to the AI company, counted for the agents' daily budget
         self.used = Counter()  # this provider's own share of METER
 
@@ -259,9 +266,7 @@ class ClaudeProvider(Provider):
         return {"x-api-key": self.key, "anthropic-version": "2023-06-01"}
 
     def _post(self, payload):
-        """A long answer (a full research brief) can take more than a minute to write; wait for it."""
-        if self.transport is post:
-            return post(self.url, self._headers(), payload, read_timeout=150)
+        """A long answer (a full research brief) can take more than a minute to write; every provider waits LONG_WAIT."""
         return self.transport(self.url, self._headers(), payload)
 
     @staticmethod

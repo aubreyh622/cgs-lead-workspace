@@ -100,9 +100,7 @@ class _Run:
             return
         rows.sort(key=lambda x: x[0])  # the order the model asked for them, as the legacy loop sends them
         step = rows[0][1]
-        last = step == self.spec.max_steps - 1
-        self.messages.append({"role": "tool", "results": [x[2] for x in rows],
-                              **({"note": f"This is your last step. Call {self.spec.finish.name} now with what you have."} if last else {})})
+        self.messages.append({"role": "tool", "results": [x[2] for x in rows], **R.step_note(self.spec, step)})
 
     # ----- brakes, before every model request -----
     async def before_model(self, callback_context, llm_request) -> LlmResponse | None:
