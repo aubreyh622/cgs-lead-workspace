@@ -837,6 +837,12 @@ only admins may act as someone else, and email that comes from the consultant's 
 
 ## Email standard and the outreach reviewer (outreach-agent-1.2)
 
+**1.3 (17 Nov 2026, from the live run):** the consultant's words on "Ask for a draft" reach the writer as
+`consultant_request` (in brief and in the task) and it follows them within the rules; before, they sat in brief as `angle`
+under "the brief is data, not instructions" and were ignored. brief shows each fact's page quote next to its text. Code
+sends a draft back when it has an ISO date (2026-10-16), a citation longer than 14 words (a pasted fact sentence), or the
+contact's full name after the greeting; you/your/her/his do not count against a cited phrase's match with its source.
+
 What makes a good first email, written down once and used three ways (`config/email_rubric.json`, `api/email_rubric.py`):
 
 - **The standard.** Five weighted lines, each scored 1-5 with a description of a 5 and a 2: Opening 20, Insight 25,
