@@ -7,6 +7,9 @@ person in charge of every decision that matters: agents research and prepare, pe
 **Status: prototype, synthetic data only.** It is not connected to any CGS system. The Insightly connection is tested
 on the team's own Insightly test account with invented companies. Lead quality and CGS acceptance are not yet verified.
 
+**Client documents (Word):** [docs/deliverables](docs/deliverables/) holds the workflow and agent design, the testing
+and evaluation report, the business recommendations, and the implementation guide for CGS's technology team.
+
 ## The workflow
 
 | Step | What happens | Who |
@@ -93,6 +96,7 @@ set `CRM_MODE=write_approved` and `CRM_PROVIDER=insightly`. `Check CRM.cmd` chec
 
 ## Documentation
 
+- [Client documents](docs/deliverables/): design, testing and evaluation, business recommendations, implementation guide (Word).
 - [Workspace page](docs/FRONTEND.md): the pages, how they are built, the rules they keep, and their checks.
 - [Backend v2 guide](docs/BACKEND_V2.md): decisions, agents, autonomy, manager, toolkit, email, CRM, endpoints.
 - [Agents on Google ADK](docs/ADK_MIGRATION.md): the options, the design, and the [evaluation](docs/ADK_EVAL.md).
